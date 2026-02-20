@@ -27,7 +27,7 @@ interface ProductsPageProps {
   setSettings: (updater: React.SetStateAction<Settings>) => void;
 }
 
-const ProductsPage: React.FC<ProductsPageProps> = ({ settings, setSettings }) => {
+const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSettings }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -614,7 +614,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({ settings, setSettings }) =>
       )}
     </motion.div>
   );
-};
+});
 
 
 // --- New Component: ProductImportModal ---
@@ -733,6 +733,16 @@ interface ProductFormModalProps {
 }
 
 const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, onSave, productData, setProductData, settings, isEditing, onGenerateDescription, isGenerating }) => {
+    const [isSaving, setIsSaving] = useState(false);
+    
+    const handleFormSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSaving(true);
+        // Simulate a small delay for better UX and to allow state updates to propagate
+        await new Promise(resolve => setTimeout(resolve, 600));
+        onSave(e);
+        setIsSaving(false);
+    };
     
     const thumbnailInputRef = useRef<HTMLInputElement>(null);
     const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -821,7 +831,7 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
                 <XCircle size={24} className="text-slate-400 dark:text-slate-600" />
               </button>
             </div>
-            <form onSubmit={onSave} id="product-form" className="flex-1 overflow-y-auto">
+            <form onSubmit={handleFormSubmit} id="product-form" className="flex-1 overflow-y-auto">
               <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-6">
                   {/* Left Column: Basic Info */}
                   <div className="space-y-4">
@@ -944,8 +954,11 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
               </div>
             </form>
             <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t dark:border-slate-800 flex justify-end gap-3 flex-shrink-0">
-                <button type="button" onClick={onClose} className="px-6 py-2.5 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-300 rounded-xl font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all">إلغاء</button>
-                <button type="submit" form="product-form" className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 dark:shadow-none"><Save size={18} /> {isEditing ? 'تحديث المنتج' : 'حفظ المنتج'}</button>
+                <button type="button" onClick={onClose} disabled={isSaving} className="px-6 py-2.5 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-300 rounded-xl font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all disabled:opacity-50">إلغاء</button>
+                <button type="submit" form="product-form" disabled={isSaving} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 dark:shadow-none disabled:bg-indigo-400 disabled:cursor-wait">
+                    {isSaving ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />} 
+                    {isSaving ? 'جاري الحفظ...' : (isEditing ? 'تحديث المنتج' : 'حفظ المنتج')}
+                </button>
             </div>
           </div>
         </div>
