@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Order, User, ConfirmationLog, OrderStatus, Settings, OrderItem, Product, Store } from '../types';
-import { PhoneForwarded, Check, X, User as UserIcon, MapPin, Package, CalendarDays, Phone, PhoneCall, MessageSquare, Edit3, Save, Plus, Clock, ChevronsUpDown, ArrowRight, Truck, Tag, XCircle, Eye, Search, RefreshCw, History as HistoryIcon, TrendingUp, AlertTriangle, Bell, Send } from 'lucide-react';
+import { PhoneForwarded, Check, X, User as UserIcon, MapPin, Package, CalendarDays, Phone, PhoneCall, MessageSquare, Edit3, Save, Plus, Clock, ChevronsUpDown, ArrowRight, Truck, Tag, XCircle, Eye, Search, RefreshCw, History as HistoryIcon, TrendingUp, AlertTriangle } from 'lucide-react';
 
 const CONFIRMATION_ACTIONS = [
     'تم التأكيد',
@@ -10,31 +10,6 @@ const CONFIRMATION_ACTIONS = [
     'تم الإلغاء',
     'مؤجل',
     'يحتاج متابعة'
-];
-
-const CANCELLATION_REASONS = [
-    'سعر المنتج مرتفع',
-    'مصاريف الشحن مرتفعة',
-    'العميل طلب بالخطأ',
-    'غير جدي / لا يرد',
-    'وقت التوصيل طويل',
-    'وجد بديل أرخص',
-    'تغيير الرأي',
-    'أخرى'
-];
-
-const WHATSAPP_TEMPLATES = [
-    { id: 'no_answer', label: 'لم يرد', text: 'أهلاً [اسم العميل] 👋، حاولنا الاتصال بك من [اسم المتجر] لتأكيد طلبك [اسم المنتج]. يرجى تأكيد الطلب لنتمكن من شحنه لك.' },
-    { id: 'location', label: 'طلب الموقع', text: 'أهلاً [اسم العميل] 👋، من فضلك أرسل لنا الموقع (Location) لتسهيل عملية توصيل طلبك [اسم المنتج] من [اسم المتجر].' },
-    { id: 'offer', label: 'عرض خاص', text: 'أهلاً [اسم العميل] 👋، لدينا عرض خاص لك اليوم على [اسم المنتج] من [اسم المتجر]. لا تفوت الفرصة!' },
-    { id: 'confirm', label: 'تأكيد الطلب', text: 'أهلاً [اسم العميل] 👋، نود تأكيد طلبك [اسم المنتج] من [اسم المتجر]. هل البيانات صحيحة؟' },
-];
-
-const REMINDER_OPTIONS = [
-    { value: 1, label: 'بعد ساعة' },
-    { value: 3, label: 'بعد 3 ساعات' },
-    { value: 24, label: 'غداً' },
-    { value: 48, label: 'بعد يومين' },
 ];
 
 interface ConfirmationQueuePageProps {
@@ -139,20 +114,16 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     const [activeOrder, setActiveOrder] = useState<Order | null>(null);
     const [actionNotes, setActionNotes] = useState('');
     const [selectedAction, setSelectedAction] = useState(CONFIRMATION_ACTIONS[0]);
-    const [cancellationReason, setCancellationReason] = useState('');
-    const [reminderTime, setReminderTime] = useState<number | ''>('');
     const [isEditingName, setIsEditingName] = useState(false);
     const [editedName, setEditedName] = useState('');
     const [isEditingAddress, setIsEditingAddress] = useState(false);
     const [editedAddress, setEditedAddress] = useState('');
-    const [editedGovernorate, setEditedGovernorate] = useState('');
     const [isEditingPhone2, setIsEditingPhone2] = useState(false);
     const [editedPhone2, setEditedPhone2] = useState('');
     const [isLogModalOpen, setIsLogModalOpen] = useState(false);
     const [isProductModalOpen, setIsProductModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [whatsappMenuOpen, setWhatsappMenuOpen] = useState(false);
 
     const pendingOrders = useMemo(() =>
         orders
@@ -185,19 +156,16 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         if (activeOrder) {
             setActionNotes('');
             setSelectedAction(CONFIRMATION_ACTIONS[0]);
-            setCancellationReason('');
-            setReminderTime('');
             setIsEditingName(false);
             setEditedName(activeOrder.customerName);
             setIsEditingAddress(false);
             setEditedAddress(activeOrder.customerAddress);
-            setEditedGovernorate(activeOrder.shippingArea || '');
             setIsEditingPhone2(false);
             setEditedPhone2(activeOrder.customerPhone2 || '');
         }
     }, [activeOrder]);
 
-    const getWhatsAppLink = (order: Order, templateId?: string) => {
+    const getWhatsAppLink = (order: Order) => {
         let normalizedPhone = order.customerPhone.replace(/\D/g, '');
         if (normalizedPhone.startsWith('0')) {
             normalizedPhone = '20' + normalizedPhone.substring(1);
@@ -210,18 +178,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         const storeName = activeStore?.name || 'متجرنا';
         const productName = order.productName;
     
-        let message = '';
-        if (templateId) {
-            const template = WHATSAPP_TEMPLATES.find(t => t.id === templateId);
-            if (template) {
-                message = template.text
-                    .replace('[اسم العميل]', customerName)
-                    .replace('[اسم المتجر]', storeName)
-                    .replace('[اسم المنتج]', productName);
-            }
-        } else {
-             message = `أهلاً بك يا ${customerName} 👋، انا ${employeeName} نتصل بك من ${storeName} لتأكيد ${productName}. للتاكيد ارسل كلمة تاكيد او الغاء لالغاء الشحنه`;
-        }
+        const message = `أهلاً بك يا ${customerName} 👋، انا ${employeeName} نتصل بك من ${storeName} لتأكيد ${productName}. للتاكيد ارسل كلمة تاكيد او الغاء لالغاء الشحنه`;
 
         return `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
     };
@@ -243,56 +200,21 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     
     const handleActionSubmit = (action: string) => {
         if (!activeOrder || !currentUser) return;
-        
-        if ((action === 'تم الإلغاء' || action === 'مؤجل') && !cancellationReason && !actionNotes) {
-             alert('يرجى اختيار سبب الإلغاء/التأجيل أو كتابة ملاحظة.');
-             return;
-        }
-
         const activeOrderId = activeOrder.id;
-        const notes = [
-            actionNotes,
-            cancellationReason ? `السبب: ${cancellationReason}` : '',
-            reminderTime ? `تذكير بعد: ${REMINDER_OPTIONS.find(r => r.value === reminderTime)?.label}` : ''
-        ].filter(Boolean).join(' | ');
-
-        const newLog: ConfirmationLog = { 
-            userId: currentUser.phone, 
-            userName: currentUser.fullName, 
-            timestamp: new Date().toISOString(), 
-            action: action, 
-            notes: notes 
-        };
-
+        const newLog: ConfirmationLog = { userId: currentUser.phone, userName: currentUser.fullName, timestamp: new Date().toISOString(), action: action, notes: actionNotes };
         let newStatus: OrderStatus | null = null;
         if (action === 'تم التأكيد') newStatus = 'جاري_المراجعة';
         else if (action === 'تم الإلغاء') newStatus = 'ملغي';
         
-        // Calculate reminder date if set
-        let reminderDateStr = undefined;
-        if (reminderTime) {
-            const date = new Date();
-            date.setHours(date.getHours() + Number(reminderTime));
-            reminderDateStr = date.toISOString();
-        }
-
         setOrders(currentOrders => currentOrders.map(order => 
             order.id === activeOrderId 
-            ? { 
-                ...order, 
-                status: newStatus || order.status, 
-                confirmationLogs: [...(order.confirmationLogs || []), newLog],
-                cancellationReason: cancellationReason || order.cancellationReason,
-                followUpReminder: reminderDateStr || order.followUpReminder
-              } 
+            ? { ...order, status: newStatus || order.status, confirmationLogs: [...(order.confirmationLogs || []), newLog] } 
             : order
         ));
 
         // Reset state for next order
         setActionNotes('');
         setSelectedAction(CONFIRMATION_ACTIONS[0]);
-        setCancellationReason('');
-        setReminderTime('');
     };
 
     const updateActiveOrderField = (field: keyof Order, value: any) => {
@@ -307,23 +229,9 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         setIsEditingName(false);
     };
     const handleSaveAddress = () => {
-        if (!activeOrder) return;
-        
-        let newShippingFee = activeOrder.shippingFee;
-        if (editedGovernorate && editedGovernorate !== activeOrder.shippingArea) {
-             const shippingOptions = settings.shippingOptions[activeOrder.shippingCompany] || [];
-             const selectedOption = shippingOptions.find(opt => opt.label === editedGovernorate);
-             if (selectedOption) {
-                 newShippingFee = selectedOption.price;
-             }
-        }
-
-        setOrders(currentOrders => 
-            currentOrders.map(o => o.id === activeOrder.id ? { ...o, customerAddress: editedAddress, shippingArea: editedGovernorate, shippingFee: newShippingFee } : o)
-        );
+        updateActiveOrderField('customerAddress', editedAddress);
         setIsEditingAddress(false);
     };
-
     const handleSavePhone2 = () => {
         updateActiveOrderField('customerPhone2', editedPhone2);
         setIsEditingPhone2(false);
@@ -366,11 +274,6 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         // Data is live, this is for UX feedback
         setTimeout(() => setIsRefreshing(false), 750);
     };
-
-    const activeShippingOptions = useMemo(() => {
-        if (!activeOrder) return [];
-        return settings.shippingOptions[activeOrder.shippingCompany] || [];
-    }, [activeOrder, settings.shippingOptions]);
 
     return (
         <div className="h-full flex flex-col">
@@ -442,44 +345,10 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             <label className="text-xs text-slate-500 flex items-center gap-1"><Phone size={14}/> الهاتف</label>
                                             <div className="flex items-center justify-between">
                                                 <p className="font-bold text-sm text-slate-800 dark:text-white font-mono tracking-wider">{activeOrder.customerPhone}</p>
-                                                <div className="flex items-center gap-2 relative">
-                                                    <div className="relative">
-                                                        <button 
-                                                            onClick={() => setWhatsappMenuOpen(!whatsappMenuOpen)}
-                                                            className="p-2 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-full hover:bg-emerald-200 transition-colors" 
-                                                            title="مراسلة عبر واتساب"
-                                                        >
-                                                            <MessageSquare size={16}/>
-                                                        </button>
-                                                        {whatsappMenuOpen && (
-                                                            <div className="absolute top-full left-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-10 overflow-hidden">
-                                                                <div className="p-2 border-b border-slate-100 dark:border-slate-700 text-xs font-bold text-slate-500">اختر رسالة</div>
-                                                                {WHATSAPP_TEMPLATES.map(template => (
-                                                                    <a 
-                                                                        key={template.id}
-                                                                        href={getWhatsAppLink(activeOrder, template.id)}
-                                                                        target="_blank" 
-                                                                        rel="noopener noreferrer"
-                                                                        className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 text-right"
-                                                                        onClick={() => setWhatsappMenuOpen(false)}
-                                                                    >
-                                                                        {template.label}
-                                                                    </a>
-                                                                ))}
-                                                                <a 
-                                                                    href={getWhatsAppLink(activeOrder)}
-                                                                    target="_blank" 
-                                                                    rel="noopener noreferrer"
-                                                                    className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 text-right font-bold border-t border-slate-100 dark:border-slate-700"
-                                                                    onClick={() => setWhatsappMenuOpen(false)}
-                                                                >
-                                                                    رسالة افتراضية
-                                                                </a>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {whatsappMenuOpen && <div className="fixed inset-0 z-0" onClick={() => setWhatsappMenuOpen(false)}></div>}
-                                                    
+                                                <div className="flex items-center gap-2">
+                                                    <a href={getWhatsAppLink(activeOrder)} target="_blank" rel="noopener noreferrer" className="p-2 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-full hover:bg-emerald-200 transition-colors" title="مراسلة عبر واتساب">
+                                                        <MessageSquare size={16}/>
+                                                    </a>
                                                     <a href={`tel:${activeOrder.customerPhone}`} className="p-2 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full hover:bg-blue-200 transition-colors" title="اتصال">
                                                         <PhoneCall size={16}/>
                                                     </a>
@@ -521,32 +390,8 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={14}/> العنوان</label>
-                                            {isEditingAddress ? (
-                                                <div className="space-y-2">
-                                                    <select 
-                                                        value={editedGovernorate} 
-                                                        onChange={e => setEditedGovernorate(e.target.value)}
-                                                        className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold"
-                                                    >
-                                                        <option value="">اختر المحافظة...</option>
-                                                        {activeShippingOptions.map(opt => (
-                                                            <option key={opt.id} value={opt.label}>{opt.label} ({opt.price} ج.م)</option>
-                                                        ))}
-                                                    </select>
-                                                    <div className="flex gap-2">
-                                                        <input type="text" value={editedAddress} onChange={e => setEditedAddress(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold"/>
-                                                        <button onClick={handleSaveAddress} className="p-2 bg-emerald-100 text-emerald-600 rounded-md"><Save size={16}/></button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-start justify-between">
-                                                    <div>
-                                                        <p className="font-bold text-sm text-slate-800 dark:text-white pr-4">{activeOrder.customerAddress}</p>
-                                                        <p className="text-xs text-slate-500 mt-1">{activeOrder.shippingArea}</p>
-                                                    </div>
-                                                    <button onClick={() => { setIsEditingAddress(true); setEditedAddress(activeOrder.customerAddress); setEditedGovernorate(activeOrder.shippingArea); }} className="p-1 text-slate-400 hover:text-blue-500"><Edit3 size={14}/></button>
-                                                </div>
-                                            )}
+                                            {isEditingAddress ? (<div className="flex gap-2"><input type="text" value={editedAddress} onChange={e => setEditedAddress(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold"/><button onClick={handleSaveAddress} className="p-2 bg-emerald-100 text-emerald-600 rounded-md"><Save size={16}/></button></div>) 
+                                            : (<div className="flex items-start justify-between"><p className="font-bold text-sm text-slate-800 dark:text-white pr-4">{activeOrder.customerAddress}</p><button onClick={() => { setIsEditingAddress(true); setEditedAddress(activeOrder.customerAddress); }} className="p-1 text-slate-400 hover:text-blue-500"><Edit3 size={14}/></button></div>)}
                                         </div>
                                     </DetailSection>
                                     <DetailSection title="تفاصيل الطلب">
@@ -562,124 +407,17 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                     </DetailSection>
                                 </div>
                                 <DetailSection title="الملخص المالي">
-                                    <div className="space-y-2 text-sm">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-slate-500 dark:text-slate-400">إجمالي المنتجات</span>
-                                            <span className="font-bold text-slate-800 dark:text-white">{productsTotal.toLocaleString()} ج.م</span>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-slate-500 dark:text-slate-400">مصاريف الشحن</span>
-                                            <span className="font-bold text-slate-800 dark:text-white">{activeOrder.shippingFee.toLocaleString()} ج.م</span>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-slate-500 dark:text-slate-400">رسوم المعاينة</span>
-                                            <div className="flex items-center gap-3">
-                                                <span className="font-bold text-slate-800 dark:text-white">{inspectionFeeValue.toLocaleString()} ج.م</span>
-                                                <button
-                                                    onClick={() => updateActiveOrderField('includeInspectionFee', !activeOrder.includeInspectionFee)}
-                                                    className={`px-3 py-1 text-xs font-bold rounded-full transition-colors ${activeOrder.includeInspectionFee ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50'}`}
-                                                >
-                                                    {activeOrder.includeInspectionFee ? 'إلغاء' : 'تفعيل'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                        {activeOrder.discount > 0 && (
-                                            <div className="flex justify-between items-center text-red-500">
-                                                <span className="font-bold">خصم</span>
-                                                <span className="font-bold">-{activeOrder.discount.toLocaleString()} ج.م</span>
-                                            </div>
-                                        )}
-                                        <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 my-2 !mt-4 !mb-3"></div>
-                                        <div className="flex justify-between items-center font-black text-lg">
-                                            <span className="text-slate-800 dark:text-white">الإجمالي المطلوب:</span>
-                                            <span className="text-indigo-600 dark:text-indigo-400">{totalAmount.toLocaleString()} ج.م</span>
-                                        </div>
-                                    </div>
+                                    <div className="flex justify-between items-center font-black text-lg p-2 bg-slate-200 dark:bg-slate-700 rounded-lg"><span className="text-slate-800 dark:text-white">الإجمالي المطلوب:</span><span className="text-indigo-600 dark:text-indigo-400">{totalAmount.toLocaleString()} ج.م</span></div>
                                 </DetailSection>
                                 <div className="space-y-3">
-                                    <h4 className="font-bold text-slate-600 dark:text-slate-400 text-sm">تسجيل إجراء ومتابعة</h4>
-                                    <div className="relative">
-                                        <select value={selectedAction} onChange={e => setSelectedAction(e.target.value)} className="w-full p-3 pr-4 pl-8 appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold outline-none focus:ring-2 focus:ring-indigo-500">
-                                            {CONFIRMATION_ACTIONS.map(action => <option key={action} value={action}>{action}</option>)}
-                                        </select>
-                                        <ChevronsUpDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                                    </div>
-
-                                    {(selectedAction === 'تم الإلغاء' || selectedAction === 'مؤجل') && (
-                                        <div className="relative animate-in fade-in slide-in-from-top-2">
-                                            <select 
-                                                value={cancellationReason} 
-                                                onChange={e => setCancellationReason(e.target.value)} 
-                                                className="w-full p-3 pr-4 pl-8 appearance-none bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-red-500 text-red-700 dark:text-red-400"
-                                            >
-                                                <option value="">{selectedAction === 'تم الإلغاء' ? 'اختر سبب الإلغاء (إجباري)' : 'اختر سبب التأجيل (إجباري)'}</option>
-                                                {CANCELLATION_REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
-                                            </select>
-                                            <AlertTriangle size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-red-400"/>
-                                        </div>
-                                    )}
-
-                                    {(selectedAction === 'العميل لم يرد' || selectedAction === 'مؤجل') && (
-                                        <div className="relative animate-in fade-in slide-in-from-top-2">
-                                            <select 
-                                                value={reminderTime} 
-                                                onChange={e => setReminderTime(Number(e.target.value))} 
-                                                className="w-full p-3 pr-4 pl-8 appearance-none bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 text-blue-700 dark:text-blue-400"
-                                            >
-                                                <option value="">تذكير بالمتابعة (اختياري)</option>
-                                                {REMINDER_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                            </select>
-                                            <Bell size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400"/>
-                                        </div>
-                                    )}
-
+                                     <h4 className="font-bold text-slate-600 dark:text-slate-400 text-sm">تسجيل الإجراء</h4>
+                                    <div className="relative"><select value={selectedAction} onChange={e => setSelectedAction(e.target.value)} className="w-full p-3 pr-4 pl-8 appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold outline-none focus:ring-2 focus:ring-indigo-500">{CONFIRMATION_ACTIONS.map(action => <option key={action} value={action}>{action}</option>)}</select><ChevronsUpDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/></div>
                                     <textarea placeholder="إضافة ملاحظات (اختياري)..." rows={2} value={actionNotes} onChange={e => setActionNotes(e.target.value)} className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
-                                    <button onClick={() => handleActionSubmit(selectedAction)} className="w-full p-3 bg-indigo-600/10 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg font-bold hover:bg-indigo-600/20 flex items-center justify-center gap-2 transition-colors">
-                                        <Save size={18}/> حفظ الإجراء
-                                    </button>
                                 </div>
-                                
-                                <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                                    <h4 className="font-bold text-slate-600 dark:text-slate-400 mb-3 text-sm flex items-center gap-2"><HistoryIcon size={16}/> سجل المكالمات</h4>
-                                    <div className="space-y-3">
-                                        {activeOrder.confirmationLogs && activeOrder.confirmationLogs.length > 0 ? (
-                                            <div className="space-y-2 max-h-40 overflow-y-auto p-1">
-                                                {activeOrder.confirmationLogs.slice().reverse().map((log, index) => (
-                                                    <div key={log.timestamp + index} className="p-3 bg-slate-100 dark:bg-slate-700/50 rounded-lg text-xs">
-                                                        <div className="flex justify-between items-center">
-                                                            <span className="font-bold text-slate-800 dark:text-white">{log.action}</span>
-                                                            <span className="text-slate-500 font-mono">{timeSince(log.timestamp)}</span>
-                                                        </div>
-                                                        <p className="text-slate-600 dark:text-slate-400 mt-1">
-                                                            بواسطة: <span className="font-bold">{log.userName}</span>
-                                                        </p>
-                                                        {log.notes && (
-                                                            <blockquote className="mt-2 p-2 bg-white dark:bg-slate-700 rounded border-r-4 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 italic">
-                                                               {log.notes}
-                                                            </blockquote>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <p className="text-sm text-center text-slate-400 py-4">لا توجد سجلات سابقة.</p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="border-t border-slate-200 dark:border-slate-700 my-4"></div>
-
-                                <div>
-                                    <h4 className="font-bold text-slate-600 dark:text-slate-400 text-sm mb-3">اتخاذ قرار نهائي</h4>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button onClick={() => handleActionSubmit('تم الإلغاء')} className="w-full p-3 bg-red-600/10 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-lg font-bold hover:bg-red-600/20 flex items-center justify-center gap-2 transition-colors">
-                                            <X size={18}/> إلغاء الطلب
-                                        </button>
-                                        <button onClick={() => handleActionSubmit('تم التأكيد')} className="w-full p-3 bg-emerald-600/10 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg font-bold hover:bg-emerald-600/20 flex items-center justify-center gap-2 transition-colors">
-                                            <Check size={18}/> تأكيد الطلب
-                                        </button>
-                                    </div>
-                                </div>
+                                 <div className="grid grid-cols-2 gap-3 pt-2">
+                                     <button onClick={() => handleActionSubmit('تم الإلغاء')} className="w-full p-3 bg-red-600/10 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-lg font-bold hover:bg-red-600/20 flex items-center justify-center gap-2 transition-colors"><X size={18}/> إلغاء الطلب</button>
+                                     <button onClick={() => handleActionSubmit('تم التأكيد')} className="w-full p-3 bg-emerald-600/10 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg font-bold hover:bg-emerald-600/20 flex items-center justify-center gap-2 transition-colors"><Check size={18}/> تأكيد الطلب</button>
+                                 </div>
                             </div>
                         </>
                     ) : (
