@@ -1,3 +1,4 @@
+
 // ... (previous imports and declartions)
 
 // FIX: Declaring the 'google' object in the global scope to make it accessible across all files.
@@ -17,6 +18,18 @@ export type OrderStatus = 'في_انتظار_المكالمة' | 'جاري_ال�
 export type PaymentStatus = 'بانتظار الدفع' | 'مدفوع' | 'مدفوع جزئياً' | 'مرتجع';
 export type PreparationStatus = 'بانتظار التجهيز' | 'جاهز';
 
+export interface CityOption {
+  id: string;
+  name: string;
+  shippingPrice: number;
+  extraKgPrice: number;
+  returnAfterPrice: number;
+  returnWithoutPrice: number;
+  exchangePrice: number;
+  useParentFees?: boolean; // New flag for price inheritance
+  active?: boolean; // New flag for soft delete/deactivation
+}
+
 export interface ShippingOption {
   id: string;
   label: string;      
@@ -27,6 +40,8 @@ export interface ShippingOption {
   returnWithoutPrice: number; 
   exchangePrice: number;      
   baseWeight: number;
+  cities?: CityOption[];
+  active?: boolean; // New flag for soft delete/deactivation
 }
 
 export interface PlatformIntegration {
@@ -372,6 +387,8 @@ export interface Order {
   orderType?: 'standard' | 'exchange';
   originalOrderId?: string;
   confirmationLogs?: ConfirmationLog[];
+  cancellationReason?: string;
+  followUpReminder?: string;
 }
 
 export interface StoreData {
