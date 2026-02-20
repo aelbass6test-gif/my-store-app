@@ -1,8 +1,3 @@
-
-
-
-
-
 import { useState, useMemo, useEffect, useRef } from 'react';
 // FIX: The `Navigate` component was not imported, causing an error. It has been added to the import statement.
 import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
@@ -12,7 +7,6 @@ import * as db from './services/databaseService';
 import { supabase } from './services/supabaseClient';
 import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
-import { oneToolzProducts } from './src/data/one-toolz-products';
 
 // Page Components (will be loaded via router)
 import SignUpPage from './components/SignUpPage';
@@ -45,8 +39,8 @@ import AnalyticsPage from './components/AnalyticsPage';
 import AdminPage from './components/AdminPage';
 import EmployeeLayout from './components/EmployeeLayout';
 import EmployeeDashboardPage from './components/EmployeeDashboardPage';
-import EmployeeAccountSettingsPage from './components/EmployeeAccountSettingsPage';
 import EmployeeActivityPage from './components/EmployeeActivityPage';
+import EmployeeAccountSettingsPage from './components/EmployeeAccountSettingsPage';
 import AccountSettingsPage from './components/AccountSettingsPage';
 import CollectionsReportPage from './components/CollectionsReportPage';
 import ActivityLogsPage from './components/ActivityLogsPage';
@@ -55,7 +49,6 @@ import PagesManager from './components/PagesManager';
 import PaymentSettingsPage from './components/PaymentSettingsPage';
 import TeamChatPage from './components/TeamChatPage';
 import WhatsAppPage from './components/WhatsAppPage';
-import WelcomeLoader from './components/WelcomeLoader';
 import GlobalLoader from './components/GlobalLoader';
 import EmployeesPage from './components/EmployeesPage';
 import ReportsPage from './components/ReportsPage';
@@ -103,60 +96,18 @@ const EmployeeLayoutWrapper = ({ children, ...props }: any) => {
     return <EmployeeLayout {...props}>{children}</EmployeeLayout>;
 };
 
-function sanitizeData(storeData: StoreData): StoreData {
-    if (!storeData) return storeData;
-
-    const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/; // Simplified check for ISO format
-    let hasChanges = false;
-
-    const fixDate = (dateString: string): string | null => {
-        if (!dateString || typeof dateString !== 'string') return null;
-
-        // If it's already in a valid ISO-like format, do nothing.
-        if (isoDateRegex.test(dateString)) {
-            return null;
-        }
-        
-        // Attempt to parse it. This will fail for non-standard formats like the Arabic locale one.
-        const parsedDate = new Date(dateString);
-
-        // If parsing fails OR if it contains Arabic numerals (a strong sign of the old bug), it's corrupted.
-        if (isNaN(parsedDate.getTime()) || /[٠-٩]/.test(dateString)) {
-            console.warn(`Found and fixed corrupted date format: "${dateString}". Replacing with current time.`);
-            hasChanges = true;
-            // We replace it with the current time to ensure data integrity, even if the original time is lost.
-            return new Date().toISOString();
-        } else {
-            // The date was parsable but not in ISO format (e.g., "2024-01-01"). Convert it to full ISO format.
-            console.log(`Normalized date format from "${dateString}" to ISO format.`);
-            hasChanges = true;
-            return parsedDate.toISOString();
-        }
-    };
-    
-    const sanitizedTransactions = storeData.wallet?.transactions?.map(tx => {
-        const fixedDate = fixDate(tx.date);
-        return fixedDate ? { ...tx, date: fixedDate } : tx;
-    });
-
-    const sanitizedOrders = storeData.orders?.map(order => {
-        const fixedDate = fixDate(order.date);
-        return fixedDate ? { ...order, date: fixedDate } : order;
-    });
-
-    if (hasChanges) {
-        return {
-            ...storeData,
-            wallet: {
-                ...(storeData.wallet || {balance: 0, transactions: []}),
-                transactions: sanitizedTransactions || storeData.wallet?.transactions || []
-            },
-            orders: sanitizedOrders || storeData.orders || [],
-        };
+const CatchAllRedirect = ({ currentUser, isEmployeeSession }: any) => {
+    if (!currentUser) {
+        return <Navigate to="/owner-login" replace />;
     }
-
-    return storeData;
-}
+    if (isEmployeeSession) {
+        return <Navigate to="/employee/dashboard" replace />;
+    }
+    if (currentUser.isAdmin) {
+        return <Navigate to="/admin" replace />;
+    }
+    return <Navigate to="/" replace />;
+};
 
 export const AppComponent = () => {
     const [users, setUsers] = useState<User[]>([]);
@@ -166,16 +117,16 @@ export const AppComponent = () => {
     const [isInitialLoad, setIsInitialLoad] = useState<boolean>(true);
     const [authChecked, setAuthChecked] = useState<boolean>(false);
     const [cart, setCart] = useState<OrderItem[]>([]);
-    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+    const [isSidebarOpen, setSidebarOpen] = useState<boolean>(false);
     const [isEmployeeSession, setIsEmployeeSession] = useState<boolean>(false);
     const [theme, setTheme] = useState<string>(localStorage.getItem('theme') || 'system');
     const [showCongratsModal, setShowCongratsModal] = useState<boolean>(false);
-    const [welcomeScreenShown, setWelcomeScreenShown] = useState<boolean>(false);
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
     const [saveMessage, setSaveMessage] = useState('');
     // FIX: Replaced `NodeJS.Timeout` with `ReturnType<typeof setTimeout>` for browser compatibility. `NodeJS.Timeout` is a Node.js specific type and is not available in the browser environment.
     const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const refreshDebounceTimers = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
+    const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const saveRequestId = useRef<number>(0);
     const isRefreshing = useRef(false);
     
     // 2FA State
@@ -195,13 +146,26 @@ export const AppComponent = () => {
         return owner?.stores?.find(s => s.id === activeStoreId);
     }, [activeStoreId, users]);
 
+    // --- Safety Guard: Prevent Closing Window While Saving ---
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (saveStatus === 'pending' || saveStatus === 'saving') {
+                e.preventDefault();
+                e.returnValue = ''; // Standard for modern browsers to show alert
+                return '';
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [saveStatus]);
+
     // --- Auto-Save Logic ---
     useEffect(() => {
         if (isInitialLoad) return;
         
         if (isRefreshing.current) {
-            console.log('[AUTO-SAVE] Skipped save because a refresh just occurred.');
-            isRefreshing.current = false; // Reset flag and skip this cycle
+            isRefreshing.current = false;
             return;
         }
 
@@ -216,11 +180,21 @@ export const AppComponent = () => {
         if (debounceTimer.current) {
             clearTimeout(debounceTimer.current);
         }
+        
+        // Clear any pending idle timer to prevent switching to idle while typing
+        if (idleTimer.current) {
+            clearTimeout(idleTimer.current);
+            idleTimer.current = null;
+        }
+
+        // Increment request ID to invalidate any in-progress saves' status updates
+        // This ensures that if the user types while saving, we don't show "Success" for the old save
+        const requestId = ++saveRequestId.current;
 
         // Set a new timer to perform the save after a period of inactivity
         debounceTimer.current = setTimeout(async () => {
             setSaveStatus('saving');
-            setSaveMessage('جاري الحفظ...');
+            setSaveMessage('جاري الحفظ في قاعدة البيانات...');
 
             try {
                 // Save global data (users)
@@ -234,14 +208,31 @@ export const AppComponent = () => {
                     }
                 }
                 
-                setSaveStatus('success');
-                setSaveMessage('تم الحفظ بنجاح!');
-                setTimeout(() => setSaveStatus('idle'), 2000);
+                // Only update status if this is still the latest request
+                if (requestId === saveRequestId.current) {
+                    setSaveStatus('success');
+                    setSaveMessage('تم الحفظ بنجاح!');
+                    
+                    if (idleTimer.current) clearTimeout(idleTimer.current);
+                    idleTimer.current = setTimeout(() => {
+                        if (requestId === saveRequestId.current) {
+                            setSaveStatus('idle');
+                        }
+                    }, 2000);
+                }
 
             } catch (e: any) {
-                setSaveStatus('error');
-                setSaveMessage(e.message || 'فشل الحفظ');
-                setTimeout(() => setSaveStatus('idle'), 3000);
+                if (requestId === saveRequestId.current) {
+                    setSaveStatus('error');
+                    setSaveMessage(e.message || 'فشل الحفظ');
+                    
+                    if (idleTimer.current) clearTimeout(idleTimer.current);
+                    idleTimer.current = setTimeout(() => {
+                        if (requestId === saveRequestId.current) {
+                            setSaveStatus('idle');
+                        }
+                    }, 3000);
+                }
             }
         }, 2500); // 2.5-second debounce period
 
@@ -249,6 +240,9 @@ export const AppComponent = () => {
         return () => {
             if (debounceTimer.current) {
                 clearTimeout(debounceTimer.current);
+            }
+            if (idleTimer.current) {
+                clearTimeout(idleTimer.current);
             }
         };
     }, [users, allStoresData, activeStore, activeStoreId, isInitialLoad]);
@@ -306,8 +300,7 @@ export const AppComponent = () => {
                         setActiveStoreId(storeId);
                         const storeData = await db.getStoreData(storeId) as StoreData | null;
                         if (storeData) {
-                            const sanitizedStoreData = sanitizeData(storeData);
-                            setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedStoreData }));
+                            setAllStoresData(prev => ({ ...prev, [storeId]: storeData }));
                         }
                     }
                 }
@@ -333,7 +326,21 @@ export const AppComponent = () => {
         mediaQuery.addEventListener('change', handleDisplayModeChange);
         setIsIos(/iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream);
 
-        loadData();
+        loadData().then(() => {
+            const savedUserPhone = localStorage.getItem('currentUserPhone');
+            if (savedUserPhone) {
+                const savedSessionType = localStorage.getItem('sessionType');
+                if (savedSessionType === 'employee') {
+                    navigate('/employee/dashboard');
+                } else if (savedSessionType === 'admin') {
+                    navigate('/admin');
+                } else {
+                    navigate('/');
+                }
+            } else {
+                navigate('/owner-login');
+            }
+        });
 
         return () => {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -348,7 +355,6 @@ export const AppComponent = () => {
         localStorage.removeItem('currentUserPhone');
         localStorage.removeItem('lastActiveStoreId');
         localStorage.removeItem('sessionType');
-        setWelcomeScreenShown(false);
         navigate('/owner-login');
     };
 
@@ -429,8 +435,7 @@ export const AppComponent = () => {
         if (!allStoresData[storeId]) {
             const storeData = await db.getStoreData(storeId) as StoreData | null;
             if (storeData) {
-                const sanitizedStoreData = sanitizeData(storeData);
-                setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedStoreData }));
+                setAllStoresData(prev => ({ ...prev, [storeId]: storeData }));
             }
         }
     };
@@ -447,9 +452,8 @@ export const AppComponent = () => {
         if (!storeData) {
             const data = await db.getStoreData(storeId) as StoreData | null;
             if (data) {
-                const sanitizedData = sanitizeData(data);
-                setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedData }));
-                storeData = sanitizedData;
+                setAllStoresData(prev => ({ ...prev, [storeId]: data }));
+                storeData = data;
             } else {
                  throw new Error("لا يمكن تحميل بيانات المتجر.");
             }
@@ -496,9 +500,8 @@ export const AppComponent = () => {
         if (!storeData) {
             const data = await db.getStoreData(storeId) as StoreData | null;
             if (data) {
-                const sanitizedData = sanitizeData(data);
-                setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedData }));
-                storeData = sanitizedData;
+                setAllStoresData(prev => ({ ...prev, [storeId]: data }));
+                storeData = data;
             } else {
                  throw new Error("لا يمكن تحميل بيانات المتجر.");
             }
@@ -538,7 +541,7 @@ export const AppComponent = () => {
             orders: [],
             settings: {
                 ...INITIAL_SETTINGS,
-                products: oneToolzProducts, // Pre-seed products for new stores
+                products: [], // Start with empty products list
             },
             wallet: { balance: 0, transactions: [] },
             cart: [],
@@ -578,86 +581,6 @@ export const AppComponent = () => {
         completeLogin(userToImpersonate, null); 
     };
 
-    const refreshStoreData = (storeId: string) => {
-        if (!storeId || storeId !== activeStoreId) {
-            if (storeId !== activeStoreId) console.log(`[REALTIME] Ignoring refresh for non-active store: ${storeId}`);
-            return;
-        }
-
-        if (refreshDebounceTimers.current[storeId]) {
-            clearTimeout(refreshDebounceTimers.current[storeId]!);
-        }
-
-        refreshDebounceTimers.current[storeId] = setTimeout(async () => {
-            console.log(`[REALTIME] Debounced refresh executing for store: ${storeId}`);
-            const storeData = await db.getStoreData(storeId) as StoreData | null;
-            if (storeData) {
-                const sanitizedStoreData = sanitizeData(storeData);
-                isRefreshing.current = true;
-                setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedStoreData }));
-                console.log(`[REALTIME] Store ${storeId} data updated via debounce.`);
-            }
-            refreshDebounceTimers.current[storeId] = null;
-        }, 1500);
-    };
-
-    const refreshGlobalData = () => {
-        const key = 'global';
-        if (refreshDebounceTimers.current[key]) {
-            clearTimeout(refreshDebounceTimers.current[key]!);
-        }
-        refreshDebounceTimers.current[key] = setTimeout(async () => {
-            console.log('[REALTIME] Debounced global refresh executing.');
-            const globalData = await db.getGlobalData();
-            if (globalData?.users) {
-                isRefreshing.current = true;
-                setUsers(globalData.users);
-                setCurrentUser(prevUser => {
-                    if (!prevUser) return null;
-                    const updatedCurrentUser = globalData.users.find(u => u.phone === prevUser.phone);
-                    return updatedCurrentUser || prevUser;
-                });
-                console.log('[REALTIME] Global user data updated via debounce.');
-            }
-            refreshDebounceTimers.current[key] = null;
-        }, 1500);
-    };
-
-    // --- Realtime Subscriptions ---
-    useEffect(() => {
-        console.log('[REALTIME] Setting up subscriptions...');
-        
-        const handleStoreChange = (payload: any) => {
-            console.log('[REALTIME] Store data change detected:', payload);
-            const record = payload.new || payload.old;
-            const storeId = record.store_id || record.id;
-            if (storeId) {
-              refreshStoreData(storeId);
-            }
-        };
-        
-        const handleUserChange = (payload: any) => {
-            console.log('[REALTIME] User data change detected:', payload);
-            refreshGlobalData();
-        };
-
-        const subscriptions = [
-          supabase.channel('public:orders').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, handleStoreChange).subscribe(),
-          supabase.channel('public:stores_data').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'stores_data' }, handleStoreChange).subscribe(),
-          supabase.channel('public:products').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, handleStoreChange).subscribe(),
-          supabase.channel('public:transactions').on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, handleStoreChange).subscribe(),
-          supabase.channel('public:employees').on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, handleStoreChange).subscribe(),
-          supabase.channel('public:collections').on('postgres_changes', { event: '*', schema: 'public', table: 'collections' }, handleStoreChange).subscribe(),
-          supabase.channel('public:custom_pages').on('postgres_changes', { event: '*', schema: 'public', table: 'custom_pages' }, handleStoreChange).subscribe(),
-          supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleUserChange).subscribe()
-        ];
-
-        return () => {
-            console.log('[REALTIME] Removing subscriptions.');
-            subscriptions.forEach(sub => supabase.removeChannel(sub));
-        };
-    }, [activeStoreId]); // Re-run if activeStoreId changes to update the refreshStoreData closure
-
     if (!authChecked) {
         return <GlobalLoader />;
     }
@@ -672,7 +595,7 @@ export const AppComponent = () => {
     }
     
     // Props passed down to layouts and pages
-    const pageProps = {
+    const pageProps = useMemo(() => ({
         users, setUsers, allStoresData, setAllStoresData, currentUser, activeStore,
         orders: activeStoreId ? allStoresData[activeStoreId]?.orders || [] : [],
         settings: activeStoreId ? allStoresData[activeStoreId]?.settings || INITIAL_SETTINGS : INITIAL_SETTINGS,
@@ -714,63 +637,52 @@ export const AppComponent = () => {
                 }));
             }
         },
-    };
+    }), [users, allStoresData, currentUser, activeStore, activeStoreId, cart]);
     
-    // This component acts as a guard for owner routes.
-    const OwnerLayoutWrapper = () => {
-        const location = useLocation();
-    
-        useEffect(() => {
-            if (!welcomeScreenShown) {
-                const timer = setTimeout(() => {
-                    setWelcomeScreenShown(true);
-                }, 1500);
-                return () => clearTimeout(timer);
+    const handlePlaceOrder = (orderData: PlaceOrderData): string => {
+        if (!activeStoreId) throw new Error("No active store");
+        
+        const storeData = allStoresData[activeStoreId];
+        if (!storeData) throw new Error("Store data not found");
+
+        const newOrderId = `ORD-${Date.now()}`;
+        const orderDate = new Date().toISOString();
+        
+        // Calculate totals from cart
+        const cartItems = storeData.cart || [];
+        const productPrice = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const productCost = cartItems.reduce((sum, item) => sum + item.cost * item.quantity, 0);
+        const weight = cartItems.reduce((sum, item) => sum + item.weight * item.quantity, 0);
+        const productName = cartItems.map(i => `${i.name} (x${i.quantity})`).join(', ');
+
+        const newOrder: Order = {
+            id: newOrderId,
+            orderNumber: (storeData.orders.length + 1).toString(),
+            date: orderDate,
+            ...orderData,
+            items: cartItems,
+            productName,
+            productPrice,
+            productCost,
+            weight,
+            status: 'في_انتظار_المكالمة',
+            paymentStatus: 'بانتظار الدفع',
+            preparationStatus: 'بانتظار التجهيز',
+            includeInspectionFee: false, // Default
+            isInsured: false, // Default
+            confirmationLogs: [],
+        };
+
+        setAllStoresData(prev => ({
+            ...prev,
+            [activeStoreId]: {
+                ...prev[activeStoreId],
+                orders: [...prev[activeStoreId].orders, newOrder],
+                cart: [] // Clear cart
             }
-        }, [welcomeScreenShown]);
-    
-        if (isEmployeeSession) {
-            return <Navigate to="/employee/dashboard" replace />;
-        }
-        if (!currentUser) {
-            return <Navigate to="/owner-login" replace />;
-        }
-    
-        const hasNoStores = !currentUser.stores || currentUser.stores.length === 0;
-    
-        if (hasNoStores && !currentUser.isAdmin) {
-            if (location.pathname !== '/create-store') {
-                return <Navigate to="/create-store" replace />;
-            }
-            return (
-                <div className="bg-slate-50 dark:bg-gradient-to-b dark:from-slate-950 dark:to-[#111827] text-slate-800 dark:text-slate-200 min-h-screen" dir="rtl">
-                    <Header currentUser={currentUser} onLogout={handleLogout} onToggleSidebar={() => {}} theme={theme} setTheme={setTheme} />
-                    <main className="flex-1 p-4 md:p-6">
-                        <Outlet />
-                    </main>
-                </div>
-            );
-        }
-    
-        if (!welcomeScreenShown) {
-            return <WelcomeLoader userName={currentUser?.fullName.split(' ')[0] || ''} />;
-        }
-    
-        return <MainLayout currentUser={currentUser} handleLogout={handleLogout} isSidebarOpen={isSidebarOpen} setSidebarOpen={setIsSidebarOpen} activeStore={activeStore} theme={theme} setTheme={setTheme} />;
-    };
-    
-    // This component handles redirection for any undefined routes.
-    const CatchAllRedirect = () => {
-        if (!currentUser) {
-            return <Navigate to="/owner-login" replace />;
-        }
-        if (isEmployeeSession) {
-            return <Navigate to="/employee/dashboard" replace />;
-        }
-        if (currentUser.isAdmin) {
-            return <Navigate to="/admin" replace />;
-        }
-        return <Navigate to="/" replace />;
+        }));
+
+        return newOrderId;
     };
 
     return (
@@ -778,7 +690,15 @@ export const AppComponent = () => {
             <Routes>
                 <Route path="/owner-login" element={<SignUpPage onPasswordSuccess={(user) => completeLogin(user, null)} users={users} setUsers={setUsers} />} />
                 <Route path="/employee-login" element={<EmployeeLoginPage allStoresData={allStoresData} users={users} onLoginAttempt={handleEmployeeLogin} onRegisterRequest={handleEmployeeRegisterRequest} />} />
-                <Route path="/track-order" element={<OrderTrackingPage orders={pageProps.orders} />} />
+                <Route path="/otp-verification" element={
+                    <OtpVerificationPage 
+                        email={userForOtp?.email || ''} 
+                        onVerify={handleOtpVerification} 
+                        onResend={() => {}} 
+                        onCancel={handleOtpCancel}
+                        error={otpError}
+                    />
+                } />
                 
                 <Route path="/admin" element={<AdminLayout currentUser={currentUser} handleLogout={handleLogout} theme={theme} setTheme={setTheme} />}>
                     <Route index element={<AdminPage {...pageProps} onImpersonate={handleImpersonate} currentUser={currentUser as User} />} />
@@ -807,7 +727,17 @@ export const AppComponent = () => {
                     <Route path="account-settings" element={<EmployeeAccountSettingsPage currentUser={currentUser} setCurrentUser={setCurrentUser} users={users} setUsers={setUsers} />} />
                 </Route>
 
-                <Route path="/" element={<OwnerLayoutWrapper />}>
+                <Route path="/" element={
+                    <MainLayout 
+                        currentUser={currentUser} 
+                        handleLogout={handleLogout} 
+                        isSidebarOpen={isSidebarOpen} 
+                        setSidebarOpen={setSidebarOpen} 
+                        activeStore={activeStore} 
+                        theme={theme} 
+                        setTheme={setTheme} 
+                    />
+                }>
                     <Route index element={<Dashboard {...pageProps} />} />
                     <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} />} />
                     <Route path="orders" element={<OrdersList {...pageProps} addLoyaltyPointsForOrder={() => {}} />} />
@@ -851,10 +781,11 @@ export const AppComponent = () => {
                 </Route>
 
                 <Route path="store" element={<StorefrontPage {...pageProps} onAddToCart={() => {}} onUpdateCartQuantity={() => {}} onRemoveFromCart={() => {}} />} />
-                <Route path="checkout" element={<CheckoutPage {...pageProps} onPlaceOrder={() => '123'} />} />
+                <Route path="checkout" element={<CheckoutPage {...pageProps} onPlaceOrder={handlePlaceOrder} />} />
                 <Route path="order-success/:orderId" element={<OrderSuccessPage {...pageProps} />} />
-                <Route path="*" element={<CatchAllRedirect />} />
+                <Route path="*" element={<CatchAllRedirect currentUser={currentUser} isEmployeeSession={isEmployeeSession} />} />
             </Routes>
+            
             {showCongratsModal && <CongratsModal onClose={() => setShowCongratsModal(false)} />}
             <GlobalSaveIndicator status={saveStatus} message={saveMessage} />
         </>
@@ -863,7 +794,7 @@ export const AppComponent = () => {
 
 // Wrapper needed for react-router v6 hooks
 export const AppWrapper = () => (
-    <HashRouter>
+    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AppComponent />
     </HashRouter>
 );
