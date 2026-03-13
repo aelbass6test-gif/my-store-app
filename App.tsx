@@ -1,10 +1,5 @@
-
-
-
-
-
 import { useState, useMemo, useEffect, useRef } from 'react';
-// FIX: The `Navigate` component was not imported, causing an error. It has been added to the import statement.
+// FIX: The `Maps` component was not imported, causing an error. It has been added to the import statement.
 import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 
 import { User, Store, StoreData, Order, Settings, Wallet, OrderItem, Employee, Product, PlaceOrderData } from './types';
@@ -187,7 +182,20 @@ export const AppComponent = () => {
     const [installPrompt, setInstallPrompt] = useState<any>(null);
     const [isStandalone, setIsStandalone] = useState(window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
     const [isIos, setIsIos] = useState(false);
+    
     const navigate = useNavigate();
+    const location = useLocation();
+
+    // حل مشكلة القائمة الجانبية: إغلاق القائمة تلقائياً عند تغيير المسار في الموبايل
+    useEffect(() => {
+        setIsSidebarOpen(false);
+    }, [location.pathname]);
+
+    // تتبع حالة الحفظ لمنع تداخل التحديثات اللحظية
+    const isSavingRef = useRef(false);
+    useEffect(() => {
+        isSavingRef.current = (saveStatus === 'saving' || saveStatus === 'pending');
+    }, [saveStatus]);
 
     const activeStore = useMemo(() => {
         if (!activeStoreId) return undefined;
@@ -579,6 +587,12 @@ export const AppComponent = () => {
     };
 
     const refreshStoreData = (storeId: string) => {
+        // منع التحديث اللحظي إذا كان التطبيق في حالة حفظ لمنع الرفرفة (Flicker)
+        if (isSavingRef.current) {
+            console.log(`[REALTIME] Ignoring refresh to prevent flicker during active save.`);
+            return;
+        }
+
         if (!storeId || storeId !== activeStoreId) {
             if (storeId !== activeStoreId) console.log(`[REALTIME] Ignoring refresh for non-active store: ${storeId}`);
             return;
@@ -593,8 +607,15 @@ export const AppComponent = () => {
             const storeData = await db.getStoreData(storeId) as StoreData | null;
             if (storeData) {
                 const sanitizedStoreData = sanitizeData(storeData);
-                isRefreshing.current = true;
-                setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedStoreData }));
+                
+                setAllStoresData(prev => {
+                    // فحص ذكي: إذا كانت البيانات القادمة مطابقة للبيانات الحالية، نلغي التحديث لمنع إعادة الرسم
+                    const isIdentical = JSON.stringify(prev[storeId]) === JSON.stringify(sanitizedStoreData);
+                    if (isIdentical) return prev;
+                    
+                    isRefreshing.current = true;
+                    return { ...prev, [storeId]: sanitizedStoreData };
+                });
                 console.log(`[REALTIME] Store ${storeId} data updated via debounce.`);
             }
             refreshDebounceTimers.current[storeId] = null;
@@ -680,38 +701,56 @@ export const AppComponent = () => {
         cart,
         setOrders: (updater: any) => {
             if(activeStoreId) {
-                // FIX: When updating store data, ensure a complete default object is provided if the store data doesn't exist yet, to satisfy the `StoreData` type.
-                setAllStoresData(p => ({
-                    ...p, 
-                    [activeStoreId]: {
-                        ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
-                        orders: typeof updater === 'function' ? updater(p[activeStoreId]?.orders || []) : updater
-                    }
-                }));
+                setAllStoresData(p => {
+                    const currentOrders = p[activeStoreId]?.orders || [];
+                    const newOrders = typeof updater === 'function' ? updater(currentOrders) : updater;
+                    
+                    if (currentOrders === newOrders) return p;
+
+                    return {
+                        ...p, 
+                        [activeStoreId]: {
+                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
+                            orders: newOrders
+                        }
+                    };
+                });
             }
         },
         setSettings: (updater: any) => {
             if(activeStoreId) {
-                // FIX: When updating store data, ensure a complete default object is provided if the store data doesn't exist yet, to satisfy the `StoreData` type.
-                setAllStoresData(p => ({
-                    ...p, 
-                    [activeStoreId]: {
-                        ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
-                        settings: typeof updater === 'function' ? updater(p[activeStoreId]?.settings || INITIAL_SETTINGS) : updater
-                    }
-                }));
+                setAllStoresData(p => {
+                    const currentSettings = p[activeStoreId]?.settings || INITIAL_SETTINGS;
+                    const newSettings = typeof updater === 'function' ? updater(currentSettings) : updater;
+                    
+                    if (currentSettings === newSettings) return p;
+
+                    return {
+                        ...p, 
+                        [activeStoreId]: {
+                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
+                            settings: newSettings
+                        }
+                    };
+                });
             }
         },
         setWallet: (updater: any) => {
              if(activeStoreId) {
-                // FIX: When updating store data, ensure a complete default object is provided if the store data doesn't exist yet, to satisfy the `StoreData` type.
-                setAllStoresData(p => ({
-                    ...p, 
-                    [activeStoreId]: {
-                        ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
-                        wallet: typeof updater === 'function' ? updater(p[activeStoreId]?.wallet || { balance: 0, transactions: [] }) : updater
-                    }
-                }));
+                setAllStoresData(p => {
+                    const currentWallet = p[activeStoreId]?.wallet || { balance: 0, transactions: [] };
+                    const newWallet = typeof updater === 'function' ? updater(currentWallet) : updater;
+                    
+                    if (currentWallet === newWallet) return p;
+
+                    return {
+                        ...p, 
+                        [activeStoreId]: {
+                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
+                            wallet: newWallet
+                        }
+                    };
+                });
             }
         },
     };
