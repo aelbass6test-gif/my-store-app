@@ -276,7 +276,26 @@ const ShippingPage: React.FC<{ settings: Settings, setSettings: React.Dispatch<R
       shippingOptions: { ...prev.shippingOptions, [name]: [] },
       activeCompanies: { ...prev.activeCompanies, [name]: true },
       exchangeSupported: { ...(prev.exchangeSupported || {}), [name]: true },
-      companySpecificFees: { ...prev.companySpecificFees, [name]: { insuranceFeePercent: prev.insuranceFeePercent, inspectionFee: prev.inspectionFee, returnShippingFee: prev.returnShippingFee, useCustomFees: false, defaultInspectionActive: true, enableCodFees: true, codThreshold: prev.codThreshold, codFeeRate: prev.codFeeRate, codTaxRate: prev.codTaxRate, enableReturnAfter: true, enableReturnWithout: true, enableExchange: true, enableFixedReturn: true, postCollectionReturnRefundsProductPrice: true } }
+      companySpecificFees: { 
+        ...prev.companySpecificFees, 
+        [name]: { 
+          insuranceFeePercent: prev.insuranceFeePercent, 
+          inspectionFee: prev.inspectionFee, 
+          returnShippingFee: prev.returnShippingFee, 
+          useCustomFees: false, 
+          defaultInspectionActive: true, 
+          enableCodFees: true, 
+          codThreshold: prev.codThreshold, 
+          codFeeRate: prev.codFeeRate, 
+          codTaxRate: prev.codTaxRate, 
+          enableReturnAfter: true, 
+          enableReturnWithout: true, 
+          enableExchange: true, 
+          enableFixedReturn: true, 
+          postCollectionReturnRefundsProductPrice: true,
+          baseWeight: 1 // إضافة الوزن الافتراضي هنا
+        } 
+      }
     }));
     setNewCompanyName('');
     setShowAddCompany(false);
@@ -480,7 +499,7 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
   }, [expandedZoneId, newCityUseParent, settings.shippingOptions, companyName]);
 
   const addShippingOption = () => {
-    const newOption: ShippingOption = { id: Date.now().toString(), label: 'منطقة جديدة', details: 'تفاصيل المنطقة...', price: 50, baseWeight: 5, extraKgPrice: 10, returnAfterPrice: 50, returnWithoutPrice: 50, exchangePrice: 70, cities: [] };
+    const newOption: ShippingOption = { id: Date.now().toString(), label: 'منطقة جديدة', details: 'تفاصيل المنطقة...', price: 50, baseWeight: 1, extraKgPrice: 10, returnAfterPrice: 50, returnWithoutPrice: 50, exchangePrice: 70, cities: [] };
     setSettings((prev: Settings) => ({ ...prev, shippingOptions: { ...prev.shippingOptions, [companyName]: [...(prev.shippingOptions[companyName] || []), newOption] } }));
   };
   const updateShippingOption = (id: string, field: keyof ShippingOption, value: string | number) => {
@@ -922,8 +941,21 @@ const CompanyFinancialsEditor: React.FC<any> = ({ companyName, settings, setSett
                     <ToggleButton active={companyFees.useCustomFees} onToggle={() => handleCompanyFeeChange('useCustomFees', !companyFees.useCustomFees)} variant="emerald" />
                 </div>
                 <div className={`space-y-6 ${!companyFees.useCustomFees && 'opacity-40 pointer-events-none grayscale'}`}>
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> {/* تم تعديل الشبكة لتكون 4 أعمدة */}
                         <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 dark:text-slate-500">التأمين %</label><input type="number" value={companyFees.insuranceFeePercent || 0} onChange={(e) => handleCompanyFeeChange('insuranceFeePercent', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold" /></div>
+                        
+                        {/* الإضافة الجديدة: خانة الوزن الافتراضي */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-indigo-600 dark:text-indigo-400">الوزن الافتراضي (كجم)</label>
+                            <input 
+                                type="number" 
+                                value={companyFees.baseWeight || 1} 
+                                onChange={(e) => handleCompanyFeeChange('baseWeight', Number(e.target.value))} 
+                                className="w-full p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl font-bold text-indigo-700 dark:text-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" 
+                                placeholder="مثلاً 1" 
+                            />
+                        </div>
+
                         <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 dark:text-slate-500">المعاينة ج.م</label><input type="number" value={companyFees.inspectionFee || 0} onChange={(e) => handleCompanyFeeChange('inspectionFee', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold" /></div>
                         <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 dark:text-slate-500">مرتجع ثابت ج.م</label><input type="number" value={companyFees.returnShippingFee || 0} onChange={(e) => handleCompanyFeeChange('returnShippingFee', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold" /></div>
                     </div>
