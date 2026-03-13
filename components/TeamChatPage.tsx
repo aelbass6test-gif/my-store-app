@@ -1,9 +1,9 @@
 
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { db } from '../firebase';
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../services/supabaseClient';
 import { User, Settings, ChatMessage, Employee } from '../types';
+// FIX: Import `MessageSquare` icon from `lucide-react` to fix 'Cannot find name' error.
 import { Send, User as UserIcon, Search, CornerDownLeft, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -44,29 +44,44 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
 
     setLoading(true);
 
-    const q = query(
-      collection(db, 'chat_messages'),
-      where('store_id', '==', activeStoreId),
-      orderBy('created_at', 'asc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs: ChatMessage[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data() as ChatMessage;
-        if ((data.sender_id === currentUser.phone && data.receiver_id === activeChat.id) || 
-            (data.sender_id === activeChat.id && data.receiver_id === currentUser.phone)) {
-            msgs.push({ ...data, id: doc.id as any });
-        }
-      });
-      setMessages(msgs);
+    const fetchMessages = async () => {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('store_id', activeStoreId)
+        .or(`and(sender_id.eq.${currentUser.phone},receiver_id.eq.${activeChat.id}),and(sender_id.eq.${activeChat.id},receiver_id.eq.${currentUser.phone})`)
+        .order('created_at', { ascending: true });
+      
+      if (error) {
+        console.error('Error fetching messages:', error);
+      } else {
+        setMessages(data || []);
+      }
       setLoading(false);
-    }, (error) => {
-      console.error('Error fetching messages:', error);
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
+    fetchMessages();
+
+    const channel = supabase.channel(`team-chat:${activeStoreId}:${currentUser.phone}:${activeChat.id}`);
+    const subscription = channel
+      .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'chat_messages',
+          filter: `store_id=eq.${activeStoreId}`
+      }, 
+      (payload) => {
+          const newMessage = payload.new as ChatMessage;
+          if ((newMessage.sender_id === currentUser.phone && newMessage.receiver_id === activeChat.id) || 
+              (newMessage.sender_id === activeChat.id && newMessage.receiver_id === currentUser.phone)) {
+              setMessages(prev => [...prev, newMessage]);
+          }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [activeChat, currentUser, activeStoreId]);
 
   const handleSendMessage = async () => {
@@ -75,16 +90,16 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
     const content = newMessage;
     setNewMessage('');
 
-    try {
-      await addDoc(collection(db, 'chat_messages'), {
+    const { error } = await supabase
+      .from('chat_messages')
+      .insert({
           store_id: activeStoreId,
           sender_id: currentUser.phone,
           receiver_id: activeChat.id,
           content: content,
-          created_at: serverTimestamp(),
-          is_read: false
       });
-    } catch (error) {
+
+    if (error) {
       console.error('Error sending message:', error);
       setNewMessage(content); // Re-add message to input if sending failed
     }

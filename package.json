@@ -1,3 +1,4 @@
+
 {
   "name": "مدير-الأوردرات-الذكي",
   "private": true,
@@ -6,12 +7,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
     "@google/genai": "^0.15.0",
-    "firebase": "^12.10.0",
+    "@supabase/supabase-js": "^2.45.4",
     "framer-motion": "^11.3.8",
     "lucide-react": "^0.563.0",
     "react": "^18.3.1",
