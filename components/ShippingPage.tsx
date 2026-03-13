@@ -1,470 +1,912 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Settings, ShippingOption, CompanyFees, CityOption } from '../types';
-import { Save, Info, Truck, Plus, Trash2, Wallet, Scale, AlertCircle, XCircle, Package, RefreshCcw, Percent, Coins, Building2, MapPin, Repeat, Settings as SettingsIcon, ShieldCheck, Banknote, ChevronDown, ChevronUp, Eye, ArrowRight, Link2, Plug, CheckCircle2, Wrench, ArrowLeft, Map, Link as LinkIcon, Download, ListChecks, CheckSquare, Square, Search, Lock, Unlock, Unlink, X } from 'lucide-react';
-import SaveBar from './SaveBar';
-import { motion } from 'framer-motion';
-import { generateEgyptShippingOptions, EGYPT_GOVERNORATES } from '../constants';
+import { useState, useMemo, useEffect, useRef } from 'react';
+// FIX: The `Maps` component was not imported, causing an error. It has been added to the import statement.
+import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    }
-  }
+import { User, Store, StoreData, Order, Settings, Wallet, OrderItem, Employee, Product, PlaceOrderData } from './types';
+import * as db from './services/databaseService';
+import { supabase } from './services/supabaseClient';
+import { INITIAL_SETTINGS } from './constants';
+import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
+import { oneToolzProducts } from './src/data/one-toolz-products';
+
+// Page Components (will be loaded via router)
+import SignUpPage from './components/SignUpPage';
+import EmployeeLoginPage from './components/EmployeeLoginPage';
+import CreateStorePage from './components/CreateStorePage';
+import ManageSitesPage from './components/ManageSitesPage';
+import Dashboard from './components/Dashboard';
+import Header from './components/Header';
+import Sidebar from './components/Sidebar';
+import OrdersList from './components/OrdersList';
+import ProductsPage from './components/ProductsPage';
+import CustomersPage from './components/CustomersPage';
+import WalletPage from './components/WalletPage';
+import SettingsPage from './components/SettingsPage';
+import StorefrontPage from './components/StorefrontPage';
+import CheckoutPage from './components/CheckoutPage';
+import OrderSuccessPage from './components/OrderSuccessPage';
+import StoreCustomizationPage from './components/StoreCustomizationPage';
+import ShippingPage from './components/ShippingPage';
+import ConfirmationQueuePage from './components/ConfirmationQueuePage';
+import AbandonedCartsPage from './components/AbandonedCartsPage';
+import DiscountsPage from './components/DiscountsPage';
+import ReviewsPage from './components/ReviewsPage';
+import CollectionsPage from './components/CollectionsPage';
+import ProductOptionsPage from './components/ProductOptionsPage';
+import ExpensesPage from './components/ExpensesPage';
+import MarketingPage from './components/MarketingPage';
+import AnalyticsPage from './components/AnalyticsPage';
+// FIX: AdminPage is a default export, so it should be imported as such.
+import AdminPage from './components/AdminPage';
+import EmployeeLayout from './components/EmployeeLayout';
+import EmployeeDashboardPage from './components/EmployeeDashboardPage';
+import EmployeeAccountSettingsPage from './components/EmployeeAccountSettingsPage';
+import EmployeeActivityPage from './components/EmployeeActivityPage';
+import AccountSettingsPage from './components/AccountSettingsPage';
+import CollectionsReportPage from './components/CollectionsReportPage';
+import ActivityLogsPage from './components/ActivityLogsPage';
+import SuppliersPage from './components/SuppliersPage';
+import PagesManager from './components/PagesManager';
+import PaymentSettingsPage from './components/PaymentSettingsPage';
+import TeamChatPage from './components/TeamChatPage';
+import WhatsAppPage from './components/WhatsAppPage';
+import WelcomeLoader from './components/WelcomeLoader';
+import GlobalLoader from './components/GlobalLoader';
+import EmployeesPage from './components/EmployeesPage';
+import ReportsPage from './components/ReportsPage';
+import ChatBot from './components/ChatBot';
+import CongratsModal from './components/CongratsModal';
+import OrderTrackingPage from './components/OrderTrackingPage';
+import OtpVerificationPage from './components/OtpVerificationPage';
+import IosInstallPrompt from './components/IosInstallPrompt';
+import ComingSoonPage from './components/ComingSoonPage';
+
+interface EmployeeRegisterRequestData {
+  fullName: string;
+  phone: string;
+  password: string;
+  storeId: string;
+  email: string;
+}
+
+// FIX: This component was defined after its usage in the routes array, causing an error.
+// It has been converted to a React component and is now defined before use.
+const MainLayout = ({ currentUser, handleLogout, isSidebarOpen, setSidebarOpen, activeStore, theme, setTheme }: any) => {
+    return (
+        <div className="flex flex-col h-screen bg-slate-50 dark:bg-gradient-to-b dark:from-slate-950 dark:to-[#111827] text-slate-800 dark:text-slate-200" dir="rtl">
+            <Header currentUser={currentUser} onLogout={handleLogout} onToggleSidebar={() => setSidebarOpen(true)} theme={theme} setTheme={setTheme} />
+            <div className="flex flex-1 overflow-hidden">
+                <Sidebar activeStore={activeStore} isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
+                <main className="flex-1 overflow-y-auto p-4 md:p-6">
+                    <Outlet />
+                </main>
+            </div>
+        </div>
+    );
 };
 
-const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-  }
-};
-
-// Helper Components
-interface ToggleButtonProps { active: boolean; onToggle: () => void; variant?: "blue" | "emerald" | "amber"; disabled?: boolean; }
-const ToggleButton: React.FC<ToggleButtonProps> = ({ active, onToggle, variant = "blue", disabled = false }) => {
-  const colors = { blue: active ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700', emerald: active ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700', amber: active ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700' };
-  const disabledClasses = disabled ? 'cursor-not-allowed opacity-50' : '';
-  return ( <button type="button" onClick={(e) => { if (!disabled) { e.stopPropagation(); onToggle(); } }} className={`w-12 h-6 rounded-full relative transition-all duration-300 shadow-inner ${colors[variant]} ${disabledClasses}`} disabled={disabled}> <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 shadow-md transform ${active ? 'translate-x-[-28px]' : 'translate-x-[-4px]'}`} /> <span className={`absolute inset-0 flex items-center px-1 text-[8px] font-black uppercase pointer-events-none transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`} style={{ right: '4px', color: 'white' }}>On</span> <span className={`absolute inset-0 flex items-center px-1 text-[8px] font-black uppercase pointer-events-none transition-opacity duration-300 ${active ? 'opacity-0' : 'opacity-100'}`} style={{ left: '4px', color: '#64748b' }}>Off</span> </button> );
-};
-
-interface DeleteConfirmModalProps { title: string; desc: string; onConfirm: () => void; onCancel: () => void; }
-const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ title, desc, onConfirm, onCancel }) => ( <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/70 dark:bg-black/90 backdrop-blur-sm"> <div className="bg-white dark:bg-slate-900 w-full max-sm rounded-3xl shadow-2xl p-8 text-center animate-in zoom-in duration-200 border border-slate-300 dark:border-slate-800"> <div className="w-20 h-20 bg-red-50 dark:bg-red-950/30 text-red-500 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-100 dark:border-red-900"><AlertCircle size={40} /></div> <h3 className="text-2xl font-black text-slate-800 dark:text-white mb-3 uppercase tracking-tight">{title}</h3> <p className="text-slate-600 dark:text-slate-400 text-sm mb-8 leading-relaxed font-bold">{desc}</p> <div className="flex flex-col gap-3"> <button onClick={onConfirm} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black shadow-xl hover:bg-red-700 transition-all active:scale-95">تأكيد الحذف</button> <button onClick={onCancel} className="w-full py-4 text-slate-500 dark:text-slate-400 font-black hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">تراجع</button> </div> </div> </div> );
-
-const SectionCard: React.FC<{ title: string; icon: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; }> = ({ title, icon, action, children }) => (
-  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-    <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
-      <h2 className="text-xl font-bold flex items-center gap-3 text-slate-800 dark:text-white">{icon}{title}</h2>
-      {action}
+const AdminLayout = ({ currentUser, handleLogout, theme, setTheme }: any) => (
+    <div className="flex flex-col h-screen bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200" dir="rtl">
+        <Header currentUser={currentUser} onLogout={handleLogout} theme={theme} setTheme={setTheme} onToggleSidebar={() => {}} />
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+            <Outlet />
+        </main>
     </div>
-    <div className="p-6">{children}</div>
-  </div>
 );
 
-const PolicyToggle: React.FC<{ label: string; description?: string; active: boolean; onToggle: () => void; }> = ({ label, description, active, onToggle }) => (
-    <div className="flex items-start justify-between p-4 bg-white dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-700 transition-all hover:border-indigo-300 dark:hover:border-indigo-700">
-        <div>
-            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{label}</span>
-            {description && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">{description}</p>}
-        </div>
-        <div className="flex-shrink-0 pt-0.5">
-           <ToggleButton active={active} onToggle={onToggle} />
-        </div>
-    </div>
-);
+const EmployeeLayoutWrapper = ({ children, ...props }: any) => {
+    return <EmployeeLayout {...props}>{children}</EmployeeLayout>;
+};
 
-const CityManagerModal: React.FC<{ isOpen: boolean; onClose: () => void; zone: ShippingOption; onSave: (cities: CityOption[]) => void }> = ({ isOpen, onClose, zone, onSave }) => {
-    const [targetGovName, setTargetGovName] = useState('');
-    const [selectedCities, setSelectedCities] = useState<string[]>([]);
-    const [citySearchTerm, setCitySearchTerm] = useState('');
-    
-    const displayedCities = useMemo(() => {
-        const govCities = EGYPT_GOVERNORATES.find(g => g.name === targetGovName)?.cities || [];
-        if (!citySearchTerm) return govCities;
-        return govCities.filter(c => c.toLowerCase().includes(citySearchTerm.toLowerCase()));
-    }, [targetGovName, citySearchTerm]);
-    
-    useEffect(() => {
-        if (isOpen) {
-            const currentNames = (zone.cities || []).map(c => c.name);
-            setSelectedCities(currentNames);
-            const exactMatch = EGYPT_GOVERNORATES.find(g => g.name === zone.label);
-            if (exactMatch) { setTargetGovName(exactMatch.name); } 
-            else if (currentNames.length > 0) {
-                const reverseMatch = EGYPT_GOVERNORATES.find(g => g.cities.includes(currentNames[0]));
-                setTargetGovName(reverseMatch ? reverseMatch.name : EGYPT_GOVERNORATES[0]?.name || '');
-            } else { setTargetGovName(EGYPT_GOVERNORATES[0]?.name || ''); }
+function sanitizeData(storeData: StoreData): StoreData {
+    if (!storeData) return storeData;
+
+    const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/; // Simplified check for ISO format
+    let hasChanges = false;
+
+    const fixDate = (dateString: string): string | null => {
+        if (!dateString || typeof dateString !== 'string') return null;
+
+        // If it's already in a valid ISO-like format, do nothing.
+        if (isoDateRegex.test(dateString)) {
+            return null;
         }
-    }, [isOpen, zone]);
+        
+        // Attempt to parse it. This will fail for non-standard formats like the Arabic locale one.
+        const parsedDate = new Date(dateString);
 
-    if (!isOpen) return null;
-
-    const toggleCity = (cityName: string) => {
-        setSelectedCities(prev => prev.includes(cityName) ? prev.filter(c => c !== cityName) : [...prev, cityName]);
-    };
-
-    const toggleAll = () => {
-        if (displayedCities.every(c => selectedCities.includes(c))) {
-            setSelectedCities(prev => prev.filter(c => !displayedCities.includes(c)));
+        // If parsing fails OR if it contains Arabic numerals (a strong sign of the old bug), it's corrupted.
+        if (isNaN(parsedDate.getTime()) || /[٠-٩]/.test(dateString)) {
+            console.warn(`Found and fixed corrupted date format: "${dateString}". Replacing with current time.`);
+            hasChanges = true;
+            // We replace it with the current time to ensure data integrity, even if the original time is lost.
+            return new Date().toISOString();
         } else {
-            const newSelection = new Set([...selectedCities, ...displayedCities]);
-            setSelectedCities(Array.from(newSelection));
+            // The date was parsable but not in ISO format (e.g., "2024-01-01"). Convert it to full ISO format.
+            console.log(`Normalized date format from "${dateString}" to ISO format.`);
+            hasChanges = true;
+            return parsedDate.toISOString();
+        }
+    };
+    
+    const sanitizedTransactions = storeData.wallet?.transactions?.map(tx => {
+        const fixedDate = fixDate(tx.date);
+        return fixedDate ? { ...tx, date: fixedDate } : tx;
+    });
+
+    const sanitizedOrders = storeData.orders?.map(order => {
+        const fixedDate = fixDate(order.date);
+        return fixedDate ? { ...order, date: fixedDate } : order;
+    });
+
+    if (hasChanges) {
+        return {
+            ...storeData,
+            wallet: {
+                ...(storeData.wallet || {balance: 0, transactions: []}),
+                transactions: sanitizedTransactions || storeData.wallet?.transactions || []
+            },
+            orders: sanitizedOrders || storeData.orders || [],
+        };
+    }
+
+    return storeData;
+}
+
+export const AppComponent = () => {
+    const [users, setUsers] = useState<User[]>([]);
+    const [allStoresData, setAllStoresData] = useState<Record<string, StoreData>>({});
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [activeStoreId, setActiveStoreId] = useState<string | null>(null);
+    const [isInitialLoad, setIsInitialLoad] = useState<boolean>(true);
+    const [authChecked, setAuthChecked] = useState<boolean>(false);
+    const [cart, setCart] = useState<OrderItem[]>([]);
+    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+    const [isEmployeeSession, setIsEmployeeSession] = useState<boolean>(false);
+    const [theme, setTheme] = useState<string>(localStorage.getItem('theme') || 'system');
+    const [showCongratsModal, setShowCongratsModal] = useState<boolean>(false);
+    const [welcomeScreenShown, setWelcomeScreenShown] = useState<boolean>(false);
+    const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+    const [saveMessage, setSaveMessage] = useState('');
+    // FIX: Replaced `NodeJS.Timeout` with `ReturnType<typeof setTimeout>` for browser compatibility. `NodeJS.Timeout` is a Node.js specific type and is not available in the browser environment.
+    const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const refreshDebounceTimers = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
+    const isRefreshing = useRef(false);
+    
+    // 2FA State
+    const [userForOtp, setUserForOtp] = useState<User | null>(null);
+    const [sessionInfoForOtp, setSessionInfoForOtp] = useState<{isEmployee: boolean, storeId: string} | null>(null);
+    const [otpError, setOtpError] = useState<string>('');
+
+    // PWA Install State
+    const [installPrompt, setInstallPrompt] = useState<any>(null);
+    const [isStandalone, setIsStandalone] = useState(window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
+    const [isIos, setIsIos] = useState(false);
+    
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    // حل مشكلة القائمة الجانبية: إغلاق القائمة تلقائياً عند تغيير المسار في الموبايل
+    useEffect(() => {
+        setIsSidebarOpen(false);
+    }, [location.pathname]);
+
+    // تتبع حالة الحفظ لمنع تداخل التحديثات اللحظية
+    const isSavingRef = useRef(false);
+    useEffect(() => {
+        isSavingRef.current = (saveStatus === 'saving' || saveStatus === 'pending');
+    }, [saveStatus]);
+
+    const activeStore = useMemo(() => {
+        if (!activeStoreId) return undefined;
+        const owner = users.find(u => u.stores?.some(s => s.id === activeStoreId));
+        return owner?.stores?.find(s => s.id === activeStoreId);
+    }, [activeStoreId, users]);
+
+    // --- Auto-Save Logic ---
+    useEffect(() => {
+        if (isInitialLoad) return;
+        
+        if (isRefreshing.current) {
+            console.log('[AUTO-SAVE] Skipped save because a refresh just occurred.');
+            isRefreshing.current = false; // Reset flag and skip this cycle
+            return;
+        }
+
+        // A change occurred. Indicate that there are unsaved changes.
+        // Don't change status if it's already saving or pending.
+        if (saveStatus === 'success' || saveStatus === 'idle' || saveStatus === 'error') {
+            setSaveStatus('pending');
+            setSaveMessage('تغييرات غير محفوظة...');
+        }
+
+        // Clear previous debounce timer to reset the countdown
+        if (debounceTimer.current) {
+            clearTimeout(debounceTimer.current);
+        }
+
+        // Set a new timer to perform the save after a period of inactivity
+        debounceTimer.current = setTimeout(async () => {
+            setSaveStatus('saving');
+            setSaveMessage('جاري الحفظ...');
+
+            try {
+                // Save global data (users)
+                await db.saveGlobalData({ users, loyaltyData: {} });
+
+                // Save active store data
+                if (activeStoreId && allStoresData[activeStoreId] && activeStore) {
+                    const { success, error } = await db.saveStoreData(activeStore, allStoresData[activeStoreId]);
+                    if (!success) {
+                        throw new Error(error || 'فشل حفظ بيانات المتجر');
+                    }
+                }
+                
+                setSaveStatus('success');
+                setSaveMessage('تم الحفظ بنجاح!');
+                setTimeout(() => setSaveStatus('idle'), 2000);
+
+            } catch (e: any) {
+                setSaveStatus('error');
+                setSaveMessage(e.message || 'فشل الحفظ');
+                setTimeout(() => setSaveStatus('idle'), 3000);
+            }
+        }, 2500); // 2.5-second debounce period
+
+        // Cleanup function to clear timer on component unmount or before next effect run
+        return () => {
+            if (debounceTimer.current) {
+                clearTimeout(debounceTimer.current);
+            }
+        };
+    }, [users, allStoresData, activeStore, activeStoreId, isInitialLoad]);
+
+
+    useEffect(() => {
+        const applyTheme = () => {
+            const themeToApply = theme === 'system' 
+                ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                : theme;
+
+            if (themeToApply === 'dark') {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        };
+        applyTheme();
+        localStorage.setItem('theme', theme);
+    }, [theme]);
+
+    const loadData = async () => {
+        try {
+            const globalData = await db.getGlobalData();
+            let loadedUsers: User[] = globalData?.users || [];
+
+            if (loadedUsers.length === 0) {
+                const adminUser: User = { 
+                    fullName: 'المدير العام', 
+                    phone: 'admin', 
+                    password: 'admin', 
+                    email: 'admin@example.com', 
+                    stores: [], 
+                    joinDate: new Date().toISOString(),
+                    isAdmin: true 
+                };
+                loadedUsers.push(adminUser);
+            }
+
+            setUsers(loadedUsers);
+            
+            const savedUserPhone = localStorage.getItem('currentUserPhone');
+            const savedStoreId = localStorage.getItem('lastActiveStoreId');
+            const savedSessionType = localStorage.getItem('sessionType');
+            
+            if (savedUserPhone) {
+                const user = loadedUsers.find((u: User) => u.phone === savedUserPhone);
+                if (user) {
+                    setCurrentUser(user);
+                    if (savedSessionType === 'employee') {
+                        setIsEmployeeSession(true);
+                    }
+                    const storeId = savedStoreId || user.stores?.[0]?.id;
+                    if (storeId) {
+                        setActiveStoreId(storeId);
+                        const storeData = await db.getStoreData(storeId) as StoreData | null;
+                        if (storeData) {
+                            const sanitizedStoreData = sanitizeData(storeData);
+                            setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedStoreData }));
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Failed to load initial data:", error);
+        } finally {
+            setAuthChecked(true);
+            setIsInitialLoad(false);
         }
     };
 
-    const handleSave = () => {
-        const newCities: CityOption[] = selectedCities.map(name => {
-            const existingCity = (zone.cities || []).find(c => c.name === name);
-            if (existingCity) return existingCity;
-            return {
-                id: `city_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-                name: name,
-                shippingPrice: zone.price,
-                extraKgPrice: zone.extraKgPrice,
-                returnAfterPrice: zone.returnAfterPrice,
-                returnWithoutPrice: zone.returnWithoutPrice,
-                exchangePrice: zone.exchangePrice,
-                useParentFees: true,
-                active: true
-            };
+    useEffect(() => {
+        // PWA setup
+        const handleBeforeInstallPrompt = (e: Event) => {
+            e.preventDefault();
+            setInstallPrompt(e);
+        };
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+        const mediaQuery = window.matchMedia('(display-mode: standalone)');
+        const handleDisplayModeChange = (e: MediaQueryListEvent) => setIsStandalone(e.matches);
+        mediaQuery.addEventListener('change', handleDisplayModeChange);
+        setIsIos(/iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream);
+
+        loadData();
+
+        return () => {
+            window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+            mediaQuery.removeEventListener('change', handleDisplayModeChange);
+        };
+    }, []);
+
+    const handleLogout = () => {
+        setCurrentUser(null);
+        setActiveStoreId(null);
+        setIsEmployeeSession(false);
+        localStorage.removeItem('currentUserPhone');
+        localStorage.removeItem('lastActiveStoreId');
+        localStorage.removeItem('sessionType');
+        setWelcomeScreenShown(false);
+        navigate('/owner-login');
+    };
+
+    const handleOtpVerification = async (otp: string) => {
+        if (!userForOtp) return;
+        setOtpError('');
+
+        try {
+            const { data, error } = await supabase.functions.invoke('verify-otp', {
+                body: { email: userForOtp.email, otp },
+            });
+
+            if (error) throw error;
+
+            if (data.valid) {
+                completeLogin(userForOtp, sessionInfoForOtp);
+            } else {
+                setOtpError(data.message || 'رمز التحقق غير صحيح أو منتهي الصلاحية.');
+            }
+        } catch (err: any) {
+            console.error('Error verifying OTP:', err);
+            setOtpError('حدث خطأ أثناء التحقق من الرمز. يرجى المحاولة مرة أخرى.');
+        }
+    };
+
+    const handleOtpCancel = () => {
+        setUserForOtp(null);
+        setSessionInfoForOtp(null);
+        setOtpError('');
+    };
+    
+    const completeLogin = (user: User, sessionInfo: {isEmployee: boolean, storeId: string} | null) => {
+        if (sessionInfo?.isEmployee) {
+            setCurrentUser(user);
+            setIsEmployeeSession(true);
+            setActiveStoreId(sessionInfo.storeId);
+            localStorage.setItem('currentUserPhone', user.phone);
+            localStorage.setItem('lastActiveStoreId', sessionInfo.storeId);
+            localStorage.setItem('sessionType', 'employee');
+            navigate('/employee/dashboard');
+        } else {
+            setCurrentUser(user);
+            setIsEmployeeSession(false);
+            localStorage.setItem('currentUserPhone', user.phone);
+            
+            if (user.isAdmin) {
+                localStorage.setItem('sessionType', 'admin');
+                setActiveStoreId(null);
+                localStorage.removeItem('lastActiveStoreId');
+                navigate('/admin');
+            } else {
+                localStorage.setItem('sessionType', 'owner');
+                const lastStoreId = localStorage.getItem('lastActiveStoreId');
+                const firstStoreId = user.stores?.[0]?.id;
+                
+                if (lastStoreId && user.stores?.some(s => s.id === lastStoreId)) {
+                    handleSetActiveStore(lastStoreId);
+                    navigate('/');
+                } else if (firstStoreId) {
+                    handleSetActiveStore(firstStoreId);
+                    navigate('/');
+                } else {
+                    setActiveStoreId(null); // No stores, so no active store
+                    navigate('/create-store');
+                }
+            }
+        }
+    
+        setUserForOtp(null);
+        setSessionInfoForOtp(null);
+        setOtpError('');
+    };
+
+    const handleSetActiveStore = async (storeId: string) => {
+        setActiveStoreId(storeId);
+        localStorage.setItem('lastActiveStoreId', storeId);
+        setCart([]); // Reset cart on store switch
+        if (!allStoresData[storeId]) {
+            const storeData = await db.getStoreData(storeId) as StoreData | null;
+            if (storeData) {
+                const sanitizedStoreData = sanitizeData(storeData);
+                setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedStoreData }));
+            }
+        }
+    };
+
+    const handleEmployeeLogin = async ({ storeId, phone, password }: { storeId: string; phone: string; password: string }) => {
+        // Find owner to validate storeId
+        const owner = users.find(u => u.stores?.some(s => s.id === storeId));
+        if (!owner) {
+            throw new Error("كود المتجر غير صحيح.");
+        }
+
+        // Get store data
+        let storeData = allStoresData[storeId];
+        if (!storeData) {
+            const data = await db.getStoreData(storeId) as StoreData | null;
+            if (data) {
+                const sanitizedData = sanitizeData(data);
+                setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedData }));
+                storeData = sanitizedData;
+            } else {
+                 throw new Error("لا يمكن تحميل بيانات المتجر.");
+            }
+        }
+        
+        // Find employee in store
+        const employeeRecord = storeData.settings.employees.find(e => e.id === phone);
+        if (!employeeRecord) {
+            throw new Error("لست موظفاً في هذا المتجر.");
+        }
+
+        if (employeeRecord.status !== 'active') {
+            const statusMap: Record<string, string> = { 'invited': 'في انتظار القبول', 'pending': 'معلق' };
+            const statusText = statusMap[employeeRecord.status || ''] || employeeRecord.status;
+            throw new Error(`حالة حسابك هي "${statusText}". يرجى التواصل مع مدير المتجر.`);
+        }
+
+        // Find user account and check password
+        const employeeUser = users.find(u => u.phone === phone);
+        if (!employeeUser || employeeUser.password !== password) {
+            throw new Error("رقم الهاتف أو كلمة المرور غير صحيحة.");
+        }
+
+        // Success!
+        completeLogin(employeeUser, { isEmployee: true, storeId: storeId });
+    };
+
+    const handleEmployeeRegisterRequest = async (data: EmployeeRegisterRequestData) => {
+        const { fullName, phone, password, storeId, email } = data;
+
+        const owner = users.find(u => u.stores?.some(s => s.id === storeId));
+        if (!owner) {
+            throw new Error("كود المتجر غير صحيح.");
+        }
+
+        if (users.some(u => u.phone === phone)) {
+            throw new Error("رقم الهاتف هذا مسجل بالفعل.");
+        }
+        if (users.some(u => u.email === email)) {
+            throw new Error("هذا البريد الإلكتروني مسجل بالفعل.");
+        }
+        
+        let storeData = allStoresData[storeId];
+        if (!storeData) {
+            const data = await db.getStoreData(storeId) as StoreData | null;
+            if (data) {
+                const sanitizedData = sanitizeData(data);
+                setAllStoresData(prev => ({ ...prev, [storeId]: sanitizedData }));
+                storeData = sanitizedData;
+            } else {
+                 throw new Error("لا يمكن تحميل بيانات المتجر.");
+            }
+        }
+        if (storeData.settings.employees.some(e => e.id === phone)) {
+            throw new Error("لديك بالفعل طلب انضمام معلق أو أنت موظف في هذا المتجر.");
+        }
+
+        const newUser: User = { fullName, phone, password, email, joinDate: new Date().toISOString() };
+        setUsers(prev => [...prev, newUser]);
+
+        const newEmployee: Employee = { id: phone, name: fullName, email, permissions: [], status: 'pending' };
+        
+        const updatedStoreData: StoreData = {
+            ...storeData,
+            settings: {
+                ...storeData.settings,
+                employees: [...storeData.settings.employees, newEmployee]
+            }
+        };
+
+        setAllStoresData(p => ({
+            ...p, 
+            [storeId]: updatedStoreData
+        }));
+
+        const storeInfo = owner!.stores!.find(s => s.id === storeId);
+        if (storeInfo) {
+            await db.saveStoreData(storeInfo, updatedStoreData);
+        }
+    };
+
+    const handleStoreCreated = (newStore: Store) => {
+        if (!currentUser) return;
+
+        const newStoreData: StoreData = {
+            orders: [],
+            settings: {
+                ...INITIAL_SETTINGS,
+                products: oneToolzProducts, // Pre-seed products for new stores
+            },
+            wallet: { balance: 0, transactions: [] },
+            cart: [],
+            customers: [],
+        };
+        
+        const updatedUsers = users.map(user => {
+            if (user.phone === currentUser.phone) {
+                return { ...user, stores: [...(user.stores || []), newStore] };
+            }
+            return user;
         });
-        onSave(newCities);
+
+        setUsers(updatedUsers);
+        setCurrentUser(prevUser => prevUser ? { ...prevUser, stores: [...(prevUser.stores || []), newStore] } : null);
+        
+        setAllStoresData(prevData => ({
+            ...prevData,
+            [newStore.id]: newStoreData
+        }));
+        
+        handleSetActiveStore(newStore.id);
+    };
+
+    const handleManualMigration = async () => {
+        const result = await db.migrateAllLegacyDataToRelational(users);
+        if (!result.success && result.error) {
+            alert(`فشل النقل!\nالخطأ: ${result.error}\nالملخص: ${result.summary}`);
+        } else {
+            alert(`اكتمل النقل!\nالملخص: ${result.summary}`);
+        }
+        return { success: result.success, error: result.error };
+    };
+
+    const handleImpersonate = (userToImpersonate: User) => {
+        console.log(`Impersonating user: ${userToImpersonate.fullName}`);
+        completeLogin(userToImpersonate, null); 
+    };
+
+    const refreshStoreData = (storeId: string) => {
+        // منع التحديث اللحظي إذا كان التطبيق في حالة حفظ لمنع الرفرفة (Flicker)
+        if (isSavingRef.current) {
+            console.log(`[REALTIME] Ignoring refresh to prevent flicker during active save.`);
+            return;
+        }
+
+        if (!storeId || storeId !== activeStoreId) {
+            if (storeId !== activeStoreId) console.log(`[REALTIME] Ignoring refresh for non-active store: ${storeId}`);
+            return;
+        }
+
+        if (refreshDebounceTimers.current[storeId]) {
+            clearTimeout(refreshDebounceTimers.current[storeId]!);
+        }
+
+        refreshDebounceTimers.current[storeId] = setTimeout(async () => {
+            console.log(`[REALTIME] Debounced refresh executing for store: ${storeId}`);
+            const storeData = await db.getStoreData(storeId) as StoreData | null;
+            if (storeData) {
+                const sanitizedStoreData = sanitizeData(storeData);
+                
+                setAllStoresData(prev => {
+                    // فحص ذكي: إذا كانت البيانات القادمة مطابقة للبيانات الحالية، نلغي التحديث لمنع إعادة الرسم
+                    const isIdentical = JSON.stringify(prev[storeId]) === JSON.stringify(sanitizedStoreData);
+                    if (isIdentical) return prev;
+                    
+                    isRefreshing.current = true;
+                    return { ...prev, [storeId]: sanitizedStoreData };
+                });
+                console.log(`[REALTIME] Store ${storeId} data updated via debounce.`);
+            }
+            refreshDebounceTimers.current[storeId] = null;
+        }, 1500);
+    };
+
+    const refreshGlobalData = () => {
+        const key = 'global';
+        if (refreshDebounceTimers.current[key]) {
+            clearTimeout(refreshDebounceTimers.current[key]!);
+        }
+        refreshDebounceTimers.current[key] = setTimeout(async () => {
+            console.log('[REALTIME] Debounced global refresh executing.');
+            const globalData = await db.getGlobalData();
+            if (globalData?.users) {
+                isRefreshing.current = true;
+                setUsers(globalData.users);
+                setCurrentUser(prevUser => {
+                    if (!prevUser) return null;
+                    const updatedCurrentUser = globalData.users.find(u => u.phone === prevUser.phone);
+                    return updatedCurrentUser || prevUser;
+                });
+                console.log('[REALTIME] Global user data updated via debounce.');
+            }
+            refreshDebounceTimers.current[key] = null;
+        }, 1500);
+    };
+
+    // --- Realtime Subscriptions ---
+    useEffect(() => {
+        console.log('[REALTIME] Setting up subscriptions...');
+        
+        const handleStoreChange = (payload: any) => {
+            console.log('[REALTIME] Store data change detected:', payload);
+            const record = payload.new || payload.old;
+            const storeId = record.store_id || record.id;
+            if (storeId) {
+              refreshStoreData(storeId);
+            }
+        };
+        
+        const handleUserChange = (payload: any) => {
+            console.log('[REALTIME] User data change detected:', payload);
+            refreshGlobalData();
+        };
+
+        const subscriptions = [
+          supabase.channel('public:orders').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, handleStoreChange).subscribe(),
+          supabase.channel('public:stores_data').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'stores_data' }, handleStoreChange).subscribe(),
+          supabase.channel('public:products').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, handleStoreChange).subscribe(),
+          supabase.channel('public:transactions').on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, handleStoreChange).subscribe(),
+          supabase.channel('public:employees').on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, handleStoreChange).subscribe(),
+          supabase.channel('public:collections').on('postgres_changes', { event: '*', schema: 'public', table: 'collections' }, handleStoreChange).subscribe(),
+          supabase.channel('public:custom_pages').on('postgres_changes', { event: '*', schema: 'public', table: 'custom_pages' }, handleStoreChange).subscribe(),
+          supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleUserChange).subscribe()
+        ];
+
+        return () => {
+            console.log('[REALTIME] Removing subscriptions.');
+            subscriptions.forEach(sub => supabase.removeChannel(sub));
+        };
+    }, [activeStoreId]); // Re-run if activeStoreId changes to update the refreshStoreData closure
+
+    if (!authChecked) {
+        return <GlobalLoader />;
+    }
+
+    if (userForOtp) {
+        return <OtpVerificationPage 
+            user={userForOtp} 
+            onVerifyAttempt={handleOtpVerification}
+            onCancel={handleOtpCancel}
+            error={otpError}
+        />;
+    }
+    
+    // Props passed down to layouts and pages
+    const pageProps = {
+        users, setUsers, allStoresData, setAllStoresData, currentUser, activeStore,
+        orders: activeStoreId ? allStoresData[activeStoreId]?.orders || [] : [],
+        settings: activeStoreId ? allStoresData[activeStoreId]?.settings || INITIAL_SETTINGS : INITIAL_SETTINGS,
+        wallet: activeStoreId ? allStoresData[activeStoreId]?.wallet || { balance: 0, transactions: [] } : { balance: 0, transactions: [] },
+        cart,
+        setOrders: (updater: any) => {
+            if(activeStoreId) {
+                setAllStoresData(p => {
+                    const currentOrders = p[activeStoreId]?.orders || [];
+                    const newOrders = typeof updater === 'function' ? updater(currentOrders) : updater;
+                    
+                    if (currentOrders === newOrders) return p;
+
+                    return {
+                        ...p, 
+                        [activeStoreId]: {
+                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
+                            orders: newOrders
+                        }
+                    };
+                });
+            }
+        },
+        setSettings: (updater: any) => {
+            if(activeStoreId) {
+                setAllStoresData(p => {
+                    const currentSettings = p[activeStoreId]?.settings || INITIAL_SETTINGS;
+                    const newSettings = typeof updater === 'function' ? updater(currentSettings) : updater;
+                    
+                    if (currentSettings === newSettings) return p;
+
+                    return {
+                        ...p, 
+                        [activeStoreId]: {
+                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
+                            settings: newSettings
+                        }
+                    };
+                });
+            }
+        },
+        setWallet: (updater: any) => {
+             if(activeStoreId) {
+                setAllStoresData(p => {
+                    const currentWallet = p[activeStoreId]?.wallet || { balance: 0, transactions: [] };
+                    const newWallet = typeof updater === 'function' ? updater(currentWallet) : updater;
+                    
+                    if (currentWallet === newWallet) return p;
+
+                    return {
+                        ...p, 
+                        [activeStoreId]: {
+                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
+                            wallet: newWallet
+                        }
+                    };
+                });
+            }
+        },
+    };
+    
+    // This component acts as a guard for owner routes.
+    const OwnerLayoutWrapper = () => {
+        const location = useLocation();
+    
+        useEffect(() => {
+            if (!welcomeScreenShown) {
+                const timer = setTimeout(() => {
+                    setWelcomeScreenShown(true);
+                }, 1500);
+                return () => clearTimeout(timer);
+            }
+        }, [welcomeScreenShown]);
+    
+        if (isEmployeeSession) {
+            return <Navigate to="/employee/dashboard" replace />;
+        }
+        if (!currentUser) {
+            return <Navigate to="/owner-login" replace />;
+        }
+    
+        const hasNoStores = !currentUser.stores || currentUser.stores.length === 0;
+    
+        if (hasNoStores && !currentUser.isAdmin) {
+            if (location.pathname !== '/create-store') {
+                return <Navigate to="/create-store" replace />;
+            }
+            return (
+                <div className="bg-slate-50 dark:bg-gradient-to-b dark:from-slate-950 dark:to-[#111827] text-slate-800 dark:text-slate-200 min-h-screen" dir="rtl">
+                    <Header currentUser={currentUser} onLogout={handleLogout} onToggleSidebar={() => {}} theme={theme} setTheme={setTheme} />
+                    <main className="flex-1 p-4 md:p-6">
+                        <Outlet />
+                    </main>
+                </div>
+            );
+        }
+    
+        if (!welcomeScreenShown) {
+            return <WelcomeLoader userName={currentUser?.fullName.split(' ')[0] || ''} />;
+        }
+    
+        return <MainLayout currentUser={currentUser} handleLogout={handleLogout} isSidebarOpen={isSidebarOpen} setSidebarOpen={setIsSidebarOpen} activeStore={activeStore} theme={theme} setTheme={setTheme} />;
+    };
+    
+    // This component handles redirection for any undefined routes.
+    const CatchAllRedirect = () => {
+        if (!currentUser) {
+            return <Navigate to="/owner-login" replace />;
+        }
+        if (isEmployeeSession) {
+            return <Navigate to="/employee/dashboard" replace />;
+        }
+        if (currentUser.isAdmin) {
+            return <Navigate to="/admin" replace />;
+        }
+        return <Navigate to="/" replace />;
     };
 
     return (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/70 dark:bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-3xl shadow-2xl p-6 text-right flex flex-col max-h-[85vh] border border-slate-300 dark:border-slate-800">
-                <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-                    <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-                        <MapPin className="text-indigo-600"/> تحديد مدن {zone.label}
-                    </h3>
-                    <button onClick={onClose}><XCircle className="text-slate-400 hover:text-red-500"/></button>
-                </div>
-                <div className="space-y-4 mb-4">
-                    <div>
-                        <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 mb-2">اختر المحافظة:</label>
-                        <select value={targetGovName} onChange={(e) => setTargetGovName(e.target.value)} className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 rounded-xl font-bold">
-                            <option value="">-- اختر المحافظة --</option>
-                            {EGYPT_GOVERNORATES.map(g => ( <option key={g.name} value={g.name}>{g.name}</option> ))}
-                        </select>
-                    </div>
-                    <div className="relative">
-                        <Search size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                        <input type="text" placeholder="بحث عن مدينة..." value={citySearchTerm} onChange={(e) => setCitySearchTerm(e.target.value)} className="w-full pr-10 pl-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 rounded-xl font-bold text-sm outline-none" />
-                    </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100">
-                    {displayedCities.length === 0 ? ( <div className="flex flex-col items-center justify-center h-48 text-slate-400"> <Map className="mb-2 opacity-50" size={32}/> <p className="font-bold">لا توجد مدن للعرض.</p> </div> ) : (
-                        <>
-                            <button onClick={toggleAll} className="mb-4 text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1"> <CheckSquare size={14}/> {displayedCities.every(c => selectedCities.includes(c)) ? 'إلغاء تحديد المعروض' : 'تحديد المعروض'} </button>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                {displayedCities.map(city => {
-                                    const isSelected = selectedCities.includes(city);
-                                    return ( <div key={city} onClick={() => toggleCity(city)} className={`p-3 rounded-xl border flex items-center gap-2 cursor-pointer transition-all ${isSelected ? 'bg-indigo-50 border-indigo-500 text-indigo-700 dark:bg-indigo-900/30' : 'bg-white dark:bg-slate-800 border-slate-200'}`}> {isSelected ? <CheckSquare size={18} className="text-indigo-600"/> : <Square size={18} className="text-slate-300"/>} <span className="text-xs font-bold truncate">{city}</span> </div> )
-                                })}
-                            </div>
-                        </>
-                    )}
-                </div>
-                <div className="pt-4 border-t border-slate-200 flex justify-end gap-3 mt-2">
-                    <button onClick={onClose} className="px-6 py-2.5 rounded-xl font-bold bg-slate-100 text-slate-600">إلغاء</button>
-                    <button onClick={handleSave} className="px-6 py-2.5 rounded-xl font-bold bg-indigo-600 text-white shadow-lg active:scale-95"> حفظ ({selectedCities.length}) مدينة </button>
-                </div>
-            </div>
-        </div>
+        <>
+            <Routes>
+                <Route path="/owner-login" element={<SignUpPage onPasswordSuccess={(user) => completeLogin(user, null)} users={users} setUsers={setUsers} />} />
+                <Route path="/employee-login" element={<EmployeeLoginPage allStoresData={allStoresData} users={users} onLoginAttempt={handleEmployeeLogin} onRegisterRequest={handleEmployeeRegisterRequest} />} />
+                <Route path="/track-order" element={<OrderTrackingPage orders={pageProps.orders} />} />
+                
+                <Route path="/admin" element={<AdminLayout currentUser={currentUser} handleLogout={handleLogout} theme={theme} setTheme={setTheme} />}>
+                    <Route index element={<AdminPage {...pageProps} onImpersonate={handleImpersonate} currentUser={currentUser as User} />} />
+                    <Route path="manage-stores" element={<ManageSitesPage ownedStores={currentUser?.stores || []} collaboratingStores={[]} setActiveStoreId={handleSetActiveStore} {...pageProps} />} />
+                    <Route path="account-settings" element={<AccountSettingsPage currentUser={currentUser} setCurrentUser={setCurrentUser} users={users} setUsers={setUsers} />} />
+                </Route>
+
+                <Route path="/employee" element={
+                    <EmployeeLayoutWrapper 
+                        currentUser={currentUser} onLogout={handleLogout}
+                        storeOwner={users.find(u => u.stores?.some(s => s.id === activeStoreId))}
+                        activeStoreId={activeStoreId}
+                        theme={theme} setTheme={setTheme}
+                        allStoresData={allStoresData} users={users}
+                        handleSetActiveStore={handleSetActiveStore}
+                        installPrompt={installPrompt} onInstall={() => installPrompt?.prompt()}
+                        isStandalone={isStandalone} isIos={isIos}
+                    >
+                        <Outlet/>
+                    </EmployeeLayoutWrapper>
+                }>
+                    <Route index element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} />} />
+                    <Route path="dashboard" element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} />} />
+                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} />} />
+                    <Route path="my-activity" element={<EmployeeActivityPage currentUser={currentUser} orders={pageProps.orders} />} />
+                    <Route path="account-settings" element={<EmployeeAccountSettingsPage currentUser={currentUser} setCurrentUser={setCurrentUser} users={users} setUsers={setUsers} />} />
+                </Route>
+
+                <Route path="/" element={<OwnerLayoutWrapper />}>
+                    <Route index element={<Dashboard {...pageProps} />} />
+                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} />} />
+                    <Route path="orders" element={<OrdersList {...pageProps} addLoyaltyPointsForOrder={() => {}} />} />
+                    <Route path="products" element={<ProductsPage {...pageProps} />} />
+                    <Route path="customers" element={<CustomersPage orders={pageProps.orders} loyaltyData={{}} updateCustomerLoyaltyPoints={() => {}} />} />
+                    <Route path="wallet" element={<WalletPage {...pageProps} />} />
+                    <Route path="settings" element={<SettingsPage {...pageProps} onManualSave={currentUser?.isAdmin ? handleManualMigration : undefined} />} />
+                    <Route path="customize-store" element={<StoreCustomizationPage {...pageProps} />} />
+                    <Route path="shipping" element={<ShippingPage {...pageProps} />} />
+                    <Route path="create-store" element={<CreateStorePage currentUser={currentUser} onStoreCreated={handleStoreCreated} />} />
+                    <Route path="manage-stores" element={<ManageSitesPage ownedStores={currentUser?.stores || []} collaboratingStores={[]} setActiveStoreId={handleSetActiveStore} {...pageProps} />} />
+                    <Route path="abandoned-carts" element={<AbandonedCartsPage {...pageProps} />} />
+                    <Route path="discounts" element={<DiscountsPage {...pageProps} />} />
+                    <Route path="reviews" element={<ReviewsPage {...pageProps} />} />
+                    <Route path="collections" element={<CollectionsPage {...pageProps} />} />
+                    <Route path="product-options" element={<ProductOptionsPage {...pageProps} />} />
+                    <Route path="expenses" element={<ExpensesPage {...pageProps} />} />
+                    <Route path="marketing" element={<MarketingPage {...pageProps} />} />
+                    <Route path="ai-assistant" element={<ChatBot {...pageProps} />} />
+                    <Route path="reports" element={<AnalyticsPage {...pageProps} />} />
+                    <Route path="standard-reports" element={<ReportsPage {...pageProps} />} />
+                    <Route path="collections-report" element={<CollectionsReportPage {...pageProps} />} />
+                    <Route path="activity-logs" element={<ActivityLogsPage logs={pageProps.settings.activityLogs || []} />} />
+                    <Route path="suppliers" element={<SuppliersPage {...pageProps} />} />
+                    <Route path="pages" element={<PagesManager {...pageProps} />} />
+                    <Route path="settings/payment" element={<PaymentSettingsPage {...pageProps} />} />
+                    <Route path="settings/employees" element={<EmployeesPage {...pageProps} activeStoreId={activeStoreId} />} />
+                    <Route path="team-chat" element={<TeamChatPage {...pageProps} activeStoreId={activeStoreId} />} />
+                    <Route path="whatsapp" element={<WhatsAppPage {...pageProps} />} />
+                    <Route path="account-settings" element={<AccountSettingsPage currentUser={currentUser} setCurrentUser={setCurrentUser} users={users} setUsers={setUsers} />} />
+                    
+                    {/* Coming Soon Routes */}
+                    <Route path="product-attributes" element={<ComingSoonPage />} />
+                    <Route path="withdrawals" element={<ComingSoonPage />} />
+                    <Route path="design-templates" element={<ComingSoonPage />} />
+                    <Route path="domain" element={<ComingSoonPage />} />
+                    <Route path="legal-pages" element={<ComingSoonPage />} />
+                    <Route path="apps" element={<ComingSoonPage />} />
+                    <Route path="settings/tax" element={<ComingSoonPage />} />
+                    <Route path="settings/developer" element={<ComingSoonPage />} />
+                </Route>
+
+                <Route path="store" element={<StorefrontPage {...pageProps} onAddToCart={() => {}} onUpdateCartQuantity={() => {}} onRemoveFromCart={() => {}} />} />
+                <Route path="checkout" element={<CheckoutPage {...pageProps} onPlaceOrder={() => '123'} />} />
+                <Route path="order-success/:orderId" element={<OrderSuccessPage {...pageProps} />} />
+                <Route path="*" element={<CatchAllRedirect />} />
+            </Routes>
+            {showCongratsModal && <CongratsModal onClose={() => setShowCongratsModal(false)} />}
+            <GlobalSaveIndicator status={saveStatus} message={saveMessage} />
+        </>
     );
 };
 
-const ShippingPage: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
-  const [localSettings, setLocalSettings] = useState(settings);
-  const [isDirty, setIsDirty] = useState(false);
+// Wrapper needed for react-router v6 hooks
+export const AppWrapper = () => (
+    <HashRouter>
+        <AppComponent />
+    </HashRouter>
+);
 
-  useEffect(() => { if (!isDirty) { setLocalSettings(settings); } }, [settings]);
-  useEffect(() => { setIsDirty(JSON.stringify(localSettings) !== JSON.stringify(settings)); }, [localSettings, settings]);
-
-  const handleSave = () => { setSettings(localSettings); };
-  const handleDiscard = () => { setLocalSettings(settings); };
-
-  const [view, setView] = useState<'main' | string>('main');
-  const [showAddCompany, setShowAddCompany] = useState(false);
-  const [newCompanyName, setNewCompanyName] = useState('');
-  const [companyToDelete, setCompanyToDelete] = useState<string | null>(null);
-
-  const handleBack = () => {
-    if (isDirty) { if (window.confirm('لديك تغييرات غير محفوظة. هل تريد تجاهلها والعودة؟')) { handleDiscard(); setView('main'); } } 
-    else { setView('main'); }
-  };
-
-  const addNewCompany = () => {
-    if (!newCompanyName.trim()) return;
-    const name = newCompanyName.trim();
-    if (localSettings.shippingOptions[name]) { alert("هذه الشركة موجودة بالفعل!"); return; }
-    setLocalSettings((prev: Settings) => ({
-      ...prev,
-      shippingOptions: { ...prev.shippingOptions, [name]: [] },
-      activeCompanies: { ...prev.activeCompanies, [name]: true },
-      companySpecificFees: { 
-          ...prev.companySpecificFees, 
-          [name]: { 
-              insuranceFeePercent: prev.insuranceFeePercent, 
-              inspectionFee: prev.inspectionFee, 
-              returnShippingFee: prev.returnShippingFee, 
-              baseWeight: 1, // تم إضافة الوزن الافتراضي هنا
-              useCustomFees: false, 
-              enableCodFees: true, 
-              codThreshold: prev.codThreshold, 
-              codFeeRate: prev.codFeeRate, 
-              codTaxRate: prev.codTaxRate, 
-              enableReturnAfter: true, 
-              enableReturnWithout: true, 
-              enableExchange: true, 
-              enableFixedReturn: true 
-          } 
-      }
-    }));
-    setNewCompanyName('');
-    setShowAddCompany(false);
-  };
-
-  const deleteFullCompany = () => {
-    if (!companyToDelete) return;
-    setLocalSettings((prev: Settings) => {
-      const newOpts = { ...prev.shippingOptions }; const newActive = { ...prev.activeCompanies }; const newFees = { ...prev.companySpecificFees };
-      delete newOpts[companyToDelete]; delete newActive[companyToDelete]; delete newFees[companyToDelete];
-      return { ...prev, shippingOptions: newOpts, activeCompanies: newActive, companySpecificFees: newFees };
-    });
-    setCompanyToDelete(null);
-  };
-
-  return (
-    <div className="max-w-6xl mx-auto space-y-8 text-right pb-20 px-4">
-        <div className="relative min-h-[600px] w-full overflow-x-hidden">
-            <div className={`transition-all duration-500 ease-in-out ${view !== 'main' ? 'absolute opacity-0 -translate-x-full' : 'translate-x-0'}`}>
-                <ShippingDashboard settings={localSettings} setSettings={setLocalSettings} onManageCompany={(company: string) => setView(company)} onAddCompany={() => setShowAddCompany(true)} onDeleteCompany={(company: string) => setCompanyToDelete(company)} />
-            </div>
-            <div className={`transition-all duration-500 ease-in-out absolute w-full top-0 ${view === 'main' ? 'translate-x-full opacity-0 pointer-events-none' : 'translate-x-0'}`}>
-                {view !== 'main' && ( <CompanyManager companyName={view} settings={localSettings} setSettings={setLocalSettings} onBack={handleBack} /> )}
-            </div>
-        </div>
-      {showAddCompany && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/70 dark:bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
-           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl p-8 text-right animate-in zoom-in duration-200 border border-slate-300 dark:border-slate-800">
-              <div className="flex items-center gap-4 text-indigo-600 mb-8 pb-4 border-b border-slate-200 dark:border-slate-800">
-                 <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl"><Building2 size={28} /></div>
-                 <h3 className="text-2xl font-black dark:text-white">إضافة شركة شحن جديدة</h3>
-              </div>
-              <div className="space-y-6">
-                 <div className="space-y-2">
-                    <label className="text-sm font-black text-slate-700 dark:text-slate-400 uppercase">اسم الشركة</label>
-                    <input type="text" autoFocus placeholder="مثلاً: بوسطة، فيديكس..." className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-300 rounded-2xl outline-none text-lg font-black dark:text-white" value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addNewCompany()}/>
-                 </div>
-                 <div className="flex flex-col gap-3 pt-4">
-                    <button onClick={addNewCompany} disabled={!newCompanyName.trim()} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg hover:bg-indigo-700 disabled:bg-slate-300 active:scale-95 flex items-center justify-center gap-2"><Save size={20} /> حفظ الشركة</button>
-                    <button onClick={() => { setShowAddCompany(false); setNewCompanyName(''); }} className="w-full py-4 text-slate-500 font-black hover:bg-slate-100 rounded-2xl transition-all">إلغاء</button>
-                 </div>
-              </div>
-           </div>
-        </div>
-      )}
-      {companyToDelete && <DeleteConfirmModal title={`حذف شركة ${companyToDelete}؟`} desc="سيتم مسح كافة المناطق والبيانات المالية المرتبطة بهذه الشركة نهائياً." onConfirm={deleteFullCompany} onCancel={() => setCompanyToDelete(null)} />}
-      <SaveBar isVisible={isDirty} onSave={handleSave} onDiscard={handleDiscard} />
-    </div>
-  );
-};
-
-const ShippingDashboard: React.FC<any> = ({ settings, setSettings, onManageCompany, onAddCompany, onDeleteCompany }) => {
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => { const { name, value, type } = e.target; setSettings((prev: Settings) => ({ ...prev, [name]: type === 'number' ? Number(value) : value })); };
-    const toggleSetting = (key: keyof Settings) => { setSettings((prev: Settings) => ({ ...prev, [key]: !prev[key] })); };
-    const toggleCompanyActive = (company: string) => { setSettings((prev: Settings) => ({ ...prev, activeCompanies: { ...prev.activeCompanies, [company]: !prev.activeCompanies[company] } })); };
-    return (
-        <motion.div className="space-y-6" variants={containerVariants} initial="hidden" animate="visible">
-             <motion.div variants={itemVariants} className="flex items-center gap-4">
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-600 rounded-xl"><Truck size={28} /></div>
-                <div>
-                    <h1 className="text-3xl font-black text-slate-800 dark:text-white">إعدادات الشحن</h1>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">إدارة شركات الشحن، مناطق التوصيل، والسياسات المالية.</p>
-                </div>
-            </motion.div>
-            <motion.div variants={itemVariants}>
-              <SectionCard title="شركات الشحن" icon={<Building2 size={22} className="text-indigo-600" />} action={<button onClick={onAddCompany} className="flex items-center gap-2 text-sm bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-indigo-700 active:scale-95 transition-all"><Plus size={16} /> إضافة شركة</button>}>
-                  <div className="space-y-3">
-                      {Object.keys(settings.shippingOptions).length > 0 ? Object.keys(settings.shippingOptions).map((company) => (
-                          <div key={company} className="flex items-center justify-between p-3 pr-5 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200">
-                              <div className="flex items-center gap-3">
-                                  <div className={`p-2 rounded-lg ${settings.activeCompanies[company] ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'}`}><Truck size={20}/></div>
-                                  <span className="font-bold text-slate-800 dark:text-white">{company}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                  <ToggleButton active={settings.activeCompanies[company]} onToggle={() => toggleCompanyActive(company)} />
-                                  <button onClick={() => onManageCompany(company)} className="px-4 py-2 text-xs font-bold bg-white dark:bg-slate-700 border border-slate-300 rounded-md hover:bg-slate-100">إدارة</button>
-                                  <button onClick={() => onDeleteCompany(company)} className="p-2 text-slate-400 hover:text-red-500"><Trash2 size={16}/></button>
-                              </div>
-                          </div>
-                      )) : <p className="text-center text-sm text-slate-400 py-4">لم تقم بإضافة أي شركات شحن بعد.</p>}
-                  </div>
-              </SectionCard>
-            </motion.div>
-            <motion.div variants={itemVariants}>
-              <SectionCard title="الإعدادات المالية العامة" icon={<Coins size={22} className="text-emerald-600" />} action={<ToggleButton active={settings.enableGlobalFinancials} onToggle={() => toggleSetting('enableGlobalFinancials')} variant="emerald" />}>
-                  <div className={`space-y-6 transition-all duration-300 ${!settings.enableGlobalFinancials && 'opacity-40 pointer-events-none grayscale'}`}>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                          <FinancialCard label="نسبة التأمين (%)" name="insuranceFeePercent" value={settings.insuranceFeePercent} isActive={settings.enableInsurance} onToggle={() => toggleSetting('enableInsurance')} onChange={handleChange} icon={<ShieldCheck size={16} className="text-blue-500" />} desc="تُخصم من إجمالي الأوردر عند التحصيل." />
-                          <FinancialCard label="رسوم المعاينة (ج.م)" name="inspectionFee" value={settings.inspectionFee} isActive={settings.enableInspection} onToggle={() => toggleSetting('enableInspection')} onChange={handleChange} icon={<Eye size={16} className="text-emerald-500" />} desc="رسوم مقابل فحص المنتج عند الاستلام." />
-                          <FinancialCard label="شحن المرتجع (ج.م)" name="returnShippingFee" value={settings.returnShippingFee} isActive={settings.enableReturnShipping} onToggle={() => toggleSetting('enableReturnShipping')} onChange={handleChange} icon={<RefreshCcw size={16} className="text-red-500" />} desc="مبلغ إضافي يُحسب كخسارة في المرتجع." />
-                          <FinancialCard label="السعر الافتراضي (ج.م)" name="defaultProductPrice" value={settings.defaultProductPrice} isActive={settings.enableDefaultPrice} onToggle={() => toggleSetting('enableDefaultPrice')} onChange={handleChange} icon={<Package size={16} className="text-indigo-500" />} desc="السعر التلقائي عند تسجيل أوردر جديد." />
-                      </div>
-                  </div>
-              </SectionCard>
-            </motion.div>
-        </motion.div>
-    );
-};
-
-const CompanyManager: React.FC<any> = ({ companyName, settings, setSettings, onBack }) => {
-    const [activeTab, setActiveTab] = useState<'zones' | 'financials'>('zones');
-    return (
-        <div className="space-y-6">
-             <div className="flex items-center justify-between">
-                 <div className="flex items-center gap-4">
-                    <button onClick={onBack} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50"><ArrowRight size={20}/></button>
-                    <div>
-                        <h1 className="text-3xl font-black text-slate-800 dark:text-white">إدارة شركة: {companyName}</h1>
-                        <p className="text-slate-500 dark:text-slate-400 mt-1">تعديل مناطق الشحن والسياسات المالية الخاصة بالشركة.</p>
-                    </div>
-                 </div>
-             </div>
-             <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded-xl flex items-center gap-2">
-                <button onClick={() => setActiveTab('zones')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'zones' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-slate-200'}`}><MapPin size={16}/> مناطق الشحن</button>
-                <button onClick={() => setActiveTab('financials')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'financials' ? 'bg-white dark:bg-slate-700 shadow-sm text-purple-600' : 'text-slate-500 hover:bg-slate-200'}`}><Wallet size={16}/> الإعدادات المالية</button>
-             </div>
-             <div className="transition-opacity duration-300 animate-in fade-in">
-                {activeTab === 'zones' && <ZonesEditor companyName={companyName} settings={settings} setSettings={setSettings} />}
-                {activeTab === 'financials' && <CompanyFinancialsEditor companyName={companyName} settings={settings} setSettings={setSettings} />}
-             </div>
-        </div>
-    );
-};
-
-const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [expandedZoneId, setExpandedZoneId] = useState<string | null>(null);
-  const [managingZoneId, setManagingZoneId] = useState<string | null>(null);
-  
-  const [newCityName, setNewCityName] = useState('');
-  const [newCityPrice, setNewCityPrice] = useState('');
-  const [newCityExtraKg, setNewCityExtraKg] = useState('');
-  const [newCityReturnAfter, setNewCityReturnAfter] = useState('');
-  const [newCityReturnWithout, setNewCityReturnWithout] = useState('');
-  const [newCityExchange, setNewCityExchange] = useState('');
-  const [newCityUseParent, setNewCityUseParent] = useState(true);
-
-  const companyFees = settings.companySpecificFees[companyName];
-  const showExchange = companyFees?.useCustomFees ? companyFees.enableExchange : settings.enableExchangePrice;
-  const showReturnAfter = companyFees?.useCustomFees ? companyFees.enableReturnAfter : settings.enableReturnAfterPrice;
-  const showReturnWithout = companyFees?.useCustomFees ? companyFees.enableReturnWithout : settings.enableReturnWithoutPrice;
-
-  const activePriceColumns = 2 + (showReturnAfter ? 1 : 0) + (showReturnWithout ? 1 : 0) + (showExchange ? 1 : 0);
-  const gridTemplate = `minmax(140px, 1.5fr) 40px repeat(${activePriceColumns}, minmax(70px, 1fr)) 40px`;
-
-  const updateShippingOption = (id: string, field: keyof ShippingOption, value: string | number) => {
-    setSettings((prev: Settings) => ({ ...prev, shippingOptions: { ...prev.shippingOptions, [companyName]: (prev.shippingOptions[companyName] || []).map(opt => opt.id === id ? { ...opt, [field]: value } : opt) } }));
-  };
-
-  const toggleZoneStatus = (id: string) => {
-      setSettings((prev: Settings) => ({ ...prev, shippingOptions: { ...prev.shippingOptions, [companyName]: (prev.shippingOptions[companyName] || []).map(opt => {
-          if (opt.id === id) { const isActive = opt.active !== false; if (isActive && expandedZoneId === id) { setExpandedZoneId(null); } return { ...opt, active: !isActive }; }
-          return opt;
-      }) } }));
-  };
-
-  const loadEgyptData = () => {
-    if (confirm('سيتم إضافة جميع محافظات ومدن مصر إلى هذه الشركة. هل تريد المتابعة؟')) {
-        const egyptZones = generateEgyptShippingOptions();
-        setSettings((prev: Settings) => ({ ...prev, shippingOptions: { ...(prev.shippingOptions || {}), [companyName]: egyptZones } }));
-        alert('تم استيراد محافظات مصر بنجاح!');
-    }
-  }
-
-  const handleUpdateZoneCities = (newCities: CityOption[]) => {
-      if (!managingZoneId) return;
-      setSettings((prev: Settings) => ({ ...prev, shippingOptions: { ...prev.shippingOptions, [companyName]: (prev.shippingOptions[companyName] || []).map(opt => opt.id === managingZoneId ? { ...opt, cities: newCities } : opt) } }));
-      setManagingZoneId(null);
-  };
-
-  const managingZone = settings.shippingOptions[companyName]?.find(z => z.id === managingZoneId);
-
-  return (
-    <SectionCard title="جدول تسعير المناطق" icon={<MapPin size={22} />} action={<div className="flex gap-2"><button onClick={loadEgyptData} className="flex items-center gap-2 text-xs bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-bold hover:bg-slate-200 transition-all"><Download size={16} /> استيراد محافظات مصر</button></div>}>
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 font-bold text-xs uppercase">
-            <tr>
-              <th className="p-3 text-right">المنطقة / المحافظة</th>
-              <th className="p-3 text-center">الشحن</th>
-              <th className="p-3 text-center">زيادة كجم</th>
-              {showReturnAfter && <th className="p-3 text-center">إرجاع بعد</th>}
-              {showReturnWithout && <th className="p-3 text-center">إرجاع بدون</th>}
-              {showExchange && <th className="p-3 text-center">استبدال</th>}
-              <th className="p-3 text-center">المدن</th>
-              <th className="p-3 text-center">إلغاء</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-            {(settings.shippingOptions[companyName] || []).map((opt: ShippingOption) => {
-              const isActive = opt.active !== false;
-              return (
-              <React.Fragment key={opt.id}>
-                  <tr className={`transition-all ${!isActive ? 'opacity-50 grayscale bg-slate-100' : ''}`}>
-                    <td className="p-2 w-48"><input type="text" disabled={!isActive} className="w-full bg-slate-50 dark:bg-slate-800 px-2 py-2 border border-slate-200 rounded-md font-bold text-slate-900 dark:text-white" value={opt.label} onChange={(e) => updateShippingOption(opt.id, 'label', e.target.value)} /></td>
-                    <td className="p-2"><input type="number" disabled={!isActive} className="w-20 text-center bg-white dark:bg-slate-800 px-2 py-2 border border-slate-200 rounded-md font-bold" value={opt.price} onChange={(e) => updateShippingOption(opt.id, 'price', Number(e.target.value))} /></td>
-                    <td className="p-2"><input type="number" disabled={!isActive} className="w-20 text-center bg-white dark:bg-slate-800 px-2 py-2 border border-slate-200 rounded-md font-bold" value={opt.extraKgPrice} onChange={(e) => updateShippingOption(opt.id, 'extraKgPrice', Number(e.target.value))} /></td>
-                    {showReturnAfter && <td className="p-2"><input type="number" disabled={!isActive} className="w-20 text-center bg-white dark:bg-slate-800 px-2 py-2 border border-slate-200 rounded-md font-bold" value={opt.returnAfterPrice} onChange={(e) => updateShippingOption(opt.id, 'returnAfterPrice', Number(e.target.value))} /></td>}
-                    {showReturnWithout && <td className="p-2"><input type="number" disabled={!isActive} className="w-20 text-center bg-white dark:bg-slate-800 px-2 py-2 border border-slate-200 rounded-md font-bold" value={opt.returnWithoutPrice} onChange={(e) => updateShippingOption(opt.id, 'returnWithoutPrice', Number(e.target.value))} /></td>}
-                    {showExchange && <td className="p-2"><input type="number" disabled={!isActive} className="w-20 text-center bg-white dark:bg-slate-800 px-2 py-2 border border-slate-200 rounded-md font-bold" value={opt.exchangePrice} onChange={(e) => updateShippingOption(opt.id, 'exchangePrice', Number(e.target.value))} /></td>}
-                    <td className="p-2 text-center"> <button disabled={!isActive} onClick={() => setExpandedZoneId(expandedZoneId === opt.id ? null : opt.id)} className={`p-2 rounded-lg ${expandedZoneId === opt.id ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:bg-slate-100'}`}> <Map size={16} /> </button> </td>
-                    <td className="p-2 text-center"> <button onClick={() => toggleZoneStatus(opt.id)} className={`p-2 rounded-lg ${isActive ? 'text-slate-400 hover:text-red-500' : 'text-emerald-500'}`}> {isActive ? <XCircle size={16} /> : <RefreshCcw size={16} />} </button> </td>
-                  </tr>
-                  {expandedZoneId === opt.id && ( <tr> <td colSpan={10} className="p-4 bg-slate-50 dark:bg-slate-800/50"> <div className="flex justify-between items-center mb-3"> <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2"><Map size={14}/> المدن التابعة لـ {opt.label}</h4> <button onClick={() => setManagingZoneId(opt.id)} className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100"><ListChecks size={14}/> تحديد المدن المتاحة</button> </div> <p className="text-xs text-slate-400 italic text-center py-2">استخدم زر "تحديد المدن" لإضافة أو حذف مدن من هذه المنطقة.</p> </td> </tr> )}
-              </React.Fragment>
-            )})}
-          </tbody>
-        </table>
-      </div>
-      {managingZone && <CityManagerModal isOpen={!!managingZoneId} onClose={() => setManagingZoneId(null)} zone={managingZone} onSave={handleUpdateZoneCities} />}
-    </SectionCard>
-  );
-};
-
-const CompanyFinancialsEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
-    const companyFees = settings.companySpecificFees[companyName] || { useCustomFees: false };
-    const handleCompanyFeeChange = (field: keyof CompanyFees, value: any) => { setSettings((prev: Settings) => ({ ...prev, companySpecificFees: { ...prev.companySpecificFees, [companyName]: { ...prev.companySpecificFees[companyName], [field]: value } } })); };
-    return (
-        <SectionCard title={`الإعدادات المالية لـ ${companyName}`} icon={<Wallet size={22} />}>
-            <div className="space-y-6">
-                <div className="flex items-center justify-between bg-emerald-50 dark:bg-emerald-950/30 p-4 rounded-xl border border-emerald-200">
-                    <div> <span className="text-sm font-bold text-emerald-800 dark:text-emerald-400">تفعيل إعدادات مالية خاصة</span> <p className="text-xs text-emerald-600 font-medium">تجاهل القيم العامة واستخدام قيم مخصصة لهذه الشركة.</p> </div>
-                    <ToggleButton active={companyFees.useCustomFees} onToggle={() => handleCompanyFeeChange('useCustomFees', !companyFees.useCustomFees)} variant="emerald" />
-                </div>
-                <div className={`space-y-6 ${!companyFees.useCustomFees && 'opacity-40 pointer-events-none grayscale'}`}>
-                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> {/* تم التحديث لـ 4 أعمدة لإضافة الوزن */}
-                        <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500">التأمين %</label><input type="number" value={companyFees.insuranceFeePercent || 0} onChange={(e) => handleCompanyFeeChange('insuranceFeePercent', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 rounded-xl font-bold" /></div>
-                        
-                        {/* الخانة الجديدة: الوزن الافتراضي */}
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-indigo-600">الوزن الافتراضي (كجم)</label>
-                            <input type="number" value={companyFees.baseWeight || 1} onChange={(e) => handleCompanyFeeChange('baseWeight', Number(e.target.value))} className="w-full p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 rounded-xl font-bold text-indigo-700" placeholder="مثلاً 5" />
-                        </div>
-
-                        <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500">المعاينة ج.م</label><input type="number" value={companyFees.inspectionFee || 0} onChange={(e) => handleCompanyFeeChange('inspectionFee', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 rounded-xl font-bold" /></div>
-                        <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500">مرتجع ثابت ج.م</label><input type="number" value={companyFees.returnShippingFee || 0} onChange={(e) => handleCompanyFeeChange('returnShippingFee', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 rounded-xl font-bold" /></div>
-                    </div>
-                     <div className="bg-amber-50 dark:bg-amber-950/20 p-5 rounded-xl border border-amber-200 space-y-4">
-                        <div className="flex justify-between items-center"><span className="text-sm font-bold text-amber-900 dark:text-amber-300">رسوم COD</span><ToggleButton active={companyFees.enableCodFees} onToggle={() => handleCompanyFeeChange('enableCodFees', !companyFees.enableCodFees)} variant="amber" /></div>
-                        <div className={`grid grid-cols-3 gap-3 ${!companyFees.enableCodFees && 'opacity-40 grayscale pointer-events-none'}`}>
-                            <CodInput label="حد المجاني" value={companyFees.codThreshold || 0} onChange={(val) => handleCompanyFeeChange('codThreshold', val)} />
-                            <CodInput label="النسبة %" value={companyFees.codFeeRate || 0} step="0.01" onChange={(val) => handleCompanyFeeChange('codFeeRate', val)} />
-                            <CodInput label="الضريبة %" value={companyFees.codTaxRate || 0} step="0.1" onChange={(val) => handleCompanyFeeChange('codTaxRate', val)} />
-                        </div>
-                    </div>
-                     <div className="pt-6 border-t border-slate-200">
-                        <h4 className="font-bold text-slate-700 mb-4">سياسات التسعير المتقدمة</h4>
-                        <div className="space-y-4">
-                            <PolicyToggle label="تفعيل تسعير الاستبدال" description="يضيف عمود 'سعر الاستبدال' في جدول تسعير المناطق." active={companyFees.enableExchange} onToggle={() => handleCompanyFeeChange('enableExchange', !companyFees.enableExchange)} />
-                            <PolicyToggle label="تفعيل تسعير الإرجاع بعد المعاينة" description="يضيف عمود 'سعر الإرجاع بعد المعاينة' في جدول تسعير المناطق." active={companyFees.enableReturnAfter} onToggle={() => handleCompanyFeeChange('enableReturnAfter', !companyFees.enableReturnAfter)} />
-                            <PolicyToggle label="تفعيل تسعير الإرجاع بدون معاينة" description="يضيف عمود 'سعر الإرجاع بدون معاينة' في جدول تسعير المناطق." active={companyFees.enableReturnWithout} onToggle={() => handleCompanyFeeChange('enableReturnWithout', !companyFees.enableReturnWithout)} />
-                            <PolicyToggle label="تطبيق رسوم مرتجع ثابتة" description="يخصم مبلغ 'مرتجع ثابت' كخسارة إضافية عند إرجاع أي طلب." active={companyFees.enableFixedReturn} onToggle={() => handleCompanyFeeChange('enableFixedReturn', !companyFees.enableFixedReturn)} />
-                        </div>
-                     </div>
-                </div>
-            </div>
-        </SectionCard>
-    );
-};
-
-const FinancialCard: React.FC<any> = ({ label, name, value, isActive, onToggle, onChange, icon, desc }) => ( <div className={`p-5 rounded-2xl border transition-all ${isActive ? 'bg-white dark:bg-slate-800/30 border-slate-300' : 'bg-slate-100 border-slate-200 opacity-60'}`}> <div className="flex items-center justify-between mb-4"> <label className="text-sm font-black text-slate-800 dark:text-slate-300 flex items-center gap-2">{icon} {label}</label> <ToggleButton active={isActive} onToggle={onToggle} /> </div> <div className="relative"> <input type="number" name={name} disabled={!isActive} className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 rounded-xl outline-none font-black dark:text-white transition-all" value={value} onChange={onChange} /> </div> <p className="text-[10px] text-slate-500 mt-3 leading-relaxed font-bold">{desc}</p> </div> );
-const CodInput: React.FC<any> = ({ label, value, onChange, step = "1" }) => ( <div className="space-y-1"> <label className="text-[10px] font-black text-amber-700 uppercase tracking-tight">{label}</label> <input type="number" step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full px-2 py-2.5 bg-white dark:bg-slate-800 border border-amber-300 rounded-xl text-sm outline-none font-black dark:text-white" /> </div> );
-
-export default ShippingPage;
+// We keep a named export for index.tsx, but the app itself is now a React app.
+// The default export is what matters for the React ecosystem.
+export default AppWrapper;
