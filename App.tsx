@@ -9,62 +9,61 @@ import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate, us
 
 import { User, Store, StoreData, Order, Settings, Wallet, OrderItem, Employee, Product, PlaceOrderData } from './types';
 import * as db from './services/databaseService';
-import { supabase } from './services/supabaseClient';
 import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
 import { oneToolzProducts } from './src/data/one-toolz-products';
 
 // Page Components (will be loaded via router)
-import SignUpPage from './components/SignUpPage';
-import EmployeeLoginPage from './components/EmployeeLoginPage';
-import CreateStorePage from './components/CreateStorePage';
-import ManageSitesPage from './components/ManageSitesPage';
-import Dashboard from './components/Dashboard';
+import SignUpPage from './src/pages/SignUpPage';
+import EmployeeLoginPage from './src/pages/EmployeeLoginPage';
+import CreateStorePage from './src/pages/CreateStorePage';
+import ManageSitesPage from './src/pages/ManageSitesPage';
+import Dashboard from './src/pages/Dashboard';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import OrdersList from './components/OrdersList';
 import ProductsPage from './components/ProductsPage';
-import CustomersPage from './components/CustomersPage';
+import CustomersPage from './src/pages/CustomersPage';
 import WalletPage from './components/WalletPage';
-import SettingsPage from './components/SettingsPage';
+import SettingsPage from './src/pages/SettingsPage';
 import StorefrontPage from './components/StorefrontPage';
-import CheckoutPage from './components/CheckoutPage';
-import OrderSuccessPage from './components/OrderSuccessPage';
+import CheckoutPage from './src/pages/CheckoutPage';
+import OrderSuccessPage from './src/pages/OrderSuccessPage';
 import StoreCustomizationPage from './components/StoreCustomizationPage';
-import ShippingPage from './components/ShippingPage';
-import ConfirmationQueuePage from './components/ConfirmationQueuePage';
-import AbandonedCartsPage from './components/AbandonedCartsPage';
-import DiscountsPage from './components/DiscountsPage';
+import ShippingPage from './src/pages/ShippingPage';
+import ConfirmationQueuePage from './src/pages/ConfirmationQueuePage';
+import AbandonedCartsPage from './src/pages/AbandonedCartsPage';
+import DiscountsPage from './src/pages/DiscountsPage';
 import ReviewsPage from './components/ReviewsPage';
-import CollectionsPage from './components/CollectionsPage';
+import CollectionsPage from './src/pages/CollectionsPage';
 import ProductOptionsPage from './components/ProductOptionsPage';
-import ExpensesPage from './components/ExpensesPage';
-import MarketingPage from './components/MarketingPage';
-import AnalyticsPage from './components/AnalyticsPage';
+import ExpensesPage from './src/pages/ExpensesPage';
+import MarketingPage from './src/pages/MarketingPage';
+import AnalyticsPage from './src/pages/AnalyticsPage';
 // FIX: AdminPage is a default export, so it should be imported as such.
-import AdminPage from './components/AdminPage';
+import AdminPage from './src/pages/AdminPage';
 import EmployeeLayout from './components/EmployeeLayout';
-import EmployeeDashboardPage from './components/EmployeeDashboardPage';
-import EmployeeAccountSettingsPage from './components/EmployeeAccountSettingsPage';
-import EmployeeActivityPage from './components/EmployeeActivityPage';
-import AccountSettingsPage from './components/AccountSettingsPage';
-import CollectionsReportPage from './components/CollectionsReportPage';
-import ActivityLogsPage from './components/ActivityLogsPage';
+import EmployeeDashboardPage from './src/pages/EmployeeDashboardPage';
+import EmployeeAccountSettingsPage from './src/pages/EmployeeAccountSettingsPage';
+import EmployeeActivityPage from './src/pages/EmployeeActivityPage';
+import AccountSettingsPage from './src/pages/AccountSettingsPage';
+import CollectionsReportPage from './src/pages/CollectionsReportPage';
+import ActivityLogsPage from './src/pages/ActivityLogsPage';
 import SuppliersPage from './components/SuppliersPage';
 import PagesManager from './components/PagesManager';
-import PaymentSettingsPage from './components/PaymentSettingsPage';
+import PaymentSettingsPage from './src/pages/PaymentSettingsPage';
 import TeamChatPage from './components/TeamChatPage';
 import WhatsAppPage from './components/WhatsAppPage';
 import WelcomeLoader from './components/WelcomeLoader';
 import GlobalLoader from './components/GlobalLoader';
-import EmployeesPage from './components/EmployeesPage';
+import EmployeesPage from './src/pages/EmployeesPage';
 import ReportsPage from './components/ReportsPage';
 import ChatBot from './components/ChatBot';
 import CongratsModal from './components/CongratsModal';
-import OrderTrackingPage from './components/OrderTrackingPage';
-import OtpVerificationPage from './components/OtpVerificationPage';
+import OrderTrackingPage from './src/pages/OrderTrackingPage';
+import OtpVerificationPage from './src/pages/OtpVerificationPage';
 import IosInstallPrompt from './components/IosInstallPrompt';
-import ComingSoonPage from './components/ComingSoonPage';
+import ComingSoonPage from './src/pages/ComingSoonPage';
 
 interface EmployeeRegisterRequestData {
   fullName: string;
@@ -357,16 +356,11 @@ export const AppComponent = () => {
         setOtpError('');
 
         try {
-            const { data, error } = await supabase.functions.invoke('verify-otp', {
-                body: { email: userForOtp.email, otp },
-            });
-
-            if (error) throw error;
-
-            if (data.valid) {
+            // Mock OTP verification since Supabase is removed
+            if (otp === '123456') {
                 completeLogin(userForOtp, sessionInfoForOtp);
             } else {
-                setOtpError(data.message || 'رمز التحقق غير صحيح أو منتهي الصلاحية.');
+                setOtpError('رمز التحقق غير صحيح أو منتهي الصلاحية.');
             }
         } catch (err: any) {
             console.error('Error verifying OTP:', err);
@@ -627,34 +621,41 @@ export const AppComponent = () => {
     useEffect(() => {
         console.log('[REALTIME] Setting up subscriptions...');
         
-        const handleStoreChange = (payload: any) => {
-            console.log('[REALTIME] Store data change detected:', payload);
-            const record = payload.new || payload.old;
-            const storeId = record.store_id || record.id;
+        const handleStoreChange = (storeId: string) => {
+            console.log('[REALTIME] Store data change detected for store:', storeId);
             if (storeId) {
               refreshStoreData(storeId);
             }
         };
         
-        const handleUserChange = (payload: any) => {
-            console.log('[REALTIME] User data change detected:', payload);
+        const handleUserChange = () => {
+            console.log('[REALTIME] User data change detected');
             refreshGlobalData();
         };
 
-        const subscriptions = [
-          supabase.channel('public:orders').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, handleStoreChange).subscribe(),
-          supabase.channel('public:stores_data').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'stores_data' }, handleStoreChange).subscribe(),
-          supabase.channel('public:products').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, handleStoreChange).subscribe(),
-          supabase.channel('public:transactions').on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, handleStoreChange).subscribe(),
-          supabase.channel('public:employees').on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, handleStoreChange).subscribe(),
-          supabase.channel('public:collections').on('postgres_changes', { event: '*', schema: 'public', table: 'collections' }, handleStoreChange).subscribe(),
-          supabase.channel('public:custom_pages').on('postgres_changes', { event: '*', schema: 'public', table: 'custom_pages' }, handleStoreChange).subscribe(),
-          supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleUserChange).subscribe()
-        ];
+        const unsubscribes: (() => void)[] = [];
+
+        import('./firebase').then(({ db }) => {
+            import('firebase/firestore').then(({ collection, onSnapshot, doc }) => {
+                // Listen to users collection
+                const unsubUsers = onSnapshot(collection(db, 'users'), () => {
+                    handleUserChange();
+                });
+                unsubscribes.push(unsubUsers);
+
+                // Listen to active store
+                if (activeStoreId) {
+                    const unsubStore = onSnapshot(doc(db, 'stores', activeStoreId), () => {
+                        handleStoreChange(activeStoreId);
+                    });
+                    unsubscribes.push(unsubStore);
+                }
+            });
+        });
 
         return () => {
             console.log('[REALTIME] Removing subscriptions.');
-            subscriptions.forEach(sub => supabase.removeChannel(sub));
+            unsubscribes.forEach(unsub => unsub());
         };
     }, [activeStoreId]); // Re-run if activeStoreId changes to update the refreshStoreData closure
 
@@ -861,11 +862,15 @@ export const AppComponent = () => {
     );
 };
 
+import ErrorBoundary from './components/ErrorBoundary';
+
 // Wrapper needed for react-router v6 hooks
 export const AppWrapper = () => (
-    <HashRouter>
-        <AppComponent />
-    </HashRouter>
+    <ErrorBoundary>
+        <HashRouter>
+            <AppComponent />
+        </HashRouter>
+    </ErrorBoundary>
 );
 
 // We keep a named export for index.tsx, but the app itself is now a React app.

@@ -356,6 +356,8 @@ export interface Order {
   date: string;
   shippingCompany: string;
   shippingArea: string;
+  governorate?: string;
+  city?: string;
   customerName: string;
   customerPhone: string;
   customerPhone2?: string;
@@ -405,6 +407,8 @@ export interface PlaceOrderData {
     customerAddress: string;
     shippingCompany: string;
     shippingArea: string;
+    governorate?: string;
+    city?: string;
     shippingFee: number;
     notes?: string;
     redeemedPoints: number;
