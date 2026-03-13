@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown } from 'lucide-react';
+import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, Settings as SettingsIcon } from 'lucide-react';
 import { Order, Settings, OrderStatus, Wallet, Transaction, PaymentStatus, PreparationStatus, OrderItem, Product, CustomerProfile, Store } from '../types';
-import { ORDER_STATUSES } from '../constants';
+import { ORDER_STATUSES, EGYPT_GOVERNORATES } from '../constants';
 import { motion, Variants } from 'framer-motion';
 import { generateInvoiceHTML } from '../utils/invoiceGenerator';
 import { generateShippingLabelHTML } from '../utils/shippingLabelGenerator';
@@ -56,13 +56,15 @@ const WaybillModal: React.FC<{ order: Order; onClose: () => void; onSave: (waybi
     };
 
     return (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-xl p-8 text-right animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl p-8 text-right animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-3 text-blue-600 dark:text-blue-400 mb-6">
-                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg"><FileSearch size={24}/></div>
+                    <div className="p-3 bg-blue-50 dark:bg-blue-500/10 rounded-2xl border border-blue-100 dark:border-blue-500/20">
+                        <FileSearch size={24}/>
+                    </div>
                     <h3 className="text-xl font-black dark:text-white">إدخال رقم بوليصة الشحن</h3>
                 </div>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
                     لتغيير حالة الطلب إلى "تم الارسال"، يجب إدخال رقم بوليصة الشحن أولاً.
                 </p>
                 <form onSubmit={handleSubmit}>
@@ -70,13 +72,17 @@ const WaybillModal: React.FC<{ order: Order; onClose: () => void; onSave: (waybi
                         type="text" 
                         value={waybill}
                         onChange={e => setWaybill(e.target.value)}
-                        className="w-full p-4 bg-slate-100 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl font-mono text-center text-lg outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500"
+                        className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-slate-700 rounded-2xl font-mono text-center text-lg outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all dark:text-white"
                         placeholder="رقم البوليصة"
                         autoFocus
                     />
-                    <div className="flex gap-3 mt-6">
-                        <button type="submit" disabled={!waybill.trim()} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:bg-slate-400">حفظ وتغيير الحالة</button>
-                        <button type="button" onClick={onClose} className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-600">إلغاء</button>
+                    <div className="flex gap-3 mt-8">
+                        <button type="submit" disabled={!waybill.trim()} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:text-slate-500 shadow-sm hover:shadow">
+                            حفظ وتغيير الحالة
+                        </button>
+                        <button type="button" onClick={onClose} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">
+                            إلغاء
+                        </button>
                     </div>
                 </form>
             </div>
@@ -140,12 +146,30 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
   useEffect(() => {
     const orderData = editingOrder || newOrder;
     const options = settings.shippingOptions[orderData.shippingCompany!] || [];
-    const selectedOpt = options.find(o => o.label === orderData.shippingArea) || options[0];
+    const effectiveOptions = options.length > 0 ? options : EGYPT_GOVERNORATES.map((gov, index) => ({
+        id: `gov_fallback_${index}`,
+        label: gov.name,
+        price: 0,
+        baseWeight: 1,
+        extraKgPrice: 0,
+        cities: gov.cities.map((city, cIndex) => ({ id: `city_fallback_${index}_${cIndex}`, name: city, shippingPrice: 0 }))
+    })) as any[];
+
+    const selectedOpt = effectiveOptions.find(o => o.label === (orderData.governorate || orderData.shippingArea)) || effectiveOptions[0];
     if (selectedOpt) {
       const totalWeight = orderData.items?.reduce((sum, item) => sum + item.weight * item.quantity, 0) || 0;
-      const baseFee = selectedOpt.price;
-      const extraWeight = Math.max(0, totalWeight - selectedOpt.baseWeight);
-      const totalFee = baseFee + (extraWeight * selectedOpt.extraKgPrice);
+      
+      // Check for city-specific price
+      let baseFee = selectedOpt.price || 0;
+      if (orderData.city) {
+          const cityOpt = selectedOpt.cities?.find((c: any) => c.name === orderData.city);
+          if (cityOpt && cityOpt.shippingPrice !== undefined && cityOpt.shippingPrice !== null) {
+              baseFee = cityOpt.shippingPrice;
+          }
+      }
+
+      const extraWeight = Math.max(0, totalWeight - (selectedOpt.baseWeight || 1));
+      const totalFee = baseFee + (extraWeight * (selectedOpt.extraKgPrice || 0));
       
       if (orderData.shippingFee !== totalFee || orderData.shippingArea !== selectedOpt.label) {
         if (editingOrder) {
@@ -162,7 +186,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
     if (activeTab === 'الأرشيف') {
         baseFilter = orders.filter(o => o.status === 'مؤرشف');
     } else {
-        baseFilter = orders.filter(o => o.status !== 'مؤرشف' && o.status !== 'في_انتظار_المكالمة');
+        baseFilter = orders.filter(o => o.status !== 'مؤرشف');
     }
 
     const searched = baseFilter.filter((o: Order) => 
@@ -545,8 +569,19 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
   };
 
   const handleExportCSV = () => {
-    const headers = ['رقم الطلب', 'رقم البوليصة', 'العميل', 'الهاتف', 'المحافظة', 'المنتجات', 'الإجمالي', 'الحالة', 'التاريخ'];
-    const rows = filteredOrders.map(o => [ o.orderNumber, o.waybillNumber || '-', o.customerName, o.customerPhone, o.shippingArea, o.items.map(i => `${i.name} (x${i.quantity})`).join(' | '), o.totalAmountOverride ?? (o.productPrice + o.shippingFee - (o.discount || 0)), o.status, new Date(o.date).toLocaleDateString('ar-EG') ]);
+    const headers = ['رقم الطلب', 'رقم البوليصة', 'العميل', 'الهاتف', 'المحافظة', 'المدينة', 'المنتجات', 'الإجمالي', 'الحالة', 'التاريخ'];
+    const rows = filteredOrders.map(o => [ 
+        o.orderNumber, 
+        o.waybillNumber || '-', 
+        o.customerName, 
+        o.customerPhone, 
+        o.governorate || o.shippingArea, 
+        o.city || '-',
+        o.items.map(i => `${i.name} (x${i.quantity})`).join(' | '), 
+        o.totalAmountOverride ?? (o.productPrice + o.shippingFee - (o.discount || 0)), 
+        o.status, 
+        new Date(o.date).toLocaleDateString('ar-EG') 
+    ]);
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -613,14 +648,14 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
       <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-center gap-4">
         <h1 className="text-3xl font-black text-slate-800 dark:text-white">الطلبات</h1>
         <div className="flex flex-wrap items-center gap-2">
-           <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
-             <Download size={16} /> تصدير Excel
+           <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm hover:shadow">
+             <Download size={18} /> تصدير Excel
            </button>
-           <button onClick={handleExportPDF} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-slate-700 transition-all">
-             <FileDown size={16} /> تصدير PDF
+           <button onClick={handleExportPDF} className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-slate-700 transition-all shadow-sm hover:shadow">
+             <FileDown size={18} /> تصدير PDF
            </button>
-           <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-all shadow-sm">
-             <Plus size={18}/> أنشئ طلب
+           <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5">
+             <Plus size={20}/> أنشئ طلب
            </button>
         </div>
       </motion.div>
@@ -635,44 +670,44 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
          </div>
       </motion.div>
       
-      <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+      <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         {selectedOrders.length > 0 ? (
-          <div className="p-4 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
+          <div className="p-4 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/20">
             <div className="flex items-center gap-3">
-              <span className="font-bold text-blue-800 dark:text-blue-300">تم تحديد {selectedOrders.length} طلبات</span>
-              <button onClick={() => setSelectedOrders([])} className="text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-bold flex items-center gap-1">
+              <span className="font-bold text-indigo-800 dark:text-indigo-300">تم تحديد {selectedOrders.length} طلبات</span>
+              <button onClick={() => setSelectedOrders([])} className="text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-bold flex items-center gap-1 transition-colors">
                 <XCircle size={14}/> إلغاء التحديد
               </button>
             </div>
             <div className="flex items-center gap-3">
               <div className="relative">
-                <select id="bulk-status-select" defaultValue="default" onChange={(e) => handleBulkStatusChange(e.target.value)} className="appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg py-2 pl-4 pr-8 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                <select id="bulk-status-select" defaultValue="default" onChange={(e) => handleBulkStatusChange(e.target.value)} className="appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl py-2.5 pl-4 pr-10 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-sm">
                   <option value="default" disabled>تغيير الحالة...</option>
                   {ORDER_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
                 </select>
                 <ChevronDown className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
               </div>
-              <button onClick={() => setShowBulkDeleteConfirm(true)} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors">
-                <Trash2 size={16}/> حذف
+              <button onClick={() => setShowBulkDeleteConfirm(true)} className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-sm hover:shadow">
+                <Trash2 size={18}/> حذف
               </button>
             </div>
           </div>
         ) : (
-          <div className="p-4 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-200 dark:border-slate-800">
-            <div className="flex w-full items-center gap-2 overflow-x-auto no-scrollbar pb-2">
+          <div className="p-4 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="flex w-full items-center gap-2 overflow-x-auto no-scrollbar pb-2 md:pb-0">
               <TabButton label="الجميع" activeTab={activeTab} setActiveTab={setActiveTab} count={orders.filter(o => o.status !== 'مؤرشف').length} />
               <TabButton label="بانتظار التجهيز" activeTab={activeTab} setActiveTab={setActiveTab} count={orders.filter(o => o.preparationStatus === 'بانتظار التجهيز').length}/>
               <TabButton label="تم التوصيل" activeTab={activeTab} setActiveTab={setActiveTab} count={quickStats.delivered}/>
               <TabButton label="مرتجع" activeTab={activeTab} setActiveTab={setActiveTab} count={quickStats.failed}/>
               <TabButton label="الأرشيف" activeTab={activeTab} setActiveTab={setActiveTab} count={orders.filter(o => o.status === 'مؤرشف').length}/>
             </div>
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <div className="relative flex-1">
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <div className="relative flex-1 md:w-64">
                 <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input type="text" placeholder="بحث..." className="w-full pr-10 pl-4 py-2 bg-white dark:bg-slate-800 rounded-lg outline-none border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                <input type="text" placeholder="بحث برقم الطلب، العميل، الهاتف..." className="w-full pr-10 pl-4 py-2.5 bg-white dark:bg-slate-800 rounded-xl outline-none border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm transition-shadow" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               </div>
-              <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
-                  <Filter size={16} /> البحث والتصنيف
+              <button className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm hover:shadow">
+                  <Filter size={18} /> تصفية
               </button>
             </div>
           </div>
@@ -680,20 +715,20 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
 
         {/* Table for Desktop */}
         <div className="overflow-x-auto hidden md:block">
-          <table className="w-full text-right">
-            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-black">
+          <table className="w-full text-right border-collapse">
+            <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider font-bold border-b border-slate-200 dark:border-slate-700">
               <tr>
                 <th className="p-4 w-12 text-center"><input type="checkbox" className="rounded border-slate-300 dark:bg-slate-900 dark:border-slate-700" onChange={handleSelectAll} checked={selectedOrders.length === paginatedOrders.length && paginatedOrders.length > 0}/></th>
-                <th className="p-4">العميل</th>
-                <th className="p-4">المنتج</th>
-                <th className="p-4">الشحن</th>
-                <th className="p-4">حالة الطلب</th>
-                <th className="p-4">حالة التجهيز</th>
-                <th className="p-4">الدفع</th>
-                <th className="p-4"></th>
+                <th className="p-4 font-bold">العميل</th>
+                <th className="p-4 font-bold">المنتج</th>
+                <th className="p-4 font-bold">الشحن</th>
+                <th className="p-4 font-bold">حالة الطلب</th>
+                <th className="p-4 font-bold">حالة التجهيز</th>
+                <th className="p-4 font-bold">الدفع</th>
+                <th className="p-4 font-bold"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
             {paginatedOrders.map(order => (
                 <OrderRow key={order.id} order={order} onStatusChange={updateOrderStatus} onPaymentChange={handlePaymentStatusChange} onPreparationChange={(id, val) => updateOrderField(id, 'preparationStatus', val)} onEdit={() => { setEditingOrder({ ...order }); setShowAddModal(true); }} onDelete={() => setOrderToDelete(order)} onPrintInvoice={() => handlePrintInvoice(order)} onPrintShippingLabel={() => handlePrintShippingLabel(order)} isSelected={selectedOrders.includes(order.id)} onSelectRow={() => handleSelectRow(order.id)} settings={settings} whatsappLink={getWhatsAppLink(order)} onReturn={handlePostCollectionReturn} onExchange={handleStartExchange} />
             ))}
@@ -742,37 +777,37 @@ const OrderRow: React.FC<OrderRowProps> = ({ order, onStatusChange, onPaymentCha
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     useEffect(() => { const handleClickOutside = (e: MouseEvent) => { if(menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false); }; document.addEventListener('mousedown', handleClickOutside); return () => document.removeEventListener('mousedown', handleClickOutside); }, []);
-    const statusColors: Record<OrderStatus, string> = { في_انتظار_المكالمة: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800', جاري_المراجعة: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-400 border-purple-200 dark:border-purple-800', قيد_التنفيذ: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800', تم_الارسال: 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-400 border-sky-200 dark:border-sky-800', قيد_الشحن: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 border-blue-200 dark:border-blue-800', تم_توصيلها: 'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-400 border-teal-200 dark:border-teal-800', تم_التحصيل: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800', مرتجع: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 border-red-200 dark:border-red-800', مرتجع_بعد_الاستلام: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400 border-orange-200 dark:border-orange-800', تم_الاستبدال: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600', مرتجع_جزئي: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400 border-orange-200 dark:border-orange-800', فشل_التوصيل: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 border-red-200 dark:border-red-800', ملغي: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700', مؤرشف: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700' };
-    const paymentStatusColors: Record<PaymentStatus, string> = { 'بانتظار الدفع': 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 border-amber-200 dark:border-amber-800', 'مدفوع': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800', 'مدفوع جزئياً': 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-400 border-sky-200 dark:border-sky-800', 'مرتجع': 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 border-red-200 dark:border-red-800' };
+    const statusColors: Record<OrderStatus, string> = { في_انتظار_المكالمة: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-400 border-cyan-200 dark:border-cyan-500/20', جاري_المراجعة: 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400 border-purple-200 dark:border-purple-500/20', قيد_التنفيذ: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20', تم_الارسال: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400 border-sky-200 dark:border-sky-500/20', قيد_الشحن: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border-blue-200 dark:border-blue-500/20', تم_توصيلها: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-400 border-teal-200 dark:border-teal-500/20', تم_التحصيل: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20', مرتجع: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border-red-200 dark:border-red-500/20', مرتجع_بعد_الاستلام: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400 border-orange-200 dark:border-orange-500/20', تم_الاستبدال: 'bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300 border-slate-200 dark:border-slate-500/20', مرتجع_جزئي: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400 border-orange-200 dark:border-orange-500/20', فشل_التوصيل: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border-red-200 dark:border-red-500/20', ملغي: 'bg-slate-50 text-slate-600 dark:bg-slate-500/10 dark:text-slate-400 border-slate-200 dark:border-slate-500/20', مؤرشف: 'bg-slate-50 text-slate-600 dark:bg-slate-500/10 dark:text-slate-400 border-slate-200 dark:border-slate-500/20' };
+    const paymentStatusColors: Record<PaymentStatus, string> = { 'بانتظار الدفع': 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border-amber-200 dark:border-amber-500/20', 'مدفوع': 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20', 'مدفوع جزئياً': 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400 border-sky-200 dark:border-sky-500/20', 'مرتجع': 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border-red-200 dark:border-red-500/20' };
     return (
-        <tr className={`transition-colors ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
+        <tr className={`transition-all group ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
             <td className="p-4 text-center"><input type="checkbox" className="rounded border-slate-300 dark:bg-slate-900 dark:border-slate-700" checked={isSelected} onChange={onSelectRow} /></td>
             <td className="p-4">
                 <div className="flex items-center gap-2">
                     <div className="font-bold text-slate-800 dark:text-white">{order.customerName}</div>
                     {order.orderType === 'exchange' && <span title={`طلب استبدال للطلب ${order.originalOrderId}`}><ArrowRightLeft size={12} className="text-blue-500" /></span>}
-                    <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="p-1 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-full" title="مراسلة واتساب"><MessageCircle size={14} /></a>
+                    <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="p-1.5 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 rounded-full transition-colors" title="مراسلة واتساب"><MessageCircle size={14} /></a>
                 </div>
-                <div className="text-xs text-slate-500 font-mono" title="رقم الطلب">{order.orderNumber || '---'}</div>
+                <div className="text-xs text-slate-500 font-mono mt-0.5" title="رقم الطلب">{order.orderNumber || '---'}</div>
                 {order.waybillNumber && (
                     <div className="text-xs text-sky-600 dark:text-sky-400 font-mono mt-1" title="رقم البوليصة">
                         بوليصة: {order.waybillNumber}
                     </div>
                 )}
             </td>
-            <td className="p-4"><div className="font-bold text-slate-800 dark:text-white truncate max-w-xs">{order.productName}</div><div className="text-xs text-slate-500 font-bold">{(order.totalAmountOverride ?? order.productPrice).toLocaleString()} ج.م</div></td>
-            <td className="p-4"><div className="font-bold text-slate-800 dark:text-white">{order.shippingCompany}</div><div className="text-xs text-slate-500">{order.shippingArea} ({order.shippingFee} ج.م)</div></td>
-            <td className="p-4"><div className="relative group"><select value={order.status} onChange={(e) => onStatusChange(order.id, e.target.value as OrderStatus)} className={`appearance-none w-36 text-right cursor-pointer text-xs font-black px-3 py-2 rounded-lg border transition-all ${statusColors[order.status]}`}>{ORDER_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}</select><ChevronDown size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-current opacity-50 pointer-events-none"/></div></td>
-            <td className="p-4"><select value={order.preparationStatus} onChange={(e) => onPreparationChange(order.id, e.target.value as PreparationStatus)} className={`appearance-none w-36 text-right cursor-pointer text-xs font-black px-3 py-2 rounded-lg border ${order.preparationStatus === 'جاهز' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{PREPARATION_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></td>
-            <td className="p-4"><div className="relative group"><select value={order.paymentStatus} onChange={(e) => onPaymentChange(order, e.target.value as PaymentStatus)} className={`appearance-none w-36 text-right cursor-pointer text-xs font-black px-3 py-2 rounded-lg border transition-all ${paymentStatusColors[order.paymentStatus]}`} disabled={order.paymentStatus === 'مدفوع' || order.status !== 'تم_توصيلها'}>{PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select><ChevronDown size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-current opacity-50 pointer-events-none"/></div></td>
-            <td className="p-4"><div className="flex items-center gap-1"><button onClick={onPrintShippingLabel} className="p-2 text-slate-400 hover:text-gray-600 dark:hover:text-gray-400 rounded-lg transition-colors" title="طباعة بوليصة الشحن"><FileText size={16}/></button><button onClick={onPrintInvoice} className="p-2 text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors" title="طباعة الفاتورة"><Printer size={16}/></button><button onClick={onEdit} className="p-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors"><Edit3 size={16}/></button><button onClick={onDelete} className="p-2 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors"><Trash2 size={16}/></button>
+            <td className="p-4"><div className="font-bold text-slate-800 dark:text-white truncate max-w-[200px]">{order.productName}</div><div className="text-xs text-slate-500 font-bold mt-0.5">{(order.totalAmountOverride ?? order.productPrice).toLocaleString()} ج.م</div></td>
+            <td className="p-4"><div className="font-bold text-slate-800 dark:text-white">{order.shippingCompany}</div><div className="text-xs text-slate-500 mt-0.5">{order.governorate || order.shippingArea}{order.city ? ` - ${order.city}` : ''} ({order.shippingFee} ج.م)</div></td>
+            <td className="p-4"><div className="relative"><select value={order.status} onChange={(e) => onStatusChange(order.id, e.target.value as OrderStatus)} className={`appearance-none w-36 text-right cursor-pointer text-xs font-bold px-3 py-2 rounded-full border transition-all ${statusColors[order.status]}`}>{ORDER_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}</select><ChevronDown size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-current opacity-50 pointer-events-none"/></div></td>
+            <td className="p-4"><select value={order.preparationStatus} onChange={(e) => onPreparationChange(order.id, e.target.value as PreparationStatus)} className={`appearance-none w-36 text-right cursor-pointer text-xs font-bold px-3 py-2 rounded-full border ${order.preparationStatus === 'جاهز' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'}`}>{PREPARATION_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></td>
+            <td className="p-4"><div className="relative"><select value={order.paymentStatus} onChange={(e) => onPaymentChange(order, e.target.value as PaymentStatus)} className={`appearance-none w-36 text-right cursor-pointer text-xs font-bold px-3 py-2 rounded-full border transition-all ${paymentStatusColors[order.paymentStatus]}`} disabled={order.paymentStatus === 'مدفوع' || order.status !== 'تم_توصيلها'}>{PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select><ChevronDown size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-current opacity-50 pointer-events-none"/></div></td>
+            <td className="p-4"><div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={onPrintShippingLabel} className="p-2 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="طباعة بوليصة الشحن"><FileText size={16}/></button><button onClick={onPrintInvoice} className="p-2 text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10 rounded-lg transition-all" title="طباعة الفاتورة"><Printer size={16}/></button><button onClick={onEdit} className="p-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all"><Edit3 size={16}/></button><button onClick={onDelete} className="p-2 text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"><Trash2 size={16}/></button>
             {['تم_توصيلها', 'تم_التحصيل'].includes(order.status) && (
                 <div className="relative" ref={menuRef}>
-                    <button onClick={() => setMenuOpen(p => !p)} className="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg"><MoreVertical size={16}/></button>
+                    <button onClick={() => setMenuOpen(p => !p)} className="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-all"><MoreVertical size={16}/></button>
                     {menuOpen && (
-                        <div className="absolute left-0 top-full z-20 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border dark:border-slate-700 p-1">
-                            <button onClick={() => { onReturn(order); setMenuOpen(false); }} className="w-full text-right flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md"><RefreshCcw size={14}/> إرجاع بعد الاستلام</button>
-                            <button onClick={() => { onExchange(order); setMenuOpen(false); }} className="w-full text-right flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md"><ArrowRightLeft size={14}/> إنشاء طلب استبدال</button>
+                        <div className="absolute left-0 top-full z-20 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-1.5 overflow-hidden">
+                            <button onClick={() => { onReturn(order); setMenuOpen(false); }} className="w-full text-right flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors"><RefreshCcw size={14}/> إرجاع بعد الاستلام</button>
+                            <button onClick={() => { onExchange(order); setMenuOpen(false); }} className="w-full text-right flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors"><ArrowRightLeft size={14}/> إنشاء طلب استبدال</button>
                         </div>
                     )}
                 </div>
@@ -783,11 +818,11 @@ const OrderRow: React.FC<OrderRowProps> = ({ order, onStatusChange, onPaymentCha
 };
 interface OrderCardProps extends OrderRowProps {}
 const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusChange, onPaymentChange, onPreparationChange, onEdit, onDelete, onPrintInvoice, onPrintShippingLabel, isSelected, onSelectRow, whatsappLink, onReturn, onExchange }) => {
-    const statusColors: Record<OrderStatus, string> = { في_انتظار_المكالمة: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800', جاري_المراجعة: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-400 border-purple-200 dark:border-purple-800', قيد_التنفيذ: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800', تم_الارسال: 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-400 border-sky-200 dark:border-sky-800', قيد_الشحن: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 border-blue-200 dark:border-blue-800', تم_توصيلها: 'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-400 border-teal-200 dark:border-teal-800', تم_التحصيل: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800', مرتجع: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 border-red-200 dark:border-red-800', مرتجع_بعد_الاستلام: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400 border-orange-200 dark:border-orange-800', تم_الاستبدال: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600', مرتجع_جزئي: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400 border-orange-200 dark:border-orange-800', فشل_التوصيل: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 border-red-200 dark:border-red-800', ملغي: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700', مؤرشف: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700' };
-    const paymentStatusColors: Record<PaymentStatus, string> = { 'بانتظار الدفع': 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 border-amber-200 dark:border-amber-800', 'مدفوع': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800', 'مدفوع جزئياً': 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-400 border-sky-200 dark:border-sky-800', 'مرتجع': 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 border-red-200 dark:border-red-800' };
+    const statusColors: Record<OrderStatus, string> = { في_انتظار_المكالمة: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-400 border-cyan-200 dark:border-cyan-500/20', جاري_المراجعة: 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400 border-purple-200 dark:border-purple-500/20', قيد_التنفيذ: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20', تم_الارسال: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400 border-sky-200 dark:border-sky-500/20', قيد_الشحن: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border-blue-200 dark:border-blue-500/20', تم_توصيلها: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-400 border-teal-200 dark:border-teal-500/20', تم_التحصيل: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20', مرتجع: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border-red-200 dark:border-red-500/20', مرتجع_بعد_الاستلام: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400 border-orange-200 dark:border-orange-500/20', تم_الاستبدال: 'bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300 border-slate-200 dark:border-slate-500/20', مرتجع_جزئي: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400 border-orange-200 dark:border-orange-500/20', فشل_التوصيل: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border-red-200 dark:border-red-500/20', ملغي: 'bg-slate-50 text-slate-600 dark:bg-slate-500/10 dark:text-slate-400 border-slate-200 dark:border-slate-500/20', مؤرشف: 'bg-slate-50 text-slate-600 dark:bg-slate-500/10 dark:text-slate-400 border-slate-200 dark:border-slate-500/20' };
+    const paymentStatusColors: Record<PaymentStatus, string> = { 'بانتظار الدفع': 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border-amber-200 dark:border-amber-500/20', 'مدفوع': 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20', 'مدفوع جزئياً': 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400 border-sky-200 dark:border-sky-500/20', 'مرتجع': 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border-red-200 dark:border-red-500/20' };
 
     return (
-        <div className={`p-4 space-y-4 rounded-xl border ${isSelected ? 'bg-blue-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700' : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'}`}>
+        <div className={`p-4 space-y-4 rounded-2xl border transition-all ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'}`}>
             <div className="flex justify-between items-start">
                 <div>
                     <div className="flex items-center gap-2">
@@ -797,58 +832,77 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusChange, onPaymentC
                     <div className="text-xs text-slate-500 font-mono mt-1">{order.orderNumber}</div>
                 </div>
                  <div className="flex items-center gap-1">
-                    <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-full" title="مراسلة واتساب"><MessageCircle size={16} /></a>
-                    <button onClick={onPrintShippingLabel} className="p-2 text-slate-400 hover:text-gray-600 dark:hover:text-gray-400 rounded-lg transition-colors" title="طباعة بوليصة الشحن"><FileText size={16}/></button>
-                    <button onClick={onEdit} className="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg transition-colors"><Edit3 size={16}/></button>
-                    <button onClick={onDelete} className="p-2 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                    <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="p-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 rounded-full transition-colors" title="مراسلة واتساب"><MessageCircle size={16} /></a>
+                    <button onClick={onPrintShippingLabel} className="p-2 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title="طباعة بوليصة الشحن"><FileText size={16}/></button>
+                    <button onClick={onEdit} className="p-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-colors"><Edit3 size={16}/></button>
+                    <button onClick={onDelete} className="p-2 text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16}/></button>
                 </div>
             </div>
 
-            <div className="space-y-2 text-sm">
+            <div className="space-y-2 text-sm bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                 <p className="font-bold text-slate-700 dark:text-slate-300 truncate">{order.productName}</p>
-                <p className="font-bold text-indigo-600">{(order.totalAmountOverride ?? order.productPrice).toLocaleString()} ج.م</p>
+                <div className="flex justify-between items-center">
+                    <p className="text-slate-500 text-xs">{order.shippingCompany} - {order.governorate || order.shippingArea}{order.city ? ` - ${order.city}` : ''}</p>
+                    <p className="font-black text-indigo-600 dark:text-indigo-400">{(order.totalAmountOverride ?? order.productPrice).toLocaleString()} ج.م</p>
+                </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-                <div className="relative group">
-                    <select value={order.status} onChange={(e) => onStatusChange(order.id, e.target.value as OrderStatus)} className={`appearance-none w-full text-right cursor-pointer text-xs font-black px-3 py-2 rounded-lg border transition-all ${statusColors[order.status]}`}>{ORDER_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}</select>
+                <div className="relative">
+                    <select value={order.status} onChange={(e) => onStatusChange(order.id, e.target.value as OrderStatus)} className={`appearance-none w-full text-right cursor-pointer text-xs font-bold px-3 py-2 rounded-full border transition-all ${statusColors[order.status]}`}>{ORDER_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}</select>
                     <ChevronDown size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-current opacity-50 pointer-events-none"/>
                 </div>
-                 <div className="relative group">
-                    <select value={order.paymentStatus} onChange={(e) => onPaymentChange(order, e.target.value as PaymentStatus)} className={`appearance-none w-full text-right cursor-pointer text-xs font-black px-3 py-2 rounded-lg border transition-all ${paymentStatusColors[order.paymentStatus]}`} disabled={order.paymentStatus === 'مدفوع' || order.status !== 'تم_توصيلها'}>{PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                 <div className="relative">
+                    <select value={order.paymentStatus} onChange={(e) => onPaymentChange(order, e.target.value as PaymentStatus)} className={`appearance-none w-full text-right cursor-pointer text-xs font-bold px-3 py-2 rounded-full border transition-all ${paymentStatusColors[order.paymentStatus]}`} disabled={order.paymentStatus === 'مدفوع' || order.status !== 'تم_توصيلها'}>{PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select>
                     <ChevronDown size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-current opacity-50 pointer-events-none"/>
                 </div>
             </div>
             
              {['تم_توصيلها', 'تم_التحصيل'].includes(order.status) && (
                 <div className="flex gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                     <button onClick={() => onReturn(order)} className="flex-1 text-center flex items-center justify-center gap-1 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 p-2 rounded-md"><RefreshCcw size={14}/> إرجاع</button>
-                     <button onClick={() => onExchange(order)} className="flex-1 text-center flex items-center justify-center gap-1 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 p-2 rounded-md"><ArrowRightLeft size={14}/> استبدال</button>
+                     <button onClick={() => onReturn(order)} className="flex-1 text-center flex items-center justify-center gap-1 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 p-2 rounded-lg transition-colors"><RefreshCcw size={14}/> إرجاع</button>
+                     <button onClick={() => onExchange(order)} className="flex-1 text-center flex items-center justify-center gap-1 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 p-2 rounded-lg transition-colors"><ArrowRightLeft size={14}/> استبدال</button>
                 </div>
              )}
         </div>
     );
 };
 interface QuickStatProps { icon: React.ReactNode; label: string; value: number; color: string; }
-const QuickStat: React.FC<QuickStatProps> = ({ icon, label, value, color }) => { const colors: Record<string, string> = { purple: "text-purple-600 bg-purple-100 dark:bg-purple-900/50", sky: "text-sky-600 bg-sky-100 dark:bg-sky-900/50", emerald: "text-emerald-600 bg-emerald-100 dark:bg-emerald-900/50", red: "text-red-600 bg-red-100 dark:bg-red-900/50", }; return ( <div className="bg-white dark:bg-slate-800/50 p-3 rounded-lg flex items-center gap-3"> <div className={`p-2 rounded-md ${colors[color]}`}>{icon}</div> <div> <div className="text-xs font-bold text-slate-500">{label}</div> <div className="text-lg font-black text-slate-800 dark:text-white">{value}</div> </div> </div> ); };
+const QuickStat: React.FC<QuickStatProps> = ({ icon, label, value, color }) => {
+  const colors: Record<string, string> = {
+    purple: "text-purple-600 bg-purple-50/80 dark:bg-purple-500/10 border-purple-100 dark:border-purple-500/20",
+    sky: "text-sky-600 bg-sky-50/80 dark:bg-sky-500/10 border-sky-100 dark:border-sky-500/20",
+    emerald: "text-emerald-600 bg-emerald-50/80 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20",
+    red: "text-red-600 bg-red-50/80 dark:bg-red-500/10 border-red-100 dark:border-red-500/20",
+  };
+  return (
+    <div className={`p-5 rounded-2xl border flex flex-col gap-4 transition-all hover:shadow-md hover:-translate-y-0.5 ${colors[color]}`}>
+      <div className="flex items-center justify-between">
+        <div className="p-2.5 bg-white/80 dark:bg-slate-800/80 rounded-xl shadow-sm backdrop-blur-sm">{icon}</div>
+        <div className="text-3xl font-black tracking-tight">{value}</div>
+      </div>
+      <div className="text-sm font-bold opacity-80">{label}</div>
+    </div>
+  );
+};
 interface TabButtonProps { label: string; activeTab: string; setActiveTab: (label: string) => void; count: number; }
 const TabButton: React.FC<TabButtonProps> = ({ label, activeTab, setActiveTab, count }) => {
     const isActive = activeTab === label;
     return (
         <button
             onClick={() => setActiveTab(label)}
-            className={`flex-shrink-0 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-colors whitespace-nowrap ${
+            className={`flex-shrink-0 flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap border ${
                 isActive
-                ? 'bg-indigo-600 text-white shadow'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                ? 'bg-indigo-600 text-white border-transparent shadow-md hover:bg-indigo-700'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white'
             }`}
         >
             <span>{label}</span>
             <span
-                className={`w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-black ${
+                className={`px-2 py-0.5 rounded-lg text-xs font-black transition-colors ${
                     isActive
                     ? 'bg-white/20 text-white'
-                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400'
                 }`}
             >
                 {count}
@@ -953,112 +1007,235 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
     };
 
     const removeItem = (index: number) => handleFieldChange('items', (orderData.items || []).filter((_, i) => i !== index));
-    const activeCompanies = Object.keys(settings.shippingOptions).filter(company => settings.activeCompanies[company] !== false);
-    const shippingOptions = settings.shippingOptions[orderData.shippingCompany!] || [];
+    const activeCompanies = Object.keys(settings.shippingOptions || {}).filter(company => settings.activeCompanies?.[company] !== false);
+    const shippingOptions = useMemo(() => {
+        const options = settings.shippingOptions?.[orderData.shippingCompany!] || [];
+        if (options.length > 0) return options;
+        return EGYPT_GOVERNORATES.map((gov, index) => ({
+            id: `gov_fallback_${index}`,
+            label: gov.name,
+            cities: gov.cities.map((city, cIndex) => ({ id: `city_fallback_${index}_${cIndex}`, name: city }))
+        })) as any[];
+    }, [settings.shippingOptions, orderData.shippingCompany]);
+
+    useEffect(() => {
+        const selectedOption = shippingOptions.find(opt => opt.label === (orderData.governorate || orderData.shippingArea));
+        if (selectedOption) {
+            let fee = selectedOption.price || 0;
+            if (orderData.city) {
+                const cityOpt = selectedOption.cities?.find(c => c.name === orderData.city);
+                if (cityOpt && cityOpt.shippingPrice !== undefined && cityOpt.shippingPrice !== null) {
+                    fee = cityOpt.shippingPrice;
+                }
+            }
+            if (fee !== orderData.shippingFee) {
+                handleFieldChange('shippingFee', fee);
+            }
+        }
+    }, [orderData.governorate, orderData.shippingArea, orderData.city, shippingOptions]);
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <form onSubmit={onSubmit} className="bg-white dark:bg-slate-900 w-full max-w-4xl h-[95vh] rounded-2xl shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
-                <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
-                    <h3 className="text-xl font-black dark:text-white flex items-center gap-3"><ShoppingBag className="text-indigo-500"/>{isEditing ? `تعديل الطلب ${orderData.orderNumber}` : 'إنشاء طلب جديد'}</h3>
-                    <button type="button" onClick={onClose}><XCircle className="text-slate-400 hover:text-red-500"/></button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">
+            <form onSubmit={onSubmit} className="bg-white dark:bg-slate-900 w-full max-w-5xl h-[95vh] rounded-3xl shadow-2xl flex flex-col animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50 rounded-t-3xl">
+                    <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-3">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                            <ShoppingBag size={20}/>
+                        </div>
+                        {isEditing ? `تعديل الطلب ${orderData.orderNumber}` : 'إنشاء طلب جديد'}
+                    </h3>
+                    <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors">
+                        <XCircle size={24}/>
+                    </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 custom-scrollbar">
                     <div className="lg:col-span-3 space-y-6">
-                        <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <h4 className="font-bold mb-4 flex items-center gap-2"><User size={18}/> بيانات العميل</h4>
+                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-5 flex items-center gap-2">
+                                <User size={18} className="text-blue-500"/> بيانات العميل
+                            </h4>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="relative" ref={customerSearchRef}>
-                                    <input type="text" placeholder="اسم العميل أو رقم الهاتف" required value={customerSearch || orderData.customerName || ''} onChange={e => { setCustomerSearch(e.target.value); handleFieldChange('customerName', e.target.value); }} onFocus={() => setIsCustomerListOpen(true)} className="p-3 bg-white dark:bg-slate-800 border rounded-lg w-full" />
+                                    <input type="text" placeholder="اسم العميل أو رقم الهاتف" required value={customerSearch || orderData.customerName || ''} onChange={e => { setCustomerSearch(e.target.value); handleFieldChange('customerName', e.target.value); }} onFocus={() => setIsCustomerListOpen(true)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
                                     {isCustomerListOpen && filteredCustomers.length > 0 && (
-                                        <div className="absolute top-full mt-1 w-full bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+                                        <div className="absolute top-full mt-2 w-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl shadow-xl z-20 max-h-60 overflow-y-auto custom-scrollbar">
                                             {filteredCustomers.map(c => (
-                                                <div key={c.phone} onClick={() => handleCustomerSelect(c)} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer">
-                                                    <p className="font-bold text-sm">{c.name}</p>
-                                                    <p className="text-xs text-slate-500">{c.phone}</p>
+                                                <div key={c.phone} onClick={() => handleCustomerSelect(c)} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer border-b border-slate-50 dark:border-slate-700/50 last:border-0 transition-colors">
+                                                    <p className="font-bold text-slate-800 dark:text-slate-200">{c.name}</p>
+                                                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{c.phone}</p>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                 </div>
-                                <input type="tel" placeholder="رقم الهاتف" required value={orderData.customerPhone || ''} onChange={e => handleFieldChange('customerPhone', e.target.value)} className="p-3 bg-white dark:bg-slate-800 border rounded-lg" />
-                                <input type="tel" placeholder="رقم هاتف إضافي (اختياري)" value={(orderData as NewOrderState).customerPhone2 || ''} onChange={e => handleFieldChange('customerPhone2', e.target.value)} className="p-3 bg-white dark:bg-slate-800 border rounded-lg" />
-                                <input type="text" placeholder="الدولة" value={(orderData as NewOrderState).country || 'مصر'} onChange={e => handleFieldChange('country', e.target.value)} className="p-3 bg-white dark:bg-slate-800 border rounded-lg" />
+                                <input type="tel" placeholder="رقم الهاتف" required value={orderData.customerPhone || ''} onChange={e => handleFieldChange('customerPhone', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
+                                <input type="tel" placeholder="رقم هاتف إضافي (اختياري)" value={(orderData as NewOrderState).customerPhone2 || ''} onChange={e => handleFieldChange('customerPhone2', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
+                                <input type="text" placeholder="الدولة" value={(orderData as NewOrderState).country || 'مصر'} onChange={e => handleFieldChange('country', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
                             </div>
-                            <textarea placeholder="العنوان بالتفصيل" required value={orderData.customerAddress || ''} onChange={e => handleFieldChange('customerAddress', e.target.value)} className="mt-4 w-full p-3 bg-white dark:bg-slate-800 border rounded-lg h-20" />
-                            <input type="text" placeholder="تفاصيل العنوان (رقم المبنى، الشقة...)" value={(orderData as NewOrderState).buildingDetails || ''} onChange={e => handleFieldChange('buildingDetails', e.target.value)} className="mt-4 w-full p-3 bg-white dark:bg-slate-800 border rounded-lg" />
+                            <textarea placeholder="العنوان بالتفصيل" required value={orderData.customerAddress || ''} onChange={e => handleFieldChange('customerAddress', e.target.value)} className="mt-4 w-full p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl h-24 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all resize-none dark:text-white" />
+                            <input type="text" placeholder="تفاصيل العنوان (رقم المبنى، الشقة...)" value={(orderData as NewOrderState).buildingDetails || ''} onChange={e => handleFieldChange('buildingDetails', e.target.value)} className="mt-4 w-full p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
                         </div>
-                        <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                           <h4 className="font-bold mb-4 flex items-center gap-2"><Building size={18}/> بيانات الشحن والطلب</h4>
-                           <div className="grid grid-cols-2 gap-4">
-                                <select required value={orderData.shippingCompany} onChange={e => handleFieldChange('shippingCompany', e.target.value)} className="p-3 bg-white dark:bg-slate-800 border rounded-lg">{activeCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select>
-                                <select required value={orderData.shippingArea} onChange={e => handleFieldChange('shippingArea', e.target.value)} className="p-3 bg-white dark:bg-slate-800 border rounded-lg">{shippingOptions.map(opt => <option key={opt.id} value={opt.label}>{opt.label}</option>)}</select>
+                        
+                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                           <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-5 flex items-center gap-2">
+                               <Building size={18} className="text-emerald-500"/> بيانات الشحن والطلب
+                           </h4>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <select required value={orderData.shippingCompany} onChange={e => handleFieldChange('shippingCompany', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white">
+                                    {activeCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <select 
+                                        required 
+                                        value={orderData.governorate || orderData.shippingArea || ''} 
+                                        onChange={e => {
+                                            const gov = e.target.value;
+                                            setOrderData((prev: any) => ({ ...prev, governorate: gov, shippingArea: gov, city: '' }));
+                                        }} 
+                                        className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white"
+                                    >
+                                        <option value="" disabled>المحافظة</option>
+                                        {shippingOptions.map(opt => <option key={opt.id} value={opt.label}>{opt.label}</option>)}
+                                    </select>
+                                    <select 
+                                        required 
+                                        value={orderData.city || ''} 
+                                        onChange={e => handleFieldChange('city', e.target.value)} 
+                                        className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white"
+                                        disabled={!(orderData.governorate || orderData.shippingArea)}
+                                    >
+                                        <option value="" disabled>المدينة</option>
+                                        {(shippingOptions.find(o => o.label === (orderData.governorate || orderData.shippingArea))?.cities || []).map(city => (
+                                            <option key={city.id} value={city.name}>{city.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
                            </div>
-                           <div className="mt-4">
-                               <label htmlFor="orderNumberInput" className="text-sm font-bold text-slate-700 dark:text-slate-400 mb-2 block">رقم الطلب (اختياري)</label>
-                               <input id="orderNumberInput" type="text" placeholder="سيتم إنشاؤه تلقائياً إذا ترك فارغاً" value={orderData.orderNumber || ''} onChange={e => handleFieldChange('orderNumber', e.target.value)} className="p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg w-full font-mono" />
+                           <div className="mt-5">
+                               <label htmlFor="orderNumberInput" className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-2 block">رقم الطلب (اختياري)</label>
+                               <input id="orderNumberInput" type="text" placeholder="سيتم إنشاؤه تلقائياً إذا ترك فارغاً" value={orderData.orderNumber || ''} onChange={e => handleFieldChange('orderNumber', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full font-mono focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white" />
                            </div>
                         </div>
-                         <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                             <h4 className="font-bold mb-4">ملاحظات إضافية</h4>
-                             <textarea placeholder="أي ملاحظات للمندوب أو الطلب..." value={orderData.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} className="w-full p-3 bg-white dark:bg-slate-800 border rounded-lg h-24" />
-                         </div>
+                        
+                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-4">ملاحظات إضافية</h4>
+                            <textarea placeholder="أي ملاحظات للمندوب أو الطلب..." value={orderData.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} className="w-full p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl h-24 focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-all resize-none dark:text-white" />
+                        </div>
                     </div>
-                    <div className="lg:col-span-2 space-y-4">
-                        <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                             <h4 className="font-bold mb-4 flex items-center gap-2"><Package size={18}/> المنتجات</h4>
-                             <div className="space-y-3 max-h-48 overflow-y-auto">
+                    
+                    <div className="lg:col-span-2 space-y-6">
+                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                             <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-5 flex items-center gap-2">
+                                 <Package size={18} className="text-amber-500"/> المنتجات
+                             </h4>
+                             <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-1">
                                 {(orderData.items || []).map((item, index) => (
-                                    <div key={index} className="p-3 bg-white dark:bg-slate-800 border rounded-lg space-y-2 relative">
-                                        <button type="button" onClick={() => removeItem(index)} className="absolute top-2 left-2 text-slate-400 hover:text-red-500"><XCircle size={16}/></button>
-                                        <select value={item.productId} onChange={e => handleItemChange(index, 'productId', e.target.value)} className="w-full p-2 bg-slate-50 dark:bg-slate-700 rounded text-sm">{settings.products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-                                        <div className="flex gap-2">
-                                            <input type="number" placeholder="الكمية" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-1/2 p-2 bg-slate-50 dark:bg-slate-700 rounded" />
-                                            <input type="number" placeholder="السعر" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-1/2 p-2 bg-slate-50 dark:bg-slate-700 rounded" />
+                                    <div key={index} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl space-y-3 relative group">
+                                        <button type="button" onClick={() => removeItem(index)} className="absolute top-3 left-3 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-900 rounded-full">
+                                            <XCircle size={20}/>
+                                        </button>
+                                        <select value={item.productId} onChange={e => handleItemChange(index, 'productId', e.target.value)} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white">
+                                            {settings.products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                        </select>
+                                        <div className="flex gap-3">
+                                            <div className="flex-1">
+                                                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">الكمية</label>
+                                                <input type="number" min="1" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">السعر</label>
+                                                <input type="number" min="0" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white" />
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
                              </div>
-                             <button type="button" onClick={addItem} className="w-full mt-3 p-2 bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 font-bold rounded-lg text-sm">+ إضافة منتج</button>
+                             <button type="button" onClick={addItem} className="w-full mt-4 p-3 bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400 font-bold rounded-xl text-sm border border-amber-100 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-2">
+                                 <Plus size={16} /> إضافة منتج
+                             </button>
                         </div>
-                        <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-                            <h4 className="font-bold mb-2">الملخص المالي</h4>
-                            <div className="flex justify-between text-sm"><span>إجمالي المنتجات</span><span className="font-bold">{subtotal.toLocaleString()} ج.م</span></div>
-                            <div className="flex justify-between text-sm"><span>مصاريف الشحن</span><span className="font-bold">{(orderData.shippingFee || 0).toLocaleString()} ج.م</span></div>
-                            {inspectionFee > 0 && (
-                                <div className="flex justify-between text-sm"><span>رسوم المعاينة</span><span className="font-bold">{inspectionFee.toLocaleString()} ج.م</span></div>
-                            )}
-                            <div className="p-3 bg-white dark:bg-slate-800 border rounded-xl"><label className="text-xs text-slate-400">خصم</label><input type="number" value={orderData.discount || 0} onChange={e => handleFieldChange('discount', Number(e.target.value))} className="w-full font-bold bg-transparent outline-none" /></div>
-                            <div className="border-t border-slate-200 dark:border-slate-700 my-2"></div>
-                            <div className="flex justify-between font-bold text-slate-700 dark:text-slate-200"><span>المجموع</span><span>{totalBeforeCredit.toLocaleString()} ج.م</span></div>
+                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50 space-y-4">
+                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+                                <FileText size={18} className="text-indigo-500"/> الملخص المالي
+                            </h4>
+                            
+                            <div className="space-y-3 text-slate-600 dark:text-slate-400">
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>إجمالي المنتجات</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">{subtotal.toLocaleString()} ج.م</span>
+                                </div>
+                                <div className="flex justify-between text-sm items-center">
+                                    <span>مصاريف الشحن</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">{(orderData.shippingFee || 0).toLocaleString()} ج.م</span>
+                                </div>
+                                {inspectionFee > 0 && (
+                                    <div className="flex justify-between text-sm items-center">
+                                        <span>رسوم المعاينة</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200">{inspectionFee.toLocaleString()} ج.م</span>
+                                    </div>
+                                )}
+                                
+                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-red-500/20 focus-within:border-red-500 transition-all">
+                                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">خصم إضافي</label>
+                                    <div className="flex items-center gap-2">
+                                        <input type="number" min="0" value={orderData.discount || 0} onChange={e => handleFieldChange('discount', Number(e.target.value))} className="w-full font-bold bg-transparent outline-none text-red-500 dark:text-red-400" />
+                                        <span className="text-sm text-slate-400">ج.م</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="border-t border-slate-200 dark:border-slate-700 my-4"></div>
+                            
+                            <div className="flex justify-between font-bold text-slate-700 dark:text-slate-200 text-lg">
+                                <span>المجموع</span>
+                                <span>{totalBeforeCredit.toLocaleString()} ج.م</span>
+                            </div>
+                            
                             {isExchange && (
-                                <div className="flex justify-between font-bold text-orange-500">
-                                    <span>رصيد سابق</span>
+                                <div className="flex justify-between font-bold text-orange-500 bg-orange-50 dark:bg-orange-500/10 p-3 rounded-xl border border-orange-100 dark:border-orange-500/20 mt-2">
+                                    <span>رصيد سابق (للاستبدال)</span>
                                     <span>-{creditAmount.toLocaleString()} ج.م</span>
                                 </div>
                             )}
-                            <div className="border-t-2 border-slate-300 dark:border-slate-600 my-2"></div>
-                            <div className="flex justify-between font-black text-lg text-indigo-600">
-                                <span>{finalAmount >= 0 ? 'المطلوب' : 'المستحق'}</span>
-                                <span>{Math.abs(finalAmount).toLocaleString()} ج.م</span>
+                            
+                            <div className="border-t-2 border-slate-200 dark:border-slate-700 my-4"></div>
+                            
+                            <div className="flex justify-between items-center bg-indigo-50 dark:bg-indigo-500/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
+                                <span className="font-black text-indigo-700 dark:text-indigo-400 text-lg">{finalAmount >= 0 ? 'المطلوب تحصيله' : 'المستحق للعميل'}</span>
+                                <span className="font-black text-indigo-700 dark:text-indigo-400 text-2xl">{Math.abs(finalAmount).toLocaleString()} ج.م</span>
                             </div>
                         </div>
-                         <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-                             <h4 className="font-bold mb-2">إعدادات إضافية</h4>
-                             <label className="flex items-center gap-2"><input type="checkbox" checked={orderData.includeInspectionFee} onChange={e => handleFieldChange('includeInspectionFee', e.target.checked)} /> تفعيل رسوم المعاينة</label>
-                             <label className="flex items-center gap-2"><input type="checkbox" checked={orderData.isInsured} onChange={e => handleFieldChange('isInsured', e.target.checked)} /> تفعيل التأمين على الشحنة</label>
+                         <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50 space-y-4">
+                             <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+                                 <SettingsIcon size={18} className="text-slate-500"/> إعدادات إضافية
+                             </h4>
+                             <label className="flex items-center gap-3 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                 <input type="checkbox" checked={orderData.includeInspectionFee} onChange={e => handleFieldChange('includeInspectionFee', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700" /> 
+                                 <span className="font-medium text-slate-700 dark:text-slate-300">تفعيل رسوم المعاينة</span>
+                             </label>
+                             <label className="flex items-center gap-3 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                 <input type="checkbox" checked={orderData.isInsured} onChange={e => handleFieldChange('isInsured', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700" /> 
+                                 <span className="font-medium text-slate-700 dark:text-slate-300">تفعيل التأمين على الشحنة</span>
+                             </label>
                          </div>
                     </div>
                 </div>
 
-                <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50 rounded-b-3xl">
                     <div>
-                        {isExchange && <div className="text-xs text-slate-500">الطلب الجديد: {totalBeforeCredit.toLocaleString()} ج.م - رصيد سابق: {creditAmount.toLocaleString()} ج.م</div>}
-                        <span className="text-sm text-slate-500">{finalAmount >= 0 ? 'الإجمالي المطلوب من العميل' : 'المبلغ المستحق للعميل'}</span>
-                        <p className={`text-2xl font-black ${finalAmount >= 0 ? 'text-indigo-600' : 'text-orange-500'}`}>{Math.abs(finalAmount).toLocaleString()} ج.م</p>
+                        {isExchange && <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">الطلب الجديد: {totalBeforeCredit.toLocaleString()} ج.م - رصيد سابق: {creditAmount.toLocaleString()} ج.م</div>}
+                        <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{finalAmount >= 0 ? 'الإجمالي المطلوب من العميل' : 'المبلغ المستحق للعميل'}</span>
+                        <p className={`text-3xl font-black ${finalAmount >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-orange-500'}`}>{Math.abs(finalAmount).toLocaleString()} ج.م</p>
                     </div>
-                    <button type="submit" className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 flex items-center gap-2"><Save size={18}/>{isEditing ? 'تحديث الطلب' : 'حفظ الطلب'}</button>
+                    <div className="flex gap-3">
+                        <button type="button" onClick={onClose} className="px-6 py-3.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
+                            إلغاء
+                        </button>
+                        <button type="submit" className="px-8 py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md flex items-center gap-2">
+                            <Save size={20}/>{isEditing ? 'تحديث الطلب' : 'حفظ الطلب'}
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -1069,9 +1246,140 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
     return <NewOrderScreen isOpen={isOpen} onClose={onClose} onSubmit={onSubmit} orderData={orderData} setOrderData={setOrderData} settings={settings} isEditing={isEditing} customers={customers} orders={orders} />
 };
 interface OrderConfirmationSummaryProps { order: Order; settings: Settings; onClose: () => void; }
-const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ order, settings, onClose }) => { const compFees = settings.companySpecificFees[order.shippingCompany]; const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0; const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0; const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100; const total = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount + inspectionFee); return ( <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"> <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl p-8 text-center animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800"> <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-5 border-4 border-white dark:border-slate-800 shadow-lg"><CheckCircle size={40} /></div> <h2 className="text-2xl font-black text-slate-800 dark:text-white mb-3">تم إنشاء الطلب بنجاح!</h2> <p className="text-slate-500 dark:text-slate-400 mb-6">ملخص الطلب المالي للعميل <span className="font-bold text-slate-700 dark:text-slate-200">{order.customerName}</span></p> <div className="space-y-3 text-right bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl border border-slate-200 dark:border-slate-700"> <div className="flex justify-between items-center text-sm"> <span className="font-bold text-slate-500">إجمالي المنتجات:</span> <span className="font-black text-slate-700 dark:text-slate-200">{order.productPrice.toLocaleString()} ج.م</span> </div> <div className="flex justify-between items-center text-sm"> <span className="font-bold text-slate-500">مصاريف الشحن:</span> <span className="font-black text-slate-700 dark:text-slate-200">{order.shippingFee.toLocaleString()} ج.م</span> </div> {inspectionFee > 0 && <div className="flex justify-between items-center text-sm"> <span className="font-bold text-slate-500">رسوم المعاينة:</span> <span className="font-black text-slate-700 dark:text-slate-200">{inspectionFee.toLocaleString()} ج.م</span> </div>} {insuranceFee > 0 && <div className="flex justify-between items-center text-sm"> <span className="font-bold text-slate-500">رسوم التأمين ({insuranceRate}%):</span> <span className="font-black text-slate-700 dark:text-slate-200">{insuranceFee.toFixed(2)} ج.م</span> </div>} {order.discount > 0 && <div className="flex justify-between items-center text-sm text-red-500"> <span className="font-bold">الخصم:</span> <span className="font-black">-{order.discount.toLocaleString()} ج.م</span> </div>} <div className="border-t border-slate-200 dark:border-slate-700 my-2"></div> <div className="flex justify-between items-center text-xl"> <span className="font-black text-indigo-600 dark:text-indigo-400">الإجمالي المطلوب تحصيله:</span> <span className="font-black text-indigo-600 dark:text-indigo-400">{total.toLocaleString()} ج.م</span> </div> </div> <button onClick={onClose} className="mt-8 w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all">إغلاق</button> </div> </div> ); };
-const ConfirmationModal: React.FC<{ title: string; description: string; onConfirm: () => void; onCancel: () => void; }> = ({ title, description, onConfirm, onCancel }) => ( <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"> <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl p-6 text-center animate-in zoom-in duration-200 border border-slate-200 dark:border-slate-800"> <div className="w-16 h-16 bg-red-50 dark:bg-red-950 text-red-500 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-4"> <AlertCircle size={32} /> </div> <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">{title}</h3> <p className="text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">{description}</p> <div className="flex flex-col gap-2"> <button onClick={onConfirm} className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-100 dark:shadow-none"> تأكيد الحذف </button> <button onClick={onCancel} className="w-full py-3 text-slate-500 dark:text-slate-400 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"> تراجع </button> </div> </div> </div> );
+const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ order, settings, onClose }) => {
+    const compFees = settings.companySpecificFees[order.shippingCompany];
+    const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0;
+    const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0;
+    const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
+    const total = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount + inspectionFee);
+    
+    return (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl p-8 text-center animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800">
+                <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto mb-5 border-4 border-white dark:border-slate-800 shadow-sm">
+                    <CheckCircle size={40} />
+                </div>
+                <h2 className="text-2xl font-black text-slate-800 dark:text-white mb-3">تم إنشاء الطلب بنجاح!</h2>
+                <p className="text-slate-500 dark:text-slate-400 mb-6">ملخص الطلب المالي للعميل <span className="font-bold text-slate-700 dark:text-slate-200">{order.customerName}</span></p>
+                <div className="space-y-3 text-right bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="font-bold text-slate-500">إجمالي المنتجات:</span>
+                        <span className="font-black text-slate-700 dark:text-slate-200">{order.productPrice.toLocaleString()} ج.م</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="font-bold text-slate-500">مصاريف الشحن:</span>
+                        <span className="font-black text-slate-700 dark:text-slate-200">{order.shippingFee.toLocaleString()} ج.م</span>
+                    </div>
+                    {inspectionFee > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="font-bold text-slate-500">رسوم المعاينة:</span>
+                            <span className="font-black text-slate-700 dark:text-slate-200">{inspectionFee.toLocaleString()} ج.م</span>
+                        </div>
+                    )}
+                    {insuranceFee > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="font-bold text-slate-500">رسوم التأمين ({insuranceRate}%):</span>
+                            <span className="font-black text-slate-700 dark:text-slate-200">{insuranceFee.toFixed(2)} ج.م</span>
+                        </div>
+                    )}
+                    {order.discount > 0 && (
+                        <div className="flex justify-between items-center text-sm text-red-500">
+                            <span className="font-bold">الخصم:</span>
+                            <span className="font-black">-{order.discount.toLocaleString()} ج.م</span>
+                        </div>
+                    )}
+                    <div className="border-t border-slate-200 dark:border-slate-700 my-2"></div>
+                    <div className="flex justify-between items-center text-xl">
+                        <span className="font-black text-indigo-600 dark:text-indigo-400">الإجمالي المطلوب تحصيله:</span>
+                        <span className="font-black text-indigo-600 dark:text-indigo-400">{total.toLocaleString()} ج.م</span>
+                    </div>
+                </div>
+                <button onClick={onClose} className="mt-8 w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-sm hover:shadow">
+                    إغلاق
+                </button>
+            </div>
+        </div>
+    );
+};
+const ConfirmationModal: React.FC<{ title: string; description: string; onConfirm: () => void; onCancel: () => void; }> = ({ title, description, onConfirm, onCancel }) => (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-2xl p-6 text-center animate-in zoom-in duration-200 border border-slate-200 dark:border-slate-800">
+            <div className="w-16 h-16 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <AlertCircle size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">{title}</h3>
+            <p className="text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">{description}</p>
+            <div className="flex flex-col gap-2">
+                <button onClick={onConfirm} className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-sm hover:shadow">
+                    تأكيد الحذف
+                </button>
+                <button onClick={onCancel} className="w-full py-3 text-slate-500 dark:text-slate-400 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all">
+                    تراجع
+                </button>
+            </div>
+        </div>
+    </div>
+);
 interface OrderPreConfirmationModalProps { order: Omit<Order, 'id'>; settings: Settings; onConfirm: () => void; onCancel: () => void; }
-const OrderPreConfirmationModal: React.FC<OrderPreConfirmationModalProps> = ({ order, settings, onConfirm, onCancel }) => { const compFees = settings.companySpecificFees[order.shippingCompany]; const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0; const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0; const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100; const total = (order as any).totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0) + inspectionFee); return ( <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"> <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl p-8 text-center animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800"> <div className="w-20 h-20 bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-5 border-4 border-white dark:border-slate-800 shadow-lg"><AlertTriangle size={40} /></div> <h2 className="text-2xl font-black text-slate-800 dark:text-white mb-3">هل أنت متأكد من تفاصيل الطلب؟</h2> <p className="text-slate-500 dark:text-slate-400 mb-6">يرجى مراجعة الملخص المالي قبل تأكيد الطلب.</p> <div className="space-y-3 text-right bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl border border-slate-200 dark:border-slate-700"> <div className="flex justify-between items-center text-sm"> <span className="font-bold text-slate-500">إجمالي المنتجات:</span> <span className="font-black text-slate-700 dark:text-slate-200">{order.productPrice.toLocaleString()} ج.م</span> </div> <div className="flex justify-between items-center text-sm"> <span className="font-bold text-slate-500">مصاريف الشحن:</span> <span className="font-black text-slate-700 dark:text-slate-200">{order.shippingFee.toLocaleString()} ج.م</span> </div> {inspectionFee > 0 && <div className="flex justify-between items-center text-sm"> <span className="font-bold text-slate-500">رسوم المعاينة:</span> <span className="font-black text-slate-700 dark:text-slate-200">{inspectionFee.toLocaleString()} ج.م</span> </div>} {insuranceFee > 0 && <div className="flex justify-between items-center text-sm"> <span className="font-bold text-slate-500">رسوم التأمين ({insuranceRate}%):</span> <span className="font-black text-slate-700 dark:text-slate-200">{insuranceFee.toFixed(2)} ج.م</span> </div>} {order.discount > 0 && <div className="flex justify-between items-center text-sm text-red-500"> <span className="font-bold">الخصم:</span> <span className="font-black">-{order.discount.toLocaleString()} ج.م</span> </div>} <div className="border-t border-slate-200 dark:border-slate-700 my-2"></div> <div className="flex justify-between items-center text-xl"> <span className="font-black text-indigo-600 dark:text-indigo-400">الإجمالي المطلوب تحصيله:</span> <span className="font-black text-indigo-600 dark:text-indigo-400">{total.toLocaleString()} ج.م</span> </div> </div> <div className="mt-8 flex gap-3"><button onClick={onConfirm} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all">تأكيد وإضافة</button><button onClick={onCancel} className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-all">رفض وتعديل</button></div> </div> </div> ); };
+const OrderPreConfirmationModal: React.FC<OrderPreConfirmationModalProps> = ({ order, settings, onConfirm, onCancel }) => {
+    const compFees = settings.companySpecificFees[order.shippingCompany];
+    const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0;
+    const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0;
+    const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
+    const total = (order as any).totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0) + inspectionFee);
+    
+    return (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl p-8 text-center animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800">
+                <div className="w-20 h-20 bg-blue-50 dark:bg-blue-500/10 text-blue-500 dark:text-blue-400 rounded-2xl flex items-center justify-center mx-auto mb-5 border-4 border-white dark:border-slate-800 shadow-sm">
+                    <AlertTriangle size={40} />
+                </div>
+                <h2 className="text-2xl font-black text-slate-800 dark:text-white mb-3">هل أنت متأكد من تفاصيل الطلب؟</h2>
+                <p className="text-slate-500 dark:text-slate-400 mb-6">يرجى مراجعة الملخص المالي قبل تأكيد الطلب.</p>
+                <div className="space-y-3 text-right bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="font-bold text-slate-500">إجمالي المنتجات:</span>
+                        <span className="font-black text-slate-700 dark:text-slate-200">{order.productPrice.toLocaleString()} ج.م</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="font-bold text-slate-500">مصاريف الشحن:</span>
+                        <span className="font-black text-slate-700 dark:text-slate-200">{order.shippingFee.toLocaleString()} ج.م</span>
+                    </div>
+                    {inspectionFee > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="font-bold text-slate-500">رسوم المعاينة:</span>
+                            <span className="font-black text-slate-700 dark:text-slate-200">{inspectionFee.toLocaleString()} ج.م</span>
+                        </div>
+                    )}
+                    {insuranceFee > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="font-bold text-slate-500">رسوم التأمين ({insuranceRate}%):</span>
+                            <span className="font-black text-slate-700 dark:text-slate-200">{insuranceFee.toFixed(2)} ج.م</span>
+                        </div>
+                    )}
+                    {order.discount > 0 && (
+                        <div className="flex justify-between items-center text-sm text-red-500">
+                            <span className="font-bold">الخصم:</span>
+                            <span className="font-black">-{order.discount.toLocaleString()} ج.م</span>
+                        </div>
+                    )}
+                    <div className="border-t border-slate-200 dark:border-slate-700 my-2"></div>
+                    <div className="flex justify-between items-center text-xl">
+                        <span className="font-black text-indigo-600 dark:text-indigo-400">الإجمالي المطلوب تحصيله:</span>
+                        <span className="font-black text-indigo-600 dark:text-indigo-400">{total.toLocaleString()} ج.م</span>
+                    </div>
+                </div>
+                <div className="mt-8 flex gap-3">
+                    <button onClick={onConfirm} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-sm hover:shadow">
+                        تأكيد وإضافة
+                    </button>
+                    <button onClick={onCancel} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">
+                        رفض وتعديل
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export default OrdersList;
