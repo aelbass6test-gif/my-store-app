@@ -404,11 +404,20 @@ const ShippingDashboard: React.FC<any> = ({ settings, setSettings, onManageCompa
             <motion.div variants={itemVariants}>
               <SectionCard title="الإعدادات المالية العامة" icon={<Coins size={22} className="text-emerald-600 dark:text-emerald-400" />} action={<ToggleButton active={settings.enableGlobalFinancials} onToggle={() => toggleSetting('enableGlobalFinancials')} variant="emerald" />}>
                   <div className={`space-y-6 transition-all duration-300 ${!settings.enableGlobalFinancials && 'opacity-40 pointer-events-none grayscale'}`}>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                           <FinancialCard label="نسبة التأمين (%)" name="insuranceFeePercent" value={settings.insuranceFeePercent} isActive={settings.enableInsurance} onToggle={() => toggleSetting('enableInsurance')} onChange={handleChange} icon={<ShieldCheck size={16} className="text-blue-500" />} desc="تُخصم من إجمالي الأوردر عند التحصيل." />
                           <FinancialCard label="رسوم المعاينة (ج.م)" name="inspectionFee" value={settings.inspectionFee} isActive={settings.enableInspection} onToggle={() => toggleSetting('enableInspection')} onChange={handleChange} icon={<Eye size={16} className="text-emerald-500" />} desc="رسوم مقابل فحص المنتج عند الاستلام." />
                           <FinancialCard label="شحن المرتجع (ج.م)" name="returnShippingFee" value={settings.returnShippingFee} isActive={settings.enableReturnShipping} onToggle={() => toggleSetting('enableReturnShipping')} onChange={handleChange} icon={<RefreshCcw size={16} className="text-red-500" />} desc="مبلغ إضافي يُحسب كخسارة في المرتجع." />
                           <FinancialCard label="السعر الافتراضي (ج.م)" name="defaultProductPrice" value={settings.defaultProductPrice} isActive={settings.enableDefaultPrice} onToggle={() => toggleSetting('enableDefaultPrice')} onChange={handleChange} icon={<Package size={16} className="text-indigo-500" />} desc="السعر التلقائي عند تسجيل أوردر جديد." />
+                          <div className="p-5 rounded-2xl border bg-white dark:bg-slate-800/30 border-slate-300 dark:border-slate-700 transition-all">
+                              <div className="flex items-center justify-between mb-4">
+                                  <label className="text-sm font-black text-slate-800 dark:text-slate-300 flex items-center gap-2"><Package size={16} className="text-orange-500" /> الوزن الافتراضي (كجم)</label>
+                              </div>
+                              <div className="relative">
+                                  <input type="number" name="baseWeight" className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-black dark:text-white shadow-inner transition-all" value={settings.baseWeight ?? 5} onChange={handleChange} />
+                              </div>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-500 mt-3 leading-relaxed font-bold">الوزن الأساسي المشمول في سعر الشحن.</p>
+                          </div>
                       </div>
                   </div>
               </SectionCard>
@@ -949,10 +958,10 @@ const CompanyFinancialsEditor: React.FC<any> = ({ companyName, settings, setSett
                             <label className="text-xs font-bold text-indigo-600 dark:text-indigo-400">الوزن الافتراضي (كجم)</label>
                             <input 
                                 type="number" 
-                                value={companyFees.baseWeight || 1} 
+                                value={companyFees.baseWeight ?? 5} 
                                 onChange={(e) => handleCompanyFeeChange('baseWeight', Number(e.target.value))} 
                                 className="w-full p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl font-bold text-indigo-700 dark:text-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" 
-                                placeholder="مثلاً 1" 
+                                placeholder="مثلاً 5" 
                             />
                         </div>
 
