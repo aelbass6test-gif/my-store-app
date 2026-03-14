@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, Settings as SettingsIcon } from 'lucide-react';
+import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, Settings as SettingsIcon, X } from 'lucide-react';
 import { Order, Settings, OrderStatus, Wallet, Transaction, PaymentStatus, PreparationStatus, OrderItem, Product, CustomerProfile, Store } from '../types';
 import { ORDER_STATUSES, EGYPT_GOVERNORATES } from '../constants';
 import { motion, Variants } from 'framer-motion';
@@ -36,6 +36,8 @@ interface OrdersListProps {
   setWallet: React.Dispatch<React.SetStateAction<Wallet>>;
   addLoyaltyPointsForOrder: (order: Order) => void;
   activeStore?: Store;
+  customers: CustomerProfile[];
+  setCustomers: React.Dispatch<React.SetStateAction<CustomerProfile[]>>;
 }
 
 interface NewOrderState extends Partial<Omit<Order, 'id'>> {
@@ -44,7 +46,80 @@ interface NewOrderState extends Partial<Omit<Order, 'id'>> {
   country?: string;
   buildingDetails?: string;
   creditAmount?: number;
+  totalAmountOverrideReason?: string;
 }
+
+const EditTotalModal: React.FC<{ 
+    currentTotal: number; 
+    onClose: () => void; 
+    onApply: (amount: number, reason: string) => void; 
+}> = ({ currentTotal, onClose, onApply }) => {
+    const [amount, setAmount] = useState(currentTotal);
+    const [reason, setReason] = useState('');
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <motion.div 
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[32px] overflow-hidden shadow-2xl border border-slate-100 dark:border-slate-800"
+            >
+                <div className="p-8 space-y-6">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-xl font-black text-slate-800 dark:text-white">تعديل إجمالي الطلب</h3>
+                        <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+                            <X size={20} className="text-slate-400" />
+                        </button>
+                    </div>
+
+                    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                        عميلك سيدفع هذا المبلغ لمندوب الشحن عند استلام الطلب
+                    </p>
+
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block">إجمالي الطلب</label>
+                            <div className="relative">
+                                <input 
+                                    type="number" 
+                                    value={amount}
+                                    onChange={(e) => setAmount(Number(e.target.value))}
+                                    className="w-full p-4 bg-slate-50 dark:bg-slate-800 border-2 border-emerald-500/30 dark:border-emerald-500/20 rounded-2xl text-2xl font-black text-slate-800 dark:text-white outline-none focus:border-emerald-500 transition-all text-left pr-16"
+                                />
+                                <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">ج.م</span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block">Reason</label>
+                            <textarea 
+                                value={reason}
+                                onChange={(e) => setReason(e.target.value)}
+                                placeholder="أدخل سببًا..."
+                                className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all min-h-[100px] resize-none"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                        <button 
+                            onClick={() => onApply(amount, reason)}
+                            className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-lg shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]"
+                        >
+                            تطبيق
+                        </button>
+                        <button 
+                            onClick={onClose}
+                            className="flex-1 py-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-2xl font-black text-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                        >
+                            إلغاء
+                        </button>
+                    </div>
+                </div>
+            </motion.div>
+        </div>
+    );
+};
 
 const WaybillModal: React.FC<{ order: Order; onClose: () => void; onSave: (waybill: string) => void; }> = ({ order, onClose, onSave }) => {
     const [waybill, setWaybill] = useState('');
@@ -91,7 +166,7 @@ const WaybillModal: React.FC<{ order: Order; onClose: () => void; onSave: (waybi
 };
 
 
-const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, setWallet, addLoyaltyPointsForOrder, activeStore }) => {
+const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, setWallet, addLoyaltyPointsForOrder, activeStore, customers, setCustomers }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -128,11 +203,12 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
 
 
   const getInitialNewOrder = (): NewOrderState => ({
-    orderNumber: '', date: new Date().toISOString().split('T')[0], shippingCompany: activeCompanies[0] || 'ارامكس', shippingArea: '', customerName: '', customerPhone: '',
+    orderNumber: '', date: new Date().toISOString(), shippingCompany: activeCompanies[0] || 'ارامكس', shippingArea: '', customerName: '', customerPhone: '',
     customerPhone2: '', country: 'مصر', buildingDetails: '',
     items: [], shippingFee: 0, status: 'في_انتظار_المكالمة', includeInspectionFee: true, isInsured: true,
     paymentStatus: 'بانتظار الدفع', preparationStatus: 'بانتظار التجهيز', discount: 0, notes: '',
     orderType: 'standard', originalOrderId: undefined,
+    totalAmountOverrideReason: '',
   });
 
   const [newOrder, setNewOrder] = useState<NewOrderState>(getInitialNewOrder());
@@ -157,19 +233,35 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
 
     const selectedOpt = effectiveOptions.find(o => o.label === (orderData.governorate || orderData.shippingArea)) || effectiveOptions[0];
     if (selectedOpt) {
-      const totalWeight = orderData.items?.reduce((sum, item) => sum + item.weight * item.quantity, 0) || 0;
-      
       // Check for city-specific price
       let baseFee = selectedOpt.price || 0;
+      let extraKgPrice = selectedOpt.extraKgPrice || 0;
       if (orderData.city) {
           const cityOpt = selectedOpt.cities?.find((c: any) => c.name === orderData.city);
-          if (cityOpt && cityOpt.shippingPrice !== undefined && cityOpt.shippingPrice !== null) {
-              baseFee = cityOpt.shippingPrice;
+          if (cityOpt) {
+              if (cityOpt.useParentFees) {
+                  baseFee = selectedOpt.price || 0;
+                  extraKgPrice = selectedOpt.extraKgPrice || 0;
+              } else if (cityOpt.shippingPrice !== undefined && cityOpt.shippingPrice !== null) {
+                  baseFee = cityOpt.shippingPrice;
+                  extraKgPrice = cityOpt.extraKgPrice || 0;
+              }
           }
       }
 
-      const extraWeight = Math.max(0, totalWeight - (selectedOpt.baseWeight || 1));
-      const totalFee = baseFee + (extraWeight * (selectedOpt.extraKgPrice || 0));
+      const compFees = settings.companySpecificFees?.[orderData.shippingCompany!];
+      const baseWeight = compFees?.useCustomFees && compFees.baseWeight !== undefined 
+          ? compFees.baseWeight 
+          : (settings.baseWeight !== undefined ? settings.baseWeight : 5);
+          
+      const totalWeight = orderData.items?.reduce((sum, item) => {
+          const itemWeight = parseFloat(item.weight?.toString() || '0');
+          const itemQuantity = parseInt(item.quantity?.toString() || '1');
+          return sum + (itemWeight * itemQuantity);
+      }, 0) || 0;
+
+      const extraWeight = Math.max(0, totalWeight - baseWeight);
+      const totalFee = baseFee + (Math.ceil(extraWeight) * extraKgPrice);
       
       if (orderData.shippingFee !== totalFee || orderData.shippingArea !== selectedOpt.label) {
         if (editingOrder) {
@@ -202,6 +294,8 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
         tabFiltered = searched.filter(o => o.status === 'تم_توصيلها' || o.status === 'تم_التحصيل');
     } else if (activeTab === 'مرتجع') {
         tabFiltered = searched.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام'].includes(o.status));
+    } else if (activeTab === 'ملغي') {
+        tabFiltered = searched.filter(o => o.status === 'ملغي');
     }
 
     return tabFiltered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -264,6 +358,38 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
       setEditingOrder(null);
     } else {
       setOrderToConfirm(orderToAdd);
+    }
+
+    // Save/Update Customer Data
+    const cleanPhone = (orderData.customerPhone || '').replace(/\s/g, '').replace('+2', '');
+    if (cleanPhone) {
+        setCustomers(prev => {
+            const existing = prev.find(c => c.phone.replace(/\s/g, '').replace('+2', '') === cleanPhone);
+            if (existing) {
+                return prev.map(c => c.id === existing.id ? { 
+                    ...c, 
+                    name: orderData.customerName || c.name,
+                    address: orderData.customerAddress || c.address,
+                    lastOrderDate: new Date().toISOString()
+                } : c);
+            } else {
+                const newCustomer: CustomerProfile = {
+                    id: `cust-${Date.now()}`,
+                    name: orderData.customerName || '',
+                    phone: orderData.customerPhone || '',
+                    address: orderData.customerAddress || '',
+                    totalOrders: 1,
+                    successfulOrders: 0,
+                    returnedOrders: 0,
+                    totalSpent: 0,
+                    lastOrderDate: new Date().toISOString(),
+                    firstOrderDate: new Date().toISOString(),
+                    averageOrderValue: 0,
+                    loyaltyPoints: 0
+                };
+                return [newCustomer, ...prev];
+            }
+        });
     }
   };
   
@@ -629,7 +755,8 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
       awaitingWaybill: nonArchivedOrders.filter(o => o.status === 'جاري_المراجعة').length,
       onTheWay: nonArchivedOrders.filter(o => (o.status === 'قيد_الشحن' || o.status === 'تم_الارسال')).length,
       delivered: nonArchivedOrders.filter(o => (o.status === 'تم_توصيلها' || o.status === 'تم_التحصيل')).length,
-      failed: nonArchivedOrders.filter(o => ['مرتجع', 'فشل_التوصيل', 'ملغي', 'مرتجع_بعد_الاستلام'].includes(o.status)).length,
+      failed: nonArchivedOrders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام'].includes(o.status)).length,
+      canceled: nonArchivedOrders.filter(o => o.status === 'ملغي').length,
     };
   }, [orders]);
 
@@ -662,11 +789,12 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
 
       <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
          <h3 className="text-sm font-bold text-slate-500 mb-3">نظرة سريعة على شحناتك</h3>
-         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <QuickStat icon={<Briefcase/>} label="بانتظار البوليصة" value={quickStats.awaitingWaybill} color="purple"/>
             <QuickStat icon={<Truck/>} label="في الطريق" value={quickStats.onTheWay} color="sky"/>
             <QuickStat icon={<CheckCircle/>} label="تم توصيلها" value={quickStats.delivered} color="emerald"/>
             <QuickStat icon={<RefreshCcw/>} label="لم تنجح" value={quickStats.failed} color="red"/>
+            <QuickStat icon={<XCircle/>} label="ملغي" value={quickStats.canceled} color="slate"/>
          </div>
       </motion.div>
       
@@ -699,6 +827,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
               <TabButton label="بانتظار التجهيز" activeTab={activeTab} setActiveTab={setActiveTab} count={orders.filter(o => o.preparationStatus === 'بانتظار التجهيز').length}/>
               <TabButton label="تم التوصيل" activeTab={activeTab} setActiveTab={setActiveTab} count={quickStats.delivered}/>
               <TabButton label="مرتجع" activeTab={activeTab} setActiveTab={setActiveTab} count={quickStats.failed}/>
+              <TabButton label="ملغي" activeTab={activeTab} setActiveTab={setActiveTab} count={quickStats.canceled}/>
               <TabButton label="الأرشيف" activeTab={activeTab} setActiveTab={setActiveTab} count={orders.filter(o => o.status === 'مؤرشف').length}/>
             </div>
             <div className="flex items-center gap-3 w-full md:w-auto">
@@ -910,7 +1039,7 @@ const TabButton: React.FC<TabButtonProps> = ({ label, activeTab, setActiveTab, c
         </button>
     );
 };
-interface OrderModalProps { isOpen: boolean; onClose: () => void; onSubmit: (e: React.FormEvent) => void; orderData: NewOrderState | Order; setOrderData: React.Dispatch<React.SetStateAction<any>>; settings: Settings; isEditing: boolean; customers: Pick<CustomerProfile, 'name' | 'phone' | 'address'>[]; orders: Order[]; }
+interface OrderModalProps { isOpen: boolean; onClose: () => void; onSubmit: (e: React.FormEvent) => void; orderData: NewOrderState | Order; setOrderData: React.Dispatch<React.SetStateAction<any>>; settings: Settings; isEditing: boolean; customers: CustomerProfile[]; orders: Order[]; }
 
 const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orderData, setOrderData, settings, isEditing, customers, orders }) => {
     
@@ -920,6 +1049,7 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
     // Customer Search State
     const [customerSearch, setCustomerSearch] = useState('');
     const [isCustomerListOpen, setIsCustomerListOpen] = useState(false);
+    const [showEditTotalModal, setShowEditTotalModal] = useState(false);
     const customerSearchRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -976,7 +1106,7 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
                 return;
             }
             
-            const existingItemIndex = newItems.findIndex((item, i) => item.productId === value && i !== index);
+            const existingItemIndex = newItems.findIndex((item, i) => item.productId === value && !item.variantId && i !== index);
     
             if (existingItemIndex !== -1) {
                 // Product exists, merge them
@@ -990,7 +1120,29 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
                 
                 newItems = newItems.filter((_, i) => i !== index);
             } else {
-                 newItems[index] = { ...newItems[index], productId: value, name: product.name, price: product.price, cost: product.costPrice, weight: product.weight, thumbnail: product.thumbnail };
+                 newItems[index] = { ...newItems[index], productId: value, name: product.name, price: product.price, cost: product.costPrice, weight: product.weight, thumbnail: product.thumbnail, variantId: undefined, variantDescription: undefined };
+            }
+        } else if (field === 'variantId') {
+            const product = settings.products.find(p => p.id === newItems[index].productId);
+            const variant = product?.variants?.find(v => v.id === value);
+            if (variant) {
+                newItems[index] = {
+                    ...newItems[index],
+                    variantId: value,
+                    variantDescription: Object.entries(variant.options).map(([k, v]) => `${k}: ${v}`).join(', '),
+                    price: variant.price,
+                    cost: variant.costPrice,
+                    weight: variant.weight
+                };
+            } else {
+                newItems[index] = {
+                    ...newItems[index],
+                    variantId: undefined,
+                    variantDescription: undefined,
+                    price: product?.price || 0,
+                    cost: product?.costPrice || 0,
+                    weight: product?.weight || 0
+                };
             }
         } else {
             const updatedItem = { ...newItems[index], [field]: value };
@@ -1020,19 +1172,46 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
 
     useEffect(() => {
         const selectedOption = shippingOptions.find(opt => opt.label === (orderData.governorate || orderData.shippingArea));
-        if (selectedOption) {
-            let fee = selectedOption.price || 0;
-            if (orderData.city) {
-                const cityOpt = selectedOption.cities?.find(c => c.name === orderData.city);
-                if (cityOpt && cityOpt.shippingPrice !== undefined && cityOpt.shippingPrice !== null) {
-                    fee = cityOpt.shippingPrice;
+            if (selectedOption) {
+                let fee = selectedOption.price || 0;
+                let extraKgPrice = selectedOption.extraKgPrice || 0;
+                if (orderData.city) {
+                    const cityOpt = selectedOption.cities?.find(c => c.name === orderData.city);
+                    if (cityOpt) {
+                        if (cityOpt.useParentFees) {
+                            fee = selectedOption.price || 0;
+                            extraKgPrice = selectedOption.extraKgPrice || 0;
+                        } else if (cityOpt.shippingPrice !== undefined && cityOpt.shippingPrice !== null) {
+                            fee = cityOpt.shippingPrice;
+                            extraKgPrice = cityOpt.extraKgPrice || 0;
+                        }
+                    }
+                }
+                
+                const compFees = settings.companySpecificFees?.[orderData.shippingCompany!];
+                const baseWeight = compFees?.useCustomFees && compFees.baseWeight !== undefined 
+                    ? compFees.baseWeight 
+                    : (settings.baseWeight !== undefined ? settings.baseWeight : 5);
+                
+                const totalWeight = orderData.items?.reduce((sum: number, item: any) => {
+                    const itemWeight = parseFloat(item.weight?.toString() || '0');
+                    const itemQuantity = parseInt(item.quantity?.toString() || '1');
+                    return sum + (itemWeight * itemQuantity);
+                }, 0) || 0;
+                const extraWeight = Math.max(0, totalWeight - baseWeight);
+                const totalFee = fee + (Math.ceil(extraWeight) * extraKgPrice);
+
+                if (totalFee !== orderData.shippingFee) {
+                    handleFieldChange('shippingFee', totalFee);
                 }
             }
-            if (fee !== orderData.shippingFee) {
-                handleFieldChange('shippingFee', fee);
-            }
-        }
-    }, [orderData.governorate, orderData.shippingArea, orderData.city, shippingOptions]);
+    }, [orderData.governorate, orderData.shippingArea, orderData.city, shippingOptions, orderData.items]);
+
+    const totalWeight = useMemo(() => (orderData.items || []).reduce((sum, item) => {
+        const itemWeight = parseFloat(item.weight?.toString() || '0');
+        const itemQuantity = parseInt(item.quantity?.toString() || '1');
+        return sum + (itemWeight * itemQuantity);
+    }, 0), [orderData.items]);
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">
@@ -1130,26 +1309,48 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
                                  <Package size={18} className="text-amber-500"/> المنتجات
                              </h4>
                              <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-1">
-                                {(orderData.items || []).map((item, index) => (
-                                    <div key={index} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl space-y-3 relative group">
-                                        <button type="button" onClick={() => removeItem(index)} className="absolute top-3 left-3 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-900 rounded-full">
-                                            <XCircle size={20}/>
-                                        </button>
-                                        <select value={item.productId} onChange={e => handleItemChange(index, 'productId', e.target.value)} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white">
-                                            {settings.products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                        </select>
-                                        <div className="flex gap-3">
-                                            <div className="flex-1">
-                                                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">الكمية</label>
-                                                <input type="number" min="1" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">السعر</label>
-                                                <input type="number" min="0" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white" />
+                                {(orderData.items || []).map((item, index) => {
+                                    const product = settings.products.find(p => p.id === item.productId);
+                                    const hasVariants = product?.variants && product.variants.length > 0;
+                                    const selectedVariant = hasVariants ? product.variants?.find(v => v.id === item.variantId) : null;
+                                    const stock = hasVariants ? (selectedVariant?.stock || 0) : (product?.stock || 0);
+
+                                    return (
+                                        <div key={index} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl space-y-3 relative group">
+                                            <button type="button" onClick={() => removeItem(index)} className="absolute top-3 left-3 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-900 rounded-full z-10">
+                                                <XCircle size={20}/>
+                                            </button>
+                                            <select value={item.productId} onChange={e => handleItemChange(index, 'productId', e.target.value)} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white">
+                                                {settings.products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                            </select>
+                                            
+                                            {hasVariants && (
+                                                <select value={item.variantId || ''} onChange={e => handleItemChange(index, 'variantId', e.target.value)} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white">
+                                                    <option value="">بدون متغيرات</option>
+                                                    {product.variants?.map(v => (
+                                                        <option key={v.id} value={v.id}>
+                                                            {Object.entries(v.options).map(([k, val]) => `${k}: ${val}`).join(', ')}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            )}
+
+                                            <div className="flex gap-3 items-center">
+                                                <div className="flex-1">
+                                                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">الكمية</label>
+                                                    <input type="number" min="1" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white" />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">السعر</label>
+                                                    <input type="number" min="0" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white" />
+                                                </div>
+                                                <div className="flex-1 text-center text-xs font-bold text-slate-500 pt-5">
+                                                    المخزون: <span className={stock < item.quantity ? 'text-red-500' : 'text-emerald-500'}>{stock}</span>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                              </div>
                              <button type="button" onClick={addItem} className="w-full mt-4 p-3 bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400 font-bold rounded-xl text-sm border border-amber-100 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-2">
                                  <Plus size={16} /> إضافة منتج
@@ -1166,7 +1367,10 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
                                     <span className="font-bold text-slate-800 dark:text-slate-200">{subtotal.toLocaleString()} ج.م</span>
                                 </div>
                                 <div className="flex justify-between text-sm items-center">
-                                    <span>مصاريف الشحن</span>
+                                    <div className="flex items-center gap-1">
+                                        <span>مصاريف الشحن</span>
+                                        <span className="text-[10px] text-slate-400 font-medium">(الوزن: {totalWeight.toFixed(2)} كجم)</span>
+                                    </div>
                                     <span className="font-bold text-slate-800 dark:text-slate-200">{(orderData.shippingFee || 0).toLocaleString()} ج.م</span>
                                 </div>
                                 {inspectionFee > 0 && (
@@ -1203,8 +1407,29 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
                             
                             <div className="flex justify-between items-center bg-indigo-50 dark:bg-indigo-500/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
                                 <span className="font-black text-indigo-700 dark:text-indigo-400 text-lg">{finalAmount >= 0 ? 'المطلوب تحصيله' : 'المستحق للعميل'}</span>
-                                <span className="font-black text-indigo-700 dark:text-indigo-400 text-2xl">{Math.abs(finalAmount).toLocaleString()} ج.م</span>
+                                <div className="flex flex-col items-end">
+                                    <span className="font-black text-indigo-700 dark:text-indigo-400 text-2xl">{Math.abs(orderData.totalAmountOverride ?? finalAmount).toLocaleString()} ج.م</span>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowEditTotalModal(true)}
+                                        className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600 underline mt-1"
+                                    >
+                                        تعديل الإجمالي يدوياً
+                                    </button>
+                                </div>
                             </div>
+
+                            {showEditTotalModal && (
+                                <EditTotalModal 
+                                    currentTotal={orderData.totalAmountOverride ?? finalAmount}
+                                    onClose={() => setShowEditTotalModal(false)}
+                                    onApply={(amount, reason) => {
+                                        handleFieldChange('totalAmountOverride', amount);
+                                        handleFieldChange('totalAmountOverrideReason', reason);
+                                        setShowEditTotalModal(false);
+                                    }}
+                                />
+                            )}
                         </div>
                          <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50 space-y-4">
                              <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
@@ -1226,7 +1451,7 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
                     <div>
                         {isExchange && <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">الطلب الجديد: {totalBeforeCredit.toLocaleString()} ج.م - رصيد سابق: {creditAmount.toLocaleString()} ج.م</div>}
                         <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{finalAmount >= 0 ? 'الإجمالي المطلوب من العميل' : 'المبلغ المستحق للعميل'}</span>
-                        <p className={`text-3xl font-black ${finalAmount >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-orange-500'}`}>{Math.abs(finalAmount).toLocaleString()} ج.م</p>
+                        <p className={`text-3xl font-black ${finalAmount >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-orange-500'}`}>{Math.abs(orderData.totalAmountOverride ?? finalAmount).toLocaleString()} ج.م</p>
                     </div>
                     <div className="flex gap-3">
                         <button type="button" onClick={onClose} className="px-6 py-3.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
@@ -1267,7 +1492,10 @@ const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ ord
                         <span className="font-black text-slate-700 dark:text-slate-200">{order.productPrice.toLocaleString()} ج.م</span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
-                        <span className="font-bold text-slate-500">مصاريف الشحن:</span>
+                        <div className="flex items-center gap-1">
+                            <span className="font-bold text-slate-500">مصاريف الشحن:</span>
+                            <span className="text-[10px] text-slate-400 font-medium">(الوزن: {order.weight.toFixed(2)} كجم)</span>
+                        </div>
                         <span className="font-black text-slate-700 dark:text-slate-200">{order.shippingFee.toLocaleString()} ج.م</span>
                     </div>
                     {inspectionFee > 0 && (
@@ -1293,6 +1521,14 @@ const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ ord
                         <span className="font-black text-indigo-600 dark:text-indigo-400">الإجمالي المطلوب تحصيله:</span>
                         <span className="font-black text-indigo-600 dark:text-indigo-400">{total.toLocaleString()} ج.م</span>
                     </div>
+                    {order.totalAmountOverride !== undefined && order.totalAmountOverrideReason && (
+                        <div className="mt-3 text-right">
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">سبب تعديل الإجمالي</span>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800 italic">
+                                "{order.totalAmountOverrideReason}"
+                            </p>
+                        </div>
+                    )}
                 </div>
                 <button onClick={onClose} className="mt-8 w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-sm hover:shadow">
                     إغلاق
@@ -1342,7 +1578,10 @@ const OrderPreConfirmationModal: React.FC<OrderPreConfirmationModalProps> = ({ o
                         <span className="font-black text-slate-700 dark:text-slate-200">{order.productPrice.toLocaleString()} ج.م</span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
-                        <span className="font-bold text-slate-500">مصاريف الشحن:</span>
+                        <div className="flex items-center gap-1">
+                            <span className="font-bold text-slate-500">مصاريف الشحن:</span>
+                            <span className="text-[10px] text-slate-400 font-medium">(الوزن: {order.weight.toFixed(2)} كجم)</span>
+                        </div>
                         <span className="font-black text-slate-700 dark:text-slate-200">{order.shippingFee.toLocaleString()} ج.م</span>
                     </div>
                     {inspectionFee > 0 && (
