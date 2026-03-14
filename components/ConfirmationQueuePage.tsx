@@ -98,17 +98,27 @@ const DetailItem = ({ icon, label, value }: { icon: React.ReactNode, label: stri
 
 const timeSince = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
-    let interval = seconds / 31536000;
-    if (interval > 1) return `منذ ${Math.floor(interval)} سنة`;
-    interval = seconds / 2592000;
-    if (interval > 1) return `منذ ${Math.floor(interval)} شهر`;
-    interval = seconds / 86400;
-    if (interval > 1) return `منذ ${Math.floor(interval)} يوم`;
-    interval = seconds / 3600;
-    if (interval > 1) return `منذ ${Math.floor(interval)} ساعة`;
-    interval = seconds / 60;
-    if (interval > 1) return `منذ ${Math.floor(interval)} دقيقة`;
-    return "الآن";
+    
+    if (seconds < 60) return "الآن";
+    
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `منذ ${minutes} دقيقة`;
+    
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `منذ ${hours} ساعة`;
+    
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `منذ ${days} يوم`;
+    
+    const months = Math.floor(days / 30);
+    if (months < 12) return `منذ ${months} شهر`;
+    
+    return `منذ ${Math.floor(months / 12)} سنة`;
+};
+
+const formatOrderTime = (date: string) => {
+    const d = new Date(date);
+    return d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true });
 };
 
 const CustomerHistory = ({ allOrders, customerPhone, currentOrderId }: { allOrders: Order[], customerPhone: string, currentOrderId: string }) => {
@@ -244,6 +254,13 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     const [isProductModalOpen, setIsProductModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [tick, setTick] = useState(0);
+
+    useEffect(() => {
+        const timer = setInterval(() => setTick(t => t + 1), 60000);
+        return () => clearInterval(timer);
+    }, []);
+
     const [callStartTime, setCallStartTime] = useState<number | null>(null);
     const [callDuration, setCallDuration] = useState<number>(0);
     const [autoDialer, setAutoDialer] = useState(false);
@@ -619,23 +636,52 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                             </button>
                         </div>
                     </div>
-                    {pendingOrders.length === 0 ? <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400"><Check size={48} className="mb-4 opacity-50"/><p className="font-bold">{searchTerm ? `لا توجد نتائج بحث لـ "${searchTerm}"` : "لا توجد طلبات في انتظار التأكيد."}</p></div>
-                     : <div className="flex-1 overflow-y-auto">
-                         <div className="p-4">
-                             <EmployeePerformance orders={orders} currentUser={currentUser} />
-                         </div>
-                         {pendingOrders.map(order => (
-                         <button key={order.id} onClick={() => handleSelectOrder(order)} className={`w-full text-right p-4 flex items-start gap-3 transition-colors border-b border-slate-100 dark:border-slate-800 ${activeOrder?.id === order.id ? 'bg-cyan-50 dark:bg-cyan-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
-                            <div className="flex-1">
-                                <div className="flex justify-between items-center">
-                                    <h4 className="font-bold text-slate-800 dark:text-white text-sm">{order.customerName}</h4>
-                                    <span className="text-xs text-slate-500 font-mono">{timeSince(order.date)}</span>
-                                </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{order.productName}</p>
-                                <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mt-1">{(order.totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0))).toLocaleString()} ج.م</p>
+                    {pendingOrders.length === 0 ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400">
+                            <Check size={48} className="mb-4 opacity-50"/>
+                            <p className="font-bold">{searchTerm ? `لا توجد نتائج بحث لـ "${searchTerm}"` : "لا توجد طلبات في انتظار التأكيد."}</p>
+                        </div>
+                    ) : (
+                        <div className="flex-1 overflow-y-auto">
+                            <div className="p-4">
+                                <EmployeePerformance orders={orders} currentUser={currentUser} />
                             </div>
-                        </button>
-                     ))}</div>}
+                            {pendingOrders.map(order => {
+                                const orderAgeHours = (new Date().getTime() - new Date(order.date).getTime()) / (1000 * 60 * 60);
+                                const isHighPriority = orderAgeHours > 2;
+                                
+                                return (
+                                    <button 
+                                        key={order.id} 
+                                        onClick={() => handleSelectOrder(order)} 
+                                        className={`w-full text-right p-4 flex items-start gap-3 transition-colors border-b border-slate-100 dark:border-slate-800 relative ${activeOrder?.id === order.id ? 'bg-cyan-50 dark:bg-cyan-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+                                    >
+                                        {isHighPriority && (
+                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500" title="طلب قديم - أولوية عالية" />
+                                        )}
+                                        <div className="flex-1">
+                                            <div className="flex justify-between items-start">
+                                                <h4 className="font-bold text-slate-800 dark:text-white text-sm">{order.customerName}</h4>
+                                                <div className="text-left">
+                                                    <div className="text-[10px] font-black text-slate-400 uppercase">{formatOrderTime(order.date)}</div>
+                                                    <div className={`text-[10px] font-bold ${isHighPriority ? 'text-red-500' : 'text-slate-500'}`}>{timeSince(order.date)}</div>
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-1">{order.productName}</p>
+                                            <div className="flex justify-between items-center mt-2">
+                                                <p className="text-xs font-black text-indigo-600 dark:text-indigo-400">{(order.totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0))).toLocaleString()} ج.م</p>
+                                                {order.callAttempts && order.callAttempts > 0 && (
+                                                    <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
+                                                        {order.callAttempts} محاولات
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
 
                 <div className={`w-full md:w-2/3 flex flex-col h-full transition-all duration-300 ${activeOrder ? 'flex' : 'hidden md:flex'}`}>
@@ -667,8 +713,6 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             <button
                                                 key={status.label}
                                                 onClick={() => {
-                                                    const newAttempts = (activeOrder.callAttempts || 0) + 1;
-                                                    updateActiveOrderField('callAttempts', newAttempts);
                                                     handleActionSubmit(status.action);
                                                 }}
                                                 className={`p-2 rounded-lg text-xs font-bold transition-all hover:scale-105 active:scale-95 ${status.color}`}
@@ -819,9 +863,28 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                 </div>
                                             ) : (
                                                     <div className="flex items-start justify-between">
-                                                        <div>
+                                                        <div className="flex-1">
                                                             <p className="font-bold text-sm text-slate-800 dark:text-white pr-4">{activeOrder.customerAddress}</p>
                                                             <p className="text-xs text-slate-500 mt-1">{activeOrder.shippingArea} {activeOrder.city ? `- ${activeOrder.city}` : ''}</p>
+                                                            <div className="flex items-center gap-2 mt-2">
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        navigator.clipboard.writeText(`${activeOrder.customerAddress}, ${activeOrder.city || ''}, ${activeOrder.shippingArea}`);
+                                                                        alert('تم نسخ العنوان');
+                                                                    }}
+                                                                    className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"
+                                                                >
+                                                                    <Save size={12}/> نسخ العنوان
+                                                                </button>
+                                                                <a 
+                                                                    href={`https://www.google.com/maps/search/${encodeURIComponent(`${activeOrder.customerAddress} ${activeOrder.city || ''} ${activeOrder.shippingArea}`)}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-[10px] font-bold text-slate-400 hover:text-blue-600 flex items-center gap-1"
+                                                                >
+                                                                    <MapPin size={12}/> خرائط جوجل
+                                                                </a>
+                                                            </div>
                                                         </div>
                                                         <div className="flex items-center gap-1">
                                                             <button 
@@ -1113,7 +1176,46 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                 </div>
             </div>
             {isProductModalOpen && activeOrder && <ProductEditModal isOpen={isProductModalOpen} onClose={() => setIsProductModalOpen(false)} onSave={handleSaveProducts} currentItems={activeOrder.items} allProducts={settings.products} />}
-            {isLogModalOpen && activeOrder && (<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm md:hidden" onClick={() => setIsLogModalOpen(false)}><motion.div initial={{ y: "100%" }} animate={{ y: "0%" }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 300, damping: 30 }} className="w-full bg-white dark:bg-slate-900 rounded-t-2xl p-5 shadow-lg border-t border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}><div className="w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-4"></div><h3 className="font-bold text-lg mb-4 text-center text-slate-800 dark:text-white">تسجيل إجراء للمكالمة</h3><div className="space-y-3"><div className="relative"><select value={selectedAction} onChange={e => setSelectedAction(e.target.value)} className="w-full p-3 pr-4 pl-8 appearance-none bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold outline-none focus:ring-2 focus:ring-indigo-500">{CONFIRMATION_ACTIONS.map(action => <option key={action} value={action}>{action}</option>)}</select><ChevronsUpDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/></div><textarea placeholder="إضافة ملاحظات (اختياري)..." rows={3} value={actionNotes} onChange={e => setActionNotes(e.target.value)} className="w-full p-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"></textarea><button onClick={() => { handleActionSubmit(selectedAction); setIsLogModalOpen(false); }} className="w-full p-4 bg-indigo-600 text-white rounded-lg font-black hover:bg-indigo-700">حفظ الإجراء</button></div></motion.div></div>)}
+            {isLogModalOpen && activeOrder && (
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm md:hidden" onClick={() => setIsLogModalOpen(false)}>
+                    <motion.div 
+                        initial={{ y: "100%" }} 
+                        animate={{ y: "0%" }} 
+                        exit={{ y: "100%" }} 
+                        transition={{ type: "spring", stiffness: 300, damping: 30 }} 
+                        className="w-full bg-white dark:bg-slate-900 rounded-t-2xl p-5 shadow-lg border-t border-slate-200 dark:border-slate-800" 
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-4"></div>
+                        <h3 className="font-bold text-lg mb-4 text-center text-slate-800 dark:text-white">تسجيل إجراء للمكالمة</h3>
+                        <div className="space-y-3">
+                            <div className="relative">
+                                <select 
+                                    value={selectedAction} 
+                                    onChange={e => setSelectedAction(e.target.value)} 
+                                    className="w-full p-3 pr-4 pl-8 appearance-none bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    {CONFIRMATION_ACTIONS.map(action => <option key={action} value={action}>{action}</option>)}
+                                </select>
+                                <ChevronsUpDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                            </div>
+                            <textarea 
+                                placeholder="إضافة ملاحظات (اختياري)..." 
+                                rows={3} 
+                                value={actionNotes} 
+                                onChange={e => setActionNotes(e.target.value)} 
+                                className="w-full p-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                            ></textarea>
+                            <button 
+                                onClick={() => { handleActionSubmit(selectedAction); setIsLogModalOpen(false); }} 
+                                className="w-full p-4 bg-indigo-600 text-white rounded-lg font-black hover:bg-indigo-700"
+                            >
+                                حفظ الإجراء
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
 
             {isScriptsOpen && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
