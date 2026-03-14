@@ -6,7 +6,7 @@ import * as db from './services/databaseService';
 import { supabase } from './services/supabaseClient';
 import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
-import { oneToolzProducts } from './data/one-toolz-products';
+import { oneToolzProducts } from './src/data/one-toolz-products';
 
 // Page Components (will be loaded via router)
 import SignUpPage from './components/SignUpPage';
@@ -725,7 +725,6 @@ export const AppComponent = () => {
         settings: activeStoreId ? allStoresData[activeStoreId]?.settings || INITIAL_SETTINGS : INITIAL_SETTINGS,
         wallet: activeStoreId ? allStoresData[activeStoreId]?.wallet || { balance: 0, transactions: [] } : { balance: 0, transactions: [] },
         cart,
-        customers: activeStoreId ? allStoresData[activeStoreId]?.customers || [] : [],
         setOrders: (updater: any) => {
             if(activeStoreId) {
                 setAllStoresData(p => {
@@ -780,44 +779,6 @@ export const AppComponent = () => {
                 });
             }
         },
-        setCustomers: (updater: any) => {
-            if(activeStoreId) {
-                setAllStoresData(p => {
-                    const currentCustomers = p[activeStoreId]?.customers || [];
-                    const newCustomers = typeof updater === 'function' ? updater(currentCustomers) : updater;
-                    
-                    if (currentCustomers === newCustomers) return p;
-
-                    return {
-                        ...p, 
-                        [activeStoreId]: {
-                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
-                            customers: newCustomers
-                        }
-                    };
-                });
-            }
-        },
-    };
-
-    const handlePlaceOrder = (data: any) => {
-        if (!activeStoreId) return '';
-        const newOrder = {
-            id: `order-${Date.now()}`,
-            date: new Date().toISOString(),
-            status: 'pending',
-            items: pageProps.cart,
-            ...data,
-        };
-        pageProps.setOrders((prev: any) => [newOrder, ...prev]);
-        setAllStoresData(p => ({
-            ...p,
-            [activeStoreId]: {
-                ...p[activeStoreId],
-                cart: []
-            }
-        }));
-        return newOrder.id;
     };
 
     return (
@@ -870,9 +831,9 @@ export const AppComponent = () => {
                 }>
                     <Route index element={<Dashboard {...pageProps} />} />
                     <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} />} />
-                    <Route path="orders" element={<OrdersList {...pageProps} customers={pageProps.customers} setCustomers={pageProps.setCustomers} addLoyaltyPointsForOrder={() => {}} />} />
+                    <Route path="orders" element={<OrdersList {...pageProps} addLoyaltyPointsForOrder={() => {}} />} />
                     <Route path="products" element={<ProductsPage {...pageProps} />} />
-                    <Route path="customers" element={<CustomersPage orders={pageProps.orders} customers={pageProps.customers} setCustomers={pageProps.setCustomers} loyaltyData={{}} updateCustomerLoyaltyPoints={() => {}} />} />
+                    <Route path="customers" element={<CustomersPage orders={pageProps.orders} loyaltyData={{}} updateCustomerLoyaltyPoints={() => {}} />} />
                     <Route path="wallet" element={<WalletPage {...pageProps} />} />
                     <Route path="settings" element={<SettingsPage {...pageProps} onManualSave={currentUser?.isAdmin ? handleManualMigration : undefined} />} />
                     <Route path="customize-store" element={<StoreCustomizationPage {...pageProps} />} />
@@ -911,7 +872,7 @@ export const AppComponent = () => {
                 </Route>
 
                 <Route path="store" element={<StorefrontPage {...pageProps} onAddToCart={() => {}} onUpdateCartQuantity={() => {}} onRemoveFromCart={() => {}} />} />
-                <Route path="checkout" element={<CheckoutPage {...pageProps} onPlaceOrder={handlePlaceOrder} />} />
+                <Route path="checkout" element={<CheckoutPage {...pageProps} onPlaceOrder={() => '123'} />} />
                 <Route path="order-success/:orderId" element={<OrderSuccessPage {...pageProps} />} />
                 <Route path="*" element={<CatchAllRedirect currentUser={currentUser} isEmployeeSession={isEmployeeSession} />} />
             </Routes>
