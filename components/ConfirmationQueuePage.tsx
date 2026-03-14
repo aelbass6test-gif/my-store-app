@@ -146,12 +146,43 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     const [isEditingAddress, setIsEditingAddress] = useState(false);
     const [editedAddress, setEditedAddress] = useState('');
     const [editedGovernorate, setEditedGovernorate] = useState('');
+    const [editedCity, setEditedCity] = useState('');
     const [isEditingPhone2, setIsEditingPhone2] = useState(false);
     const [editedPhone2, setEditedPhone2] = useState('');
+    const [isEditingNotes, setIsEditingNotes] = useState(false);
+    const [editedNotes, setEditedNotes] = useState('');
+    const [isEditingShippingCompany, setIsEditingShippingCompany] = useState(false);
+    const [editedShippingCompany, setEditedShippingCompany] = useState('');
+    const [isEditingDiscount, setIsEditingDiscount] = useState(false);
+    const [editedDiscount, setEditedDiscount] = useState<number | ''>('');
     const [isLogModalOpen, setIsLogModalOpen] = useState(false);
     const [isProductModalOpen, setIsProductModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [callStartTime, setCallStartTime] = useState<number | null>(null);
+    const [callDuration, setCallDuration] = useState<number>(0);
+
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (callStartTime) {
+            interval = setInterval(() => {
+                setCallDuration(Math.floor((Date.now() - callStartTime) / 1000));
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [callStartTime]);
+
+    const formatDuration = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const upsellProducts = useMemo(() => {
+        if (!activeOrder || !settings.products) return [];
+        const currentProductIds = activeOrder.items.map(item => item.productId);
+        return settings.products.filter(p => !currentProductIds.includes(p.id)).slice(0, 3);
+    }, [activeOrder, settings.products]);
     const [whatsappMenuOpen, setWhatsappMenuOpen] = useState(false);
 
     const pendingOrders = useMemo(() =>
@@ -192,8 +223,20 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
             setIsEditingAddress(false);
             setEditedAddress(activeOrder.customerAddress);
             setEditedGovernorate(activeOrder.shippingArea || '');
+            setEditedCity(activeOrder.city || '');
             setIsEditingPhone2(false);
             setEditedPhone2(activeOrder.customerPhone2 || '');
+            setIsEditingNotes(false);
+            setEditedNotes(activeOrder.notes || '');
+            setIsEditingShippingCompany(false);
+            setEditedShippingCompany(activeOrder.shippingCompany || '');
+            setIsEditingDiscount(false);
+            setEditedDiscount(activeOrder.discount || 0);
+            setCallStartTime(Date.now());
+            setCallDuration(0);
+        } else {
+            setCallStartTime(null);
+            setCallDuration(0);
         }
     }, [activeOrder]);
 
@@ -253,7 +296,8 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         const notes = [
             actionNotes,
             cancellationReason ? `السبب: ${cancellationReason}` : '',
-            reminderTime ? `تذكير بعد: ${REMINDER_OPTIONS.find(r => r.value === reminderTime)?.label}` : ''
+            reminderTime ? `تذكير بعد: ${REMINDER_OPTIONS.find(r => r.value === reminderTime)?.label}` : '',
+            `مدة فتح الطلب: ${formatDuration(callDuration)}`
         ].filter(Boolean).join(' | ');
 
         const newLog: ConfirmationLog = { 
@@ -310,16 +354,17 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         if (!activeOrder) return;
         
         let newShippingFee = activeOrder.shippingFee;
-        if (editedGovernorate && editedGovernorate !== activeOrder.shippingArea) {
+        if (editedGovernorate && (editedGovernorate !== activeOrder.shippingArea || editedCity !== activeOrder.city)) {
              const shippingOptions = settings.shippingOptions[activeOrder.shippingCompany] || [];
              const selectedOption = shippingOptions.find(opt => opt.label === editedGovernorate);
              if (selectedOption) {
-                 newShippingFee = selectedOption.price;
+                 const cityOption = selectedOption.cities?.find(c => c.name === editedCity);
+                 newShippingFee = cityOption && cityOption.shippingPrice > 0 ? cityOption.shippingPrice : selectedOption.price;
              }
         }
 
         setOrders(currentOrders => 
-            currentOrders.map(o => o.id === activeOrder.id ? { ...o, customerAddress: editedAddress, shippingArea: editedGovernorate, shippingFee: newShippingFee } : o)
+            currentOrders.map(o => o.id === activeOrder.id ? { ...o, customerAddress: editedAddress, shippingArea: editedGovernorate, city: editedCity, shippingFee: newShippingFee } : o)
         );
         setIsEditingAddress(false);
     };
@@ -328,6 +373,38 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         updateActiveOrderField('customerPhone2', editedPhone2);
         setIsEditingPhone2(false);
     };
+
+    const handleSaveNotes = () => {
+        updateActiveOrderField('notes', editedNotes);
+        setIsEditingNotes(false);
+    };
+
+    const handleSaveShippingCompany = () => {
+        if (!activeOrder) return;
+        
+        let newShippingFee = activeOrder.shippingFee;
+        const shippingOptions = settings.shippingOptions[editedShippingCompany] || [];
+        const selectedOption = shippingOptions.find(opt => opt.label === activeOrder.shippingArea);
+        if (selectedOption) {
+            const cityOption = selectedOption.cities?.find(c => c.name === activeOrder.city);
+            newShippingFee = cityOption && cityOption.shippingPrice > 0 ? cityOption.shippingPrice : selectedOption.price;
+        }
+
+        setOrders(currentOrders => 
+            currentOrders.map(o => o.id === activeOrder.id ? { ...o, shippingCompany: editedShippingCompany, shippingFee: newShippingFee } : o)
+        );
+        setIsEditingShippingCompany(false);
+    };
+
+    const handleSaveDiscount = () => {
+        if (!activeOrder) return;
+        const discountValue = typeof editedDiscount === 'number' ? editedDiscount : 0;
+        setOrders(currentOrders => 
+            currentOrders.map(o => o.id === activeOrder.id ? { ...o, discount: discountValue } : o)
+        );
+        setIsEditingDiscount(false);
+    };
+
     const handleSaveProducts = (newItems: OrderItem[]) => {
         if (!activeOrder) return;
 
@@ -354,10 +431,22 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     const { productsTotal, totalAmount, inspectionFeeValue } = useMemo(() => {
         if (!activeOrder) return { productsTotal: 0, totalAmount: 0, inspectionFeeValue: 0 };
         const productsTotal = activeOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        // Calculate shipping fee based on city if available
+        let shippingFee = activeOrder.shippingFee;
+        const shippingOptions = settings.shippingOptions[activeOrder.shippingCompany] || [];
+        const selectedOption = shippingOptions.find(opt => opt.label === activeOrder.shippingArea);
+        if (selectedOption) {
+            const cityOption = selectedOption.cities?.find(c => c.name === activeOrder.city);
+            if (cityOption && cityOption.shippingPrice > 0) {
+                shippingFee = cityOption.shippingPrice;
+            }
+        }
+
         const compFees = settings.companySpecificFees?.[activeOrder.shippingCompany];
         const useCustom = compFees?.useCustomFees ?? false;
         const inspectionFee = activeOrder.includeInspectionFee ? (useCustom ? compFees!.inspectionFee : (settings.enableInspection ? settings.inspectionFee : 0)) : 0;
-        const totalAmount = productsTotal + activeOrder.shippingFee - (activeOrder.discount || 0) + inspectionFee;
+        const totalAmount = productsTotal + shippingFee - (activeOrder.discount || 0) + inspectionFee;
         return { productsTotal, totalAmount, inspectionFeeValue: inspectionFee };
     }, [activeOrder, settings]);
     
@@ -426,7 +515,13 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                         <>
                             <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 flex-shrink-0">
                                 <button onClick={() => setActiveOrder(null)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"><ArrowRight size={20}/></button>
-                                <div className="flex-1"><h3 className="font-bold text-slate-800 dark:text-white">تفاصيل الطلب #{activeOrder.orderNumber}</h3></div>
+                                <div className="flex-1 flex items-center justify-between">
+                                    <h3 className="font-bold text-slate-800 dark:text-white">تفاصيل الطلب #{activeOrder.orderNumber}</h3>
+                                    <div className="flex items-center gap-2 text-sm font-mono text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full">
+                                        <PhoneCall size={14} className={callDuration > 0 ? "animate-pulse text-emerald-500" : ""} />
+                                        {formatDuration(callDuration)}
+                                    </div>
+                                </div>
                             </div>
                             
                             <div className="flex-1 p-6 space-y-6 overflow-y-auto md:pb-6 pb-28">
@@ -480,7 +575,12 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                     </div>
                                                     {whatsappMenuOpen && <div className="fixed inset-0 z-0" onClick={() => setWhatsappMenuOpen(false)}></div>}
                                                     
-                                                    <a href={`tel:${activeOrder.customerPhone}`} className="p-2 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full hover:bg-blue-200 transition-colors" title="اتصال">
+                                                    <a 
+                                                        href={`tel:${activeOrder.customerPhone}`} 
+                                                        onClick={() => setCallStartTime(Date.now())}
+                                                        className="p-2 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full hover:bg-blue-200 transition-colors" 
+                                                        title="اتصال"
+                                                    >
                                                         <PhoneCall size={16}/>
                                                     </a>
                                                 </div>
@@ -507,7 +607,12 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                                 <a href={`https://wa.me/2${activeOrder.customerPhone2.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-full hover:bg-emerald-200 transition-colors" title="مراسلة عبر واتساب">
                                                                     <MessageSquare size={16}/>
                                                                 </a>
-                                                                <a href={`tel:${activeOrder.customerPhone2}`} className="p-2 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full hover:bg-blue-200 transition-colors" title="اتصال">
+                                                                <a 
+                                                                    href={`tel:${activeOrder.customerPhone2}`} 
+                                                                    onClick={() => setCallStartTime(Date.now())}
+                                                                    className="p-2 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full hover:bg-blue-200 transition-colors" 
+                                                                    title="اتصال"
+                                                                >
                                                                     <PhoneCall size={16}/>
                                                                 </a>
                                                             </>
@@ -525,7 +630,10 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                 <div className="space-y-2">
                                                     <select 
                                                         value={editedGovernorate} 
-                                                        onChange={e => setEditedGovernorate(e.target.value)}
+                                                        onChange={e => {
+                                                            setEditedGovernorate(e.target.value);
+                                                            setEditedCity('');
+                                                        }}
                                                         className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold"
                                                     >
                                                         <option value="">اختر المحافظة...</option>
@@ -533,6 +641,18 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                             <option key={opt.id} value={opt.label}>{opt.label} ({opt.price} ج.م)</option>
                                                         ))}
                                                     </select>
+                                                    {editedGovernorate && activeShippingOptions.find(opt => opt.label === editedGovernorate)?.cities && activeShippingOptions.find(opt => opt.label === editedGovernorate)!.cities!.length > 0 && (
+                                                        <select
+                                                            value={editedCity}
+                                                            onChange={e => setEditedCity(e.target.value)}
+                                                            className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold"
+                                                        >
+                                                            <option value="">اختر المدينة...</option>
+                                                            {activeShippingOptions.find(opt => opt.label === editedGovernorate)?.cities?.map(city => (
+                                                                <option key={city.id} value={city.name}>{city.name} {city.shippingPrice > 0 ? `(${city.shippingPrice} ج.م)` : ''}</option>
+                                                            ))}
+                                                        </select>
+                                                    )}
                                                     <div className="flex gap-2">
                                                         <input type="text" value={editedAddress} onChange={e => setEditedAddress(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold"/>
                                                         <button onClick={handleSaveAddress} className="p-2 bg-emerald-100 text-emerald-600 rounded-md"><Save size={16}/></button>
@@ -542,9 +662,9 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                 <div className="flex items-start justify-between">
                                                     <div>
                                                         <p className="font-bold text-sm text-slate-800 dark:text-white pr-4">{activeOrder.customerAddress}</p>
-                                                        <p className="text-xs text-slate-500 mt-1">{activeOrder.shippingArea}</p>
+                                                        <p className="text-xs text-slate-500 mt-1">{activeOrder.shippingArea} {activeOrder.city ? `- ${activeOrder.city}` : ''}</p>
                                                     </div>
-                                                    <button onClick={() => { setIsEditingAddress(true); setEditedAddress(activeOrder.customerAddress); setEditedGovernorate(activeOrder.shippingArea); }} className="p-1 text-slate-400 hover:text-blue-500"><Edit3 size={14}/></button>
+                                                    <button onClick={() => { setIsEditingAddress(true); setEditedAddress(activeOrder.customerAddress); setEditedGovernorate(activeOrder.shippingArea); setEditedCity(activeOrder.city || ''); }} className="p-1 text-slate-400 hover:text-blue-500"><Edit3 size={14}/></button>
                                                 </div>
                                             )}
                                         </div>
@@ -558,7 +678,38 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             <div className="space-y-2">{activeOrder.items.map(item => (<div key={item.productId + (item.variantId || '')} className="flex justify-between items-center bg-slate-100 dark:bg-slate-700/50 p-2 rounded-lg"><div><p className="font-bold text-sm text-slate-800 dark:text-white">{item.name}</p><p className="text-xs text-slate-500">{item.variantDescription || ''}</p></div><div className="text-right"><p className="font-bold text-sm text-slate-700 dark:text-slate-300">{item.quantity} x {item.price.toLocaleString()} ج.م</p><p className="font-black text-xs text-indigo-600 dark:text-indigo-400">{(item.quantity * item.price).toLocaleString()} ج.م</p></div></div>))}</div>
                                         </div>
                                         <DetailItem icon={<CalendarDays size={14}/>} label="تاريخ الطلب" value={new Date(activeOrder.date).toLocaleString('ar-EG')} />
-                                        <DetailItem icon={<Truck size={14}/>} label="شركة الشحن" value={activeOrder.shippingCompany} />
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-slate-500 flex items-center gap-1"><Truck size={14}/> شركة الشحن</label>
+                                            {isEditingShippingCompany ? (
+                                                <div className="flex gap-2">
+                                                    <select value={editedShippingCompany} onChange={e => setEditedShippingCompany(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold">
+                                                        {Object.keys(settings.shippingOptions).filter(c => settings.activeCompanies[c]).map(company => (
+                                                            <option key={company} value={company}>{company}</option>
+                                                        ))}
+                                                    </select>
+                                                    <button onClick={handleSaveShippingCompany} className="p-2 bg-emerald-100 text-emerald-600 rounded-md"><Save size={16}/></button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-start justify-between">
+                                                    <p className="font-bold text-sm text-slate-800 dark:text-white">{activeOrder.shippingCompany}</p>
+                                                    <button onClick={() => { setIsEditingShippingCompany(true); setEditedShippingCompany(activeOrder.shippingCompany); }} className="p-1 text-slate-400 hover:text-blue-500"><Edit3 size={14}/></button>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-slate-500 flex items-center gap-1"><Edit3 size={14}/> ملاحظات الطلب</label>
+                                            {isEditingNotes ? (
+                                                <div className="flex gap-2">
+                                                    <textarea value={editedNotes} onChange={e => setEditedNotes(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold" rows={2}></textarea>
+                                                    <button onClick={handleSaveNotes} className="p-2 bg-emerald-100 text-emerald-600 rounded-md"><Save size={16}/></button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-start justify-between">
+                                                    <p className="font-bold text-sm text-slate-800 dark:text-white">{activeOrder.notes || <span className="text-slate-400 italic">لا يوجد ملاحظات</span>}</p>
+                                                    <button onClick={() => { setIsEditingNotes(true); setEditedNotes(activeOrder.notes || ''); }} className="p-1 text-slate-400 hover:text-blue-500"><Edit3 size={14}/></button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </DetailSection>
                                 </div>
                                 <DetailSection title="الملخص المالي">
@@ -583,12 +734,21 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                 </button>
                                             </div>
                                         </div>
-                                        {activeOrder.discount > 0 && (
-                                            <div className="flex justify-between items-center text-red-500">
-                                                <span className="font-bold">خصم</span>
-                                                <span className="font-bold">-{activeOrder.discount.toLocaleString()} ج.م</span>
-                                            </div>
-                                        )}
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-slate-500 flex items-center gap-1">الخصم</label>
+                                            {isEditingDiscount ? (
+                                                <div className="flex gap-2">
+                                                    <input type="number" value={editedDiscount} onChange={e => setEditedDiscount(e.target.value === '' ? '' : Number(e.target.value))} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold" min="0"/>
+                                                    <button onClick={handleSaveDiscount} className="p-2 bg-emerald-100 text-emerald-600 rounded-md"><Save size={16}/></button>
+                                                    <button type="button" onClick={() => setIsEditingDiscount(false)} className="p-2 bg-slate-100 text-slate-600 rounded-md"><X size={16}/></button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex justify-between items-center text-red-500">
+                                                    <span className="font-bold">-{activeOrder.discount ? activeOrder.discount.toLocaleString() : 0} ج.م</span>
+                                                    <button onClick={() => { setIsEditingDiscount(true); setEditedDiscount(activeOrder.discount || 0); }} className="p-1 text-slate-400 hover:text-blue-500"><Edit3 size={14}/></button>
+                                                </div>
+                                            )}
+                                        </div>
                                         <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 my-2 !mt-4 !mb-3"></div>
                                         <div className="flex justify-between items-center font-black text-lg">
                                             <span className="text-slate-800 dark:text-white">الإجمالي المطلوب:</span>
@@ -596,6 +756,32 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         </div>
                                     </div>
                                 </DetailSection>
+
+                                {upsellProducts.length > 0 && (
+                                    <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-xl p-4">
+                                        <h4 className="font-bold text-indigo-800 dark:text-indigo-300 mb-3 flex items-center gap-2">
+                                            <Package size={16} /> اقتراحات للبيع المتقاطع (Upselling)
+                                        </h4>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                            {upsellProducts.map(product => (
+                                                <div key={product.id} className="bg-white dark:bg-slate-800 p-3 rounded-lg border border-indigo-100 dark:border-indigo-800/50 flex items-center gap-3">
+                                                    {product.thumbnail ? (
+                                                        <img src={product.thumbnail} alt={product.name} className="w-12 h-12 rounded-md object-cover" />
+                                                    ) : (
+                                                        <div className="w-12 h-12 rounded-md bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400">
+                                                            <Package size={20} />
+                                                        </div>
+                                                    )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="font-bold text-sm text-slate-800 dark:text-white truncate">{product.name}</p>
+                                                        <p className="text-xs text-indigo-600 dark:text-indigo-400 font-black">{product.price.toLocaleString()} ج.م</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="space-y-3">
                                     <h4 className="font-bold text-slate-600 dark:text-slate-400 text-sm">تسجيل إجراء ومتابعة</h4>
                                     <div className="relative">
@@ -704,7 +890,41 @@ const ProductEditModal: React.FC<ProductEditModalProps> = ({ isOpen, onClose, on
         let newItems = [...editedItems];
         if (field === 'productId') {
             const product = allProducts.find(p => p.id === value);
-            if(product) newItems[index] = { ...newItems[index], productId: value, name: product.name, price: product.price, cost: product.costPrice, weight: product.weight, thumbnail: product.thumbnail };
+            if(product) {
+                newItems[index] = { 
+                    ...newItems[index], 
+                    productId: value, 
+                    name: product.name, 
+                    price: product.price, 
+                    cost: product.costPrice, 
+                    weight: product.weight, 
+                    thumbnail: product.thumbnail,
+                    variantId: undefined,
+                    variantDescription: undefined
+                };
+            }
+        } else if (field === 'variantId') {
+            const product = allProducts.find(p => p.id === newItems[index].productId);
+            const variant = product?.variants?.find(v => v.id === value);
+            if (variant) {
+                newItems[index] = {
+                    ...newItems[index],
+                    variantId: value,
+                    variantDescription: Object.entries(variant.options).map(([k, v]) => `${k}: ${v}`).join(', '),
+                    price: variant.price,
+                    cost: variant.costPrice,
+                    weight: variant.weight
+                };
+            } else {
+                newItems[index] = {
+                    ...newItems[index],
+                    variantId: undefined,
+                    variantDescription: undefined,
+                    price: product?.price || 0,
+                    cost: product?.costPrice || 0,
+                    weight: product?.weight || 0
+                };
+            }
         } else {
             newItems[index] = { ...newItems[index], [field]: value };
         }
@@ -728,16 +948,38 @@ const ProductEditModal: React.FC<ProductEditModalProps> = ({ isOpen, onClose, on
                     <button onClick={onClose}><XCircle className="text-slate-400 hover:text-red-500"/></button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
-                    {editedItems.map((item, index) => (
-                        <div key={index} className="p-3 bg-slate-50 dark:bg-slate-800/50 border rounded-lg space-y-2 relative">
-                            <button onClick={() => removeItem(index)} className="absolute top-2 left-2 text-slate-400 hover:text-red-500"><XCircle size={16}/></button>
-                            <select value={item.productId} onChange={e => updateItem(index, 'productId', e.target.value)} className="w-full p-2 bg-white dark:bg-slate-800 rounded text-sm">{allProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-                            <div className="flex gap-2">
-                                <input type="number" placeholder="الكمية" value={item.quantity} onChange={e => updateItem(index, 'quantity', Number(e.target.value))} className="w-1/2 p-2 bg-white dark:bg-slate-800 rounded" />
-                                <input type="number" placeholder="السعر" value={item.price} onChange={e => updateItem(index, 'price', Number(e.target.value))} className="w-1/2 p-2 bg-white dark:bg-slate-800 rounded" />
+                    {editedItems.map((item, index) => {
+                        const product = allProducts.find(p => p.id === item.productId);
+                        const hasVariants = product?.variants && product.variants.length > 0;
+                        const selectedVariant = hasVariants ? product.variants?.find(v => v.id === item.variantId) : null;
+                        const stock = hasVariants ? (selectedVariant?.stock || 0) : (product?.stock || 0);
+                        
+                        return (
+                            <div key={index} className="p-3 bg-slate-50 dark:bg-slate-800/50 border rounded-lg space-y-2 relative">
+                                <button onClick={() => removeItem(index)} className="absolute top-2 left-2 text-slate-400 hover:text-red-500"><XCircle size={16}/></button>
+                                <select value={item.productId} onChange={e => updateItem(index, 'productId', e.target.value)} className="w-full p-2 bg-white dark:bg-slate-800 rounded text-sm font-bold">{allProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+                                
+                                {hasVariants && (
+                                    <select value={item.variantId || ''} onChange={e => updateItem(index, 'variantId', e.target.value)} className="w-full p-2 bg-white dark:bg-slate-800 rounded text-sm">
+                                        <option value="">بدون متغيرات</option>
+                                        {product.variants?.map(v => (
+                                            <option key={v.id} value={v.id}>
+                                                {Object.entries(v.options).map(([k, val]) => `${k}: ${val}`).join(', ')}
+                                            </option>
+                                        ))}
+                                    </select>
+                                )}
+
+                                <div className="flex gap-2 items-center">
+                                    <input type="number" placeholder="الكمية" value={item.quantity} onChange={e => updateItem(index, 'quantity', Number(e.target.value))} className="w-1/3 p-2 bg-white dark:bg-slate-800 rounded font-bold" min="1" />
+                                    <input type="number" placeholder="السعر" value={item.price} onChange={e => updateItem(index, 'price', Number(e.target.value))} className="w-1/3 p-2 bg-white dark:bg-slate-800 rounded font-bold" min="0" />
+                                    <div className="w-1/3 text-center text-xs font-bold text-slate-500">
+                                        المخزون: <span className={stock < item.quantity ? 'text-red-500' : 'text-emerald-500'}>{stock}</span>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                     <button onClick={addItem} className="w-full mt-3 p-2 bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 font-bold rounded-lg text-sm">+ إضافة منتج آخر</button>
                 </div>
                 <div className="p-6 bg-slate-100 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex justify-end items-center gap-3">
