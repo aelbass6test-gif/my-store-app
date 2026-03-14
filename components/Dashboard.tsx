@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Package, CheckCircle2, Wallet as WalletIcon, Truck, RefreshCcw, FileSearch, Check, PlayCircle, X, AlertTriangle, ArrowRight, Lightbulb, Loader, BrainCircuit, PhoneForwarded, PieChart as ChartIcon } from 'lucide-react';
-import { Order, Settings, Wallet, User, CustomerProfile } from '../types';
+import { Order, Settings, Wallet, User, CustomerProfile, Store } from '../types';
 import { Link } from 'react-router-dom';
 import { motion, Variants } from 'framer-motion';
 import { generateDashboardSuggestions } from '../services/geminiService';
@@ -115,7 +115,7 @@ const SmartSuggestions = ({ orders, settings }: { orders: Order[], settings: Set
 };
 
 
-const Dashboard = ({ orders, settings, wallet, currentUser }: { orders: Order[], settings: Settings, wallet: Wallet, currentUser: User | null }) => {
+const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { orders: Order[], settings: Settings, wallet: Wallet, currentUser: User | null, activeStore: Store | undefined }) => {
   const [showVideoBanner, setShowVideoBanner] = useState(true);
 
   const stats = useMemo(() => {
@@ -156,9 +156,14 @@ const Dashboard = ({ orders, settings, wallet, currentUser }: { orders: Order[],
       initial="hidden"
       animate="visible"
     >
-      <motion.div variants={itemVariants}>
-        <h1 className="text-3xl font-bold text-slate-800 dark:text-white">مرحباً {currentUser?.fullName.split(' ')[0]}!</h1>
-        <p className="text-slate-500">إليك نشاط متجرك في آخر 7 أيام.</p>
+      <motion.div variants={itemVariants} className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800 dark:text-white flex items-center gap-3">
+            مرحباً {currentUser?.fullName.split(' ')[0]}!
+            <span className="text-xs font-mono bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded text-slate-500">#{activeStore?.id}</span>
+          </h1>
+          <p className="text-slate-500">إليك نشاط متجرك في آخر 7 أيام.</p>
+        </div>
       </motion.div>
 
       {showVideoBanner && (
