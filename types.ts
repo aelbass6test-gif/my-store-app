@@ -123,6 +123,7 @@ export interface CompanyFees {
   codFeeRate: number;
   codTaxRate: number;
   postCollectionReturnRefundsProductPrice: boolean;
+  baseWeight?: number;
 }
 
 export const PERMISSIONS = {
@@ -389,6 +390,9 @@ export interface Order {
   confirmationLogs?: ConfirmationLog[];
   cancellationReason?: string;
   followUpReminder?: string;
+  city?: string;
+  callAttempts?: number;
+  sentiment?: 'إيجابي' | 'محايد' | 'سلبي' | 'غاضب' | 'مستعجل';
 }
 
 export interface StoreData {
