@@ -1,16 +1,17 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 
-// 1. استيراد الأنواع (موجودة بجانب App.tsx)
+// 1. الأنواع موجودة بجانب App.tsx داخل src
 import { User, Store, StoreData, Order, Settings, Wallet, OrderItem, Employee, Product, PlaceOrderData } from './types';
 
-// 2. تصحيح مسارات الخدمات والبيانات (جرب المسار المباشر أولاً)
-import * as db from './services/databaseService'; 
-import { supabase } from './supabaseClient'; // تم تعديله من ../ إلى ./
-import { INITIAL_SETTINGS } from './constants';
-import { oneToolzProducts } from './data/one-toolz-products';
+// 2. الخدمات والبيانات موجودة خارج مجلد src (استخدمنا ../)
+import * as db from '../services/databaseService'; 
+import { supabase } from '../supabaseClient'; 
+import { INITIAL_SETTINGS } from '../constants';
+import { oneToolzProducts } from '../data/one-toolz-products';
 
-// 3. تصحيح مسارات المكونات (إذا كانت المكونات خارج src)
+// 3. المكونات موجودة خارج مجلد src
+import GlobalSaveIndicator, { SaveStatus } from '../components/GlobalSaveIndicator';
 import SignUpPage from '../components/SignUpPage';
 import EmployeeLoginPage from '../components/EmployeeLoginPage';
 import CreateStorePage from '../components/CreateStorePage';
@@ -59,7 +60,6 @@ import OrderTrackingPage from '../components/OrderTrackingPage';
 import OtpVerificationPage from '../components/OtpVerificationPage';
 import IosInstallPrompt from '../components/IosInstallPrompt';
 import ComingSoonPage from '../components/ComingSoonPage';
-import GlobalSaveIndicator, { SaveStatus } from '../components/GlobalSaveIndicator';
 
 interface EmployeeRegisterRequestData {
   fullName: string;
