@@ -290,6 +290,18 @@ export interface Collection {
   description?: string;
 }
 
+export interface WhatsAppTemplate {
+  id: string;
+  label: string;
+  text: string;
+}
+
+export interface CallScript {
+  id: string;
+  title: string;
+  text: string;
+}
+
 export interface Settings {
   enableGlobalFinancials: boolean; 
   insuranceFeePercent: number;
@@ -329,6 +341,8 @@ export interface Settings {
   paymentMethods: PaymentMethod[];
   globalOptions: GlobalOption[]; 
   collections: Collection[];
+  whatsappTemplates?: WhatsAppTemplate[];
+  callScripts?: CallScript[];
 }
 
 export interface OrderItem {
@@ -349,6 +363,17 @@ export interface ConfirmationLog {
   timestamp: string;
   action: string;
   notes?: string;
+  duration?: number; // Call duration in seconds
+}
+
+export interface AuditLog {
+  id: string;
+  userId: string;
+  userName: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  timestamp: string;
 }
 
 export interface Order {
@@ -393,6 +418,13 @@ export interface Order {
   confirmationLogs?: ConfirmationLog[];
   cancellationReason?: string;
   followUpReminder?: string;
+  lockedBy?: string;
+  lockedByName?: string;
+  lockedAt?: string;
+  assignedTo?: string;
+  auditLogs?: AuditLog[];
+  callAttempts?: number;
+  sentiment?: string;
 }
 
 export interface StoreData {

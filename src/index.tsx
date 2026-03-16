@@ -3,7 +3,6 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 // FIX: The App component should be the default export which is the AppWrapper.
 import App from './App';
-import reportWebVitals from './reportWebVitals';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -16,7 +15,5 @@ root.render(
     <App />
   </React.StrictMode>
 );
-
-reportWebVitals(console.log);
 
 // AI Studio always uses an `index.tsx` file for all project types.

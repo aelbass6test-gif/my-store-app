@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, DiscountCode } from '../../types';
+import { Settings, DiscountCode } from '../types';
 import { Tag, Plus, Trash2, Power, Percent, DollarSign } from 'lucide-react';
-import SaveBar from '../../components/SaveBar';
+import SaveBar from '../components/SaveBar';
 
 interface DiscountsPageProps {
   settings: Settings;
