@@ -1,63 +1,65 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-// FIX: The `Navigate` component was not imported, causing an error. It has been added to the import statement.
-import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 
+// استيراد الأنواع
 import { User, Store, StoreData, Order, Settings, Wallet, OrderItem, Employee, Product, PlaceOrderData } from './types';
+
+// --- تصحيح المسارات: الخروج من مجلد src للوصول للمجلدات في الجذر ---
 import * as db from '../services/databaseService';
-import { supabase } from '../services/supabaseClient';
+import { supabase } from '../supabaseClient'; // إذا كان بجانب App.tsx استخدم './' وإذا كان بالخارج استخدم '../'
 import { INITIAL_SETTINGS } from '../constants';
 import { oneToolzProducts } from '../data/one-toolz-products';
 
-// Page Components (will be loaded via router)
-import SignUpPage from './components/SignUpPage';
-import EmployeeLoginPage from './components/EmployeeLoginPage';
-import CreateStorePage from './components/CreateStorePage';
-import ManageSitesPage from './components/ManageSitesPage';
-import Dashboard from './components/Dashboard';
-import Header from './components/Header';
-import Sidebar from './components/Sidebar';
-import OrdersList from './components/OrdersList';
-import ProductsPage from './components/ProductsPage';
-import CustomersPage from './components/CustomersPage';
-import WalletPage from './components/WalletPage';
-import SettingsPage from './components/SettingsPage';
-import StorefrontPage from './components/StorefrontPage';
-import CheckoutPage from './components/CheckoutPage';
-import OrderSuccessPage from './components/OrderSuccessPage';
-import StoreCustomizationPage from './components/StoreCustomizationPage';
-import ShippingPage from './components/ShippingPage';
-import ConfirmationQueuePage from './components/ConfirmationQueuePage';
-import AbandonedCartsPage from './components/AbandonedCartsPage';
-import DiscountsPage from './components/DiscountsPage';
-import ReviewsPage from './components/ReviewsPage';
-import CollectionsPage from './components/CollectionsPage';
-import ProductOptionsPage from './components/ProductOptionsPage';
-import ExpensesPage from './components/ExpensesPage';
-import MarketingPage from './components/MarketingPage';
-import AnalyticsPage from './components/AnalyticsPage';
-// FIX: AdminPage is a default export, so it should be imported as such.
-import AdminPage from './components/AdminPage';
-import EmployeeLayout from './components/EmployeeLayout';
-import EmployeeDashboardPage from './components/EmployeeDashboardPage';
-import EmployeeAccountSettingsPage from './components/EmployeeAccountSettingsPage';
-import AccountSettingsPage from './components/AccountSettingsPage';
-import CollectionsReportPage from './components/CollectionsReportPage';
-import ActivityLogsPage from './components/ActivityLogsPage';
-import SuppliersPage from './components/SuppliersPage';
-import PagesManager from './components/PagesManager';
-import PaymentSettingsPage from './components/PaymentSettingsPage';
-import TeamChatPage from './components/TeamChatPage';
-import WhatsAppPage from './components/WhatsAppPage';
-import WelcomeLoader from './components/WelcomeLoader';
-import GlobalLoader from './components/GlobalLoader';
-import EmployeesPage from './components/EmployeesPage';
-import ReportsPage from './components/ReportsPage';
-import ChatBot from './components/ChatBot';
-import CongratsModal from './components/CongratsModal';
-import OrderTrackingPage from './components/OrderTrackingPage';
-import OtpVerificationPage from './components/OtpVerificationPage';
-import IosInstallPrompt from './components/IosInstallPrompt';
-import ComingSoonPage from './components/ComingSoonPage';
+// --- تصحيح مسارات المكونات: الخروج من src ثم الدخول إلى components ---
+import GlobalSaveIndicator, { SaveStatus } from '../components/GlobalSaveIndicator';
+import SignUpPage from '../components/SignUpPage';
+import EmployeeLoginPage from '../components/EmployeeLoginPage';
+import CreateStorePage from '../components/CreateStorePage';
+import ManageSitesPage from '../components/ManageSitesPage';
+import Dashboard from '../components/Dashboard';
+import Header from '../components/Header';
+import Sidebar from '../components/Sidebar';
+import OrdersList from '../components/OrdersList';
+import ProductsPage from '../components/ProductsPage';
+import CustomersPage from '../components/CustomersPage';
+import WalletPage from '../components/WalletPage';
+import SettingsPage from '../components/SettingsPage';
+import StorefrontPage from '../components/StorefrontPage';
+import CheckoutPage from '../components/CheckoutPage';
+import OrderSuccessPage from '../components/OrderSuccessPage';
+import StoreCustomizationPage from '../components/StoreCustomizationPage';
+import ShippingPage from '../components/ShippingPage';
+import ConfirmationQueuePage from '../components/ConfirmationQueuePage';
+import AbandonedCartsPage from '../components/AbandonedCartsPage';
+import DiscountsPage from '../components/DiscountsPage';
+import ReviewsPage from '../components/ReviewsPage';
+import CollectionsPage from '../components/CollectionsPage';
+import ProductOptionsPage from '../components/ProductOptionsPage';
+import ExpensesPage from '../components/ExpensesPage';
+import MarketingPage from '../components/MarketingPage';
+import AnalyticsPage from '../components/AnalyticsPage';
+import AdminPage from '../components/AdminPage';
+import EmployeeLayout from '../components/EmployeeLayout';
+import EmployeeDashboardPage from '../components/EmployeeDashboardPage';
+import EmployeeAccountSettingsPage from '../components/EmployeeAccountSettingsPage';
+import AccountSettingsPage from '../components/AccountSettingsPage';
+import CollectionsReportPage from '../components/CollectionsReportPage';
+import ActivityLogsPage from '../components/ActivityLogsPage';
+import SuppliersPage from '../components/SuppliersPage';
+import PagesManager from '../components/PagesManager';
+import PaymentSettingsPage from '../components/PaymentSettingsPage';
+import TeamChatPage from '../components/TeamChatPage';
+import WhatsAppPage from '../components/WhatsAppPage';
+import WelcomeLoader from '../components/WelcomeLoader';
+import GlobalLoader from '../components/GlobalLoader';
+import EmployeesPage from '../components/EmployeesPage';
+import ReportsPage from '../components/ReportsPage';
+import ChatBot from '../components/ChatBot';
+import CongratsModal from '../components/CongratsModal';
+import OrderTrackingPage from '../components/OrderTrackingPage';
+import OtpVerificationPage from '../components/OtpVerificationPage';
+import IosInstallPrompt from '../components/IosInstallPrompt';
+import ComingSoonPage from '../components/ComingSoonPage';
 
 interface EmployeeRegisterRequestData {
   fullName: string;
