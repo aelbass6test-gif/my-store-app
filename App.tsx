@@ -6,14 +6,16 @@ import * as db from './services/databaseService';
 import { supabase } from './services/supabaseClient';
 import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
-import { oneToolzProducts } from './one-toolz-products';
+import { oneToolzProducts } from './src/data/one-toolz-products';
+
 // Page Components (will be loaded via router)
-// --- تعديل مسارات الصفحات لأنها الآن داخل مجلد components ---
 import SignUpPage from './components/SignUpPage';
 import EmployeeLoginPage from './components/EmployeeLoginPage';
 import CreateStorePage from './components/CreateStorePage';
 import ManageSitesPage from './components/ManageSitesPage';
 import Dashboard from './components/Dashboard';
+import Header from './components/Header';
+import Sidebar from './components/Sidebar';
 import OrdersList from './components/OrdersList';
 import ProductsPage from './components/ProductsPage';
 import CustomersPage from './components/CustomersPage';
@@ -34,6 +36,7 @@ import ExpensesPage from './components/ExpensesPage';
 import MarketingPage from './components/MarketingPage';
 import AnalyticsPage from './components/AnalyticsPage';
 import AdminPage from './components/AdminPage';
+import EmployeeLayout from './components/EmployeeLayout';
 import EmployeeDashboardPage from './components/EmployeeDashboardPage';
 import EmployeeAccountSettingsPage from './components/EmployeeAccountSettingsPage';
 import EmployeeActivityPage from './components/EmployeeActivityPage';
@@ -45,19 +48,16 @@ import PagesManager from './components/PagesManager';
 import PaymentSettingsPage from './components/PaymentSettingsPage';
 import TeamChatPage from './components/TeamChatPage';
 import WhatsAppPage from './components/WhatsAppPage';
+import WelcomeLoader from './components/WelcomeLoader';
+import GlobalLoader from './components/GlobalLoader';
 import EmployeesPage from './components/EmployeesPage';
 import ReportsPage from './components/ReportsPage';
 import ChatBot from './components/ChatBot';
+import CongratsModal from './components/CongratsModal';
 import OrderTrackingPage from './components/OrderTrackingPage';
 import OtpVerificationPage from './components/OtpVerificationPage';
+import IosInstallPrompt from './components/IosInstallPrompt';
 import ComingSoonPage from './components/ComingSoonPage';
-
-// --- ملفات الـ Components الأصلية (تأكد أن مسارها صحيح أيضاً) ---
-import Header from './components/Header';
-import Sidebar from './components/Sidebar';
-import EmployeeLayout from './components/EmployeeLayout';
-import WelcomeLoader from './components/WelcomeLoader';
-import GlobalLoader from './components/GlobalLoader';
 
 interface EmployeeRegisterRequestData {
   fullName: string;
@@ -810,7 +810,7 @@ export const AppComponent = () => {
                 }>
                     <Route index element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} />} />
                     <Route path="dashboard" element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} />} />
-                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} />} />
+                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} />} />
                     <Route path="my-activity" element={<EmployeeActivityPage currentUser={currentUser} orders={pageProps.orders} />} />
                     <Route path="account-settings" element={<EmployeeAccountSettingsPage currentUser={currentUser} setCurrentUser={setCurrentUser} users={users} setUsers={setUsers} />} />
                 </Route>
@@ -830,7 +830,7 @@ export const AppComponent = () => {
                     />
                 }>
                     <Route index element={<Dashboard {...pageProps} />} />
-                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} />} />
+                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} />} />
                     <Route path="orders" element={<OrdersList {...pageProps} addLoyaltyPointsForOrder={() => {}} />} />
                     <Route path="products" element={<ProductsPage {...pageProps} />} />
                     <Route path="customers" element={<CustomersPage orders={pageProps.orders} loyaltyData={{}} updateCustomerLoyaltyPoints={() => {}} />} />
