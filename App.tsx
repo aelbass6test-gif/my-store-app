@@ -1,8 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 
-import { User, Store, StoreData, Order, Settings, Wallet, OrderItem, Employee, Product, PlaceOrderData } from './types';
-import * as db from './services/databaseService';
 import { supabase } from './services/supabaseClient';
 import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
