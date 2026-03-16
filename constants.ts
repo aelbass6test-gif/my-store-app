@@ -93,6 +93,20 @@ export const generateEgyptShippingOptions = (): ShippingOption[] => {
   }));
 };
 
+export const DEFAULT_WHATSAPP_TEMPLATES = [
+    { id: 'no_answer', label: 'لم يرد', text: 'أهلاً [اسم العميل] 👋، حاولنا الاتصال بك من [اسم المتجر] لتأكيد طلبك [اسم المنتج]. يرجى تأكيد الطلب لنتمكن من شحنه لك.' },
+    { id: 'location', label: 'طلب الموقع', text: 'أهلاً [اسم العميل] 👋، من فضلك أرسل لنا الموقع (Location) لتسهيل عملية توصيل طلبك [اسم المنتج] من [اسم المتجر].' },
+    { id: 'offer', label: 'عرض خاص', text: 'أهلاً [اسم العميل] 👋، لدينا عرض خاص لك اليوم على [اسم المنتج] من [اسم المتجر]. لا تفوت الفرصة!' },
+    { id: 'confirm', label: 'تأكيد الطلب', text: 'أهلاً [اسم العميل] 👋، نود تأكيد طلبك [اسم المنتج] من [اسم المتجر]. هل البيانات صحيحة؟' },
+];
+
+export const DEFAULT_CALL_SCRIPTS = [
+    { id: 'price', title: 'الاعتراض على السعر', text: 'أفهمك تماماً، لكن جودة المنتج تستحق، ونحن نقدم ضمان استبدال مجاني في حال وجود أي عيب.' },
+    { id: 'shipping', title: 'الاعتراض على الشحن', text: 'مصاريف الشحن تشمل التوصيل لباب البيت والمعاينة قبل الاستلام لضمان حقك.' },
+    { id: 'hesitation', title: 'التردد في الطلب', text: 'المنتج عليه طلب كبير والكمية محدودة، إذا أكدت الآن سأحجز لك قطعة فوراً.' },
+    { id: 'inspection', title: 'طلب المعاينة', text: 'بالتأكيد، يمكنك فتح الطرد ومعاينة المنتج مع المندوب قبل دفع أي مليم.' },
+];
+
 export const INITIAL_SETTINGS: Settings = {
   enableGlobalFinancials: false, 
   insuranceFeePercent: 1, 
@@ -104,6 +118,7 @@ export const INITIAL_SETTINGS: Settings = {
   enableReturnAfterPrice: true,
   enableReturnWithoutPrice: true,
   enableExchangePrice: true,
+  baseWeight: 5,
   defaultProductPrice: 2100,
   enableDefaultPrice: true,
   sku: 'XP-LZ5-160',
@@ -157,7 +172,9 @@ export const INITIAL_SETTINGS: Settings = {
       { id: 'opt1', name: 'المقاس', values: ['S', 'M', 'L', 'XL'] },
       { id: 'opt2', name: 'اللون', values: ['أحمر', 'أزرق', 'أسود', 'أبيض'] }
   ],
-  collections: []
+  collections: [],
+  whatsappTemplates: DEFAULT_WHATSAPP_TEMPLATES,
+  callScripts: DEFAULT_CALL_SCRIPTS
 };
 
 export const ORDER_STATUSES = [
