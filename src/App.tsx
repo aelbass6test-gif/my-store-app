@@ -3,11 +3,10 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate } from 'react-router-dom';
 
 import { User, Store, StoreData, Order, Settings, Wallet, OrderItem, Employee, Product, PlaceOrderData } from './types';
-import * as db from './services/databaseService';
-import { supabase } from './services/supabaseClient';
-import { INITIAL_SETTINGS } from './constants';
-import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
-import { oneToolzProducts } from './data/one-toolz-products';
+import * as db from '../services/databaseService';
+import { supabase } from '../services/supabaseClient';
+import { INITIAL_SETTINGS } from '../constants';
+import { oneToolzProducts } from '../data/one-toolz-products';
 
 // Page Components (will be loaded via router)
 import SignUpPage from './components/SignUpPage';
