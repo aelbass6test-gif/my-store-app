@@ -1,17 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 
-// 1. تصحيح مسارات الأنواع والخدمات (نقلناها من ./services/ إلى المسار المباشر أو components)
 import { User, Store, StoreData, Order, Settings, Wallet, OrderItem, Employee, Product, PlaceOrderData } from './types';
-
-// إذا كانت الملفات في المجلد الرئيسي مباشرة (الجديد):
-import * as db from './databaseService';
-import { supabase } from './supabaseClient';
+import * as db from './services/databaseService';
+import { supabase } from './services/supabaseClient';
 import { INITIAL_SETTINGS } from './constants';
-import { oneToolzProducts } from './one-toolz-products';
-
-// 2. تصحيح مسارات المكونات والصفحات (بما أن كل شيء في components)
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
+import { oneToolzProducts } from './src/data/one-toolz-products';
+
+// Page Components (will be loaded via router)
 import SignUpPage from './components/SignUpPage';
 import EmployeeLoginPage from './components/EmployeeLoginPage';
 import CreateStorePage from './components/CreateStorePage';

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Settings, ShippingOption, CompanyFees, CityOption } from '../types';
+import { Settings, ShippingOption, CompanyFees, CityOption } from '../../types';
 import { Save, Info, Truck, Plus, Trash2, Wallet, Scale, AlertCircle, XCircle, Package, RefreshCcw, Percent, Coins, Building2, MapPin, Repeat, Settings as SettingsIcon, ShieldCheck, Banknote, ChevronDown, ChevronUp, Eye, ArrowRight, Link2, Plug, CheckCircle2, Wrench, ArrowLeft, Map, Link as LinkIcon, Download, ListChecks, CheckSquare, Square, Search, Lock, Unlock, Unlink, X } from 'lucide-react';
-import SaveBar from '../components/SaveBar';
+import SaveBar from '../../components/SaveBar';
 import { motion } from 'framer-motion';
-import { generateEgyptShippingOptions, EGYPT_GOVERNORATES } from '../constants';
+import { generateEgyptShippingOptions, EGYPT_GOVERNORATES } from '../../constants';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -44,189 +44,6 @@ const SectionCard: React.FC<{ title: string; icon: React.ReactNode; action?: Rea
     <div className="p-6">{children}</div>
   </div>
 );
-
-const PolicyToggle: React.FC<{ label: string; description?: string; active: boolean; onToggle: () => void; }> = ({ label, description, active, onToggle }) => (
-    <div className="flex items-start justify-between p-4 bg-white dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-700 transition-all hover:border-indigo-300 dark:hover:border-indigo-700">
-        <div>
-            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{label}</span>
-            {description && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">{description}</p>}
-        </div>
-        <div className="flex-shrink-0 pt-0.5">
-           <ToggleButton active={active} onToggle={onToggle} />
-        </div>
-    </div>
-);
-
-const CityManagerModal: React.FC<{ 
-    isOpen: boolean; 
-    onClose: () => void; 
-    zone: ShippingOption; 
-    onSave: (cities: CityOption[]) => void 
-}> = ({ isOpen, onClose, zone, onSave }) => {
-    const [targetGovName, setTargetGovName] = useState('');
-    const [selectedCities, setSelectedCities] = useState<string[]>([]);
-    const [citySearchTerm, setCitySearchTerm] = useState('');
-    
-    // Determine the list of cities based on the selected governorate name and search term
-    const displayedCities = useMemo(() => {
-        const govCities = EGYPT_GOVERNORATES.find(g => g.name === targetGovName)?.cities || [];
-        if (!citySearchTerm) return govCities;
-        return govCities.filter(c => c.toLowerCase().includes(citySearchTerm.toLowerCase()));
-    }, [targetGovName, citySearchTerm]);
-    
-    // On open, sync selected cities and try to auto-detect governorate
-    useEffect(() => {
-        if (isOpen) {
-            const currentNames = (zone.cities || []).map(c => c.name);
-            setSelectedCities(currentNames);
-            
-            // Try to match governorate name exactly
-            const exactMatch = EGYPT_GOVERNORATES.find(g => g.name === zone.label);
-            if (exactMatch) {
-                setTargetGovName(exactMatch.name);
-            } else if (currentNames.length > 0) {
-                // If name doesn't match, try to find based on existing cities
-                const reverseMatch = EGYPT_GOVERNORATES.find(g => g.cities.includes(currentNames[0]));
-                if (reverseMatch) {
-                    setTargetGovName(reverseMatch.name);
-                } else {
-                    // Default to first governorate if no match found
-                    setTargetGovName(EGYPT_GOVERNORATES[0]?.name || '');
-                }
-            } else {
-                // Default to first governorate
-                setTargetGovName(EGYPT_GOVERNORATES[0]?.name || '');
-            }
-        }
-    }, [isOpen, zone]);
-
-    if (!isOpen) return null;
-
-    const toggleCity = (cityName: string) => {
-        setSelectedCities(prev => 
-            prev.includes(cityName) 
-                ? prev.filter(c => c !== cityName) 
-                : [...prev, cityName]
-        );
-    };
-
-    const toggleAll = () => {
-        if (displayedCities.every(c => selectedCities.includes(c))) {
-            // Unselect all currently displayed cities
-            setSelectedCities(prev => prev.filter(c => !displayedCities.includes(c)));
-        } else {
-            // Select all displayed cities
-            const newSelection = new Set([...selectedCities, ...displayedCities]);
-            setSelectedCities(Array.from(newSelection));
-        }
-    };
-
-    const handleSave = () => {
-        const newCities: CityOption[] = [];
-        
-        // Use selectedCities state to build the final list
-        selectedCities.forEach(name => {
-            // Check if city already existed in zone to preserve its data
-            const existingCity = (zone.cities || []).find(c => c.name === name);
-            if (existingCity) {
-                newCities.push(existingCity);
-            } else {
-                // Create new city entry linked to parent fees
-                newCities.push({
-                    id: `city_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-                    name: name,
-                    shippingPrice: zone.price,
-                    extraKgPrice: zone.extraKgPrice,
-                    returnAfterPrice: zone.returnAfterPrice,
-                    returnWithoutPrice: zone.returnWithoutPrice,
-                    exchangePrice: zone.exchangePrice,
-                    useParentFees: true,
-                    active: true // New cities are active by default
-                });
-            }
-        });
-        
-        onSave(newCities);
-    };
-
-    return (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/70 dark:bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-3xl shadow-2xl p-6 text-right flex flex-col max-h-[85vh] border border-slate-300 dark:border-slate-800">
-                <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-                    <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-                        <MapPin className="text-indigo-600"/> تحديد مدن {zone.label}
-                    </h3>
-                    <button onClick={onClose}><XCircle className="text-slate-400 hover:text-red-500"/></button>
-                </div>
-                
-                <div className="space-y-4 mb-4">
-                    <div>
-                        <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 mb-2">اختر المحافظة:</label>
-                        <select 
-                            value={targetGovName} 
-                            onChange={(e) => setTargetGovName(e.target.value)}
-                            className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                            <option value="">-- اختر المحافظة --</option>
-                            {EGYPT_GOVERNORATES.map(g => (
-                                <option key={g.name} value={g.name}>{g.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="relative">
-                        <Search size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                        <input 
-                            type="text" 
-                            placeholder="بحث عن مدينة..." 
-                            value={citySearchTerm}
-                            onChange={(e) => setCitySearchTerm(e.target.value)}
-                            className="w-full pr-10 pl-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
-                    {displayedCities.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-                            <Map className="mb-2 opacity-50" size={32}/>
-                            <p className="font-bold">لا توجد مدن للعرض.</p>
-                        </div>
-                    ) : (
-                        <>
-                            <button onClick={toggleAll} className="mb-4 text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1">
-                                <CheckSquare size={14}/>
-                                {displayedCities.every(c => selectedCities.includes(c)) ? 'إلغاء تحديد المعروض' : 'تحديد المعروض'}
-                            </button>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                {displayedCities.map(city => {
-                                    const isSelected = selectedCities.includes(city);
-                                    return (
-                                        <div 
-                                            key={city} 
-                                            onClick={() => toggleCity(city)}
-                                            className={`p-3 rounded-xl border flex items-center gap-2 cursor-pointer transition-all ${isSelected ? 'bg-indigo-50 border-indigo-500 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}
-                                        >
-                                            {isSelected ? <CheckSquare size={18} className="text-indigo-600 dark:text-indigo-400 flex-shrink-0"/> : <Square size={18} className="text-slate-300 flex-shrink-0"/>}
-                                            <span className="text-xs font-bold truncate">{city}</span>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3 mt-2">
-                    <button onClick={onClose} className="px-6 py-2.5 rounded-xl font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors">إلغاء</button>
-                    <button onClick={handleSave} className="px-6 py-2.5 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-lg active:scale-95">
-                        حفظ ({selectedCities.length}) مدينة
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 
 const ShippingPage: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
   const [localSettings, setLocalSettings] = useState(settings);
@@ -276,26 +93,7 @@ const ShippingPage: React.FC<{ settings: Settings, setSettings: React.Dispatch<R
       shippingOptions: { ...prev.shippingOptions, [name]: [] },
       activeCompanies: { ...prev.activeCompanies, [name]: true },
       exchangeSupported: { ...(prev.exchangeSupported || {}), [name]: true },
-      companySpecificFees: { 
-        ...prev.companySpecificFees, 
-        [name]: { 
-          insuranceFeePercent: prev.insuranceFeePercent, 
-          inspectionFee: prev.inspectionFee, 
-          returnShippingFee: prev.returnShippingFee, 
-          useCustomFees: false, 
-          defaultInspectionActive: true, 
-          enableCodFees: true, 
-          codThreshold: prev.codThreshold, 
-          codFeeRate: prev.codFeeRate, 
-          codTaxRate: prev.codTaxRate, 
-          enableReturnAfter: true, 
-          enableReturnWithout: true, 
-          enableExchange: true, 
-          enableFixedReturn: true, 
-          postCollectionReturnRefundsProductPrice: true,
-          baseWeight: 1 // إضافة الوزن الافتراضي هنا
-        } 
-      }
+      companySpecificFees: { ...prev.companySpecificFees, [name]: { insuranceFeePercent: prev.insuranceFeePercent, inspectionFee: prev.inspectionFee, returnShippingFee: prev.returnShippingFee, useCustomFees: false, defaultInspectionActive: true, enableCodFees: true, codThreshold: prev.codThreshold, codFeeRate: prev.codFeeRate, codTaxRate: prev.codTaxRate, enableReturnAfter: true, enableReturnWithout: true, enableExchange: true, enableFixedReturn: true, postCollectionReturnRefundsProductPrice: true } }
     }));
     setNewCompanyName('');
     setShowAddCompany(false);
@@ -404,20 +202,11 @@ const ShippingDashboard: React.FC<any> = ({ settings, setSettings, onManageCompa
             <motion.div variants={itemVariants}>
               <SectionCard title="الإعدادات المالية العامة" icon={<Coins size={22} className="text-emerald-600 dark:text-emerald-400" />} action={<ToggleButton active={settings.enableGlobalFinancials} onToggle={() => toggleSetting('enableGlobalFinancials')} variant="emerald" />}>
                   <div className={`space-y-6 transition-all duration-300 ${!settings.enableGlobalFinancials && 'opacity-40 pointer-events-none grayscale'}`}>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                           <FinancialCard label="نسبة التأمين (%)" name="insuranceFeePercent" value={settings.insuranceFeePercent} isActive={settings.enableInsurance} onToggle={() => toggleSetting('enableInsurance')} onChange={handleChange} icon={<ShieldCheck size={16} className="text-blue-500" />} desc="تُخصم من إجمالي الأوردر عند التحصيل." />
                           <FinancialCard label="رسوم المعاينة (ج.م)" name="inspectionFee" value={settings.inspectionFee} isActive={settings.enableInspection} onToggle={() => toggleSetting('enableInspection')} onChange={handleChange} icon={<Eye size={16} className="text-emerald-500" />} desc="رسوم مقابل فحص المنتج عند الاستلام." />
                           <FinancialCard label="شحن المرتجع (ج.م)" name="returnShippingFee" value={settings.returnShippingFee} isActive={settings.enableReturnShipping} onToggle={() => toggleSetting('enableReturnShipping')} onChange={handleChange} icon={<RefreshCcw size={16} className="text-red-500" />} desc="مبلغ إضافي يُحسب كخسارة في المرتجع." />
                           <FinancialCard label="السعر الافتراضي (ج.م)" name="defaultProductPrice" value={settings.defaultProductPrice} isActive={settings.enableDefaultPrice} onToggle={() => toggleSetting('enableDefaultPrice')} onChange={handleChange} icon={<Package size={16} className="text-indigo-500" />} desc="السعر التلقائي عند تسجيل أوردر جديد." />
-                          <div className="p-5 rounded-2xl border bg-white dark:bg-slate-800/30 border-slate-300 dark:border-slate-700 transition-all">
-                              <div className="flex items-center justify-between mb-4">
-                                  <label className="text-sm font-black text-slate-800 dark:text-slate-300 flex items-center gap-2"><Package size={16} className="text-orange-500" /> الوزن الافتراضي (كجم)</label>
-                              </div>
-                              <div className="relative">
-                                  <input type="number" name="baseWeight" className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-black dark:text-white shadow-inner transition-all" value={settings.baseWeight ?? 5} onChange={handleChange} />
-                              </div>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-500 mt-3 leading-relaxed font-bold">الوزن الأساسي المشمول في سعر الشحن.</p>
-                          </div>
                       </div>
                   </div>
               </SectionCard>
@@ -485,9 +274,9 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
   // Structure: Name(2fr) Link(40px) | Prices (1fr each) | Delete(40px)
   const activePriceColumns = 2 + (showReturnAfter ? 1 : 0) + (showReturnWithout ? 1 : 0) + (showExchange ? 1 : 0);
   // Grid Template: 
-  // - Name: minmax(150px, 2fr)
+  // - Name: minmax(140px, 1.5fr)
   // - Link: 40px
-  // - Prices: repeat(N, minmax(60px, 1fr))
+  // - Prices: repeat(N, minmax(70px, 1fr))
   // - Delete: 40px
   
   const gridTemplate = `minmax(140px, 1.5fr) 40px repeat(${activePriceColumns}, minmax(70px, 1fr)) 40px`;
@@ -508,7 +297,7 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
   }, [expandedZoneId, newCityUseParent, settings.shippingOptions, companyName]);
 
   const addShippingOption = () => {
-    const newOption: ShippingOption = { id: Date.now().toString(), label: 'منطقة جديدة', details: 'تفاصيل المنطقة...', price: 50, baseWeight: 1, extraKgPrice: 10, returnAfterPrice: 50, returnWithoutPrice: 50, exchangePrice: 70, cities: [] };
+    const newOption: ShippingOption = { id: Date.now().toString(), label: 'منطقة جديدة', details: 'تفاصيل المنطقة...', price: 50, baseWeight: 5, extraKgPrice: 10, returnAfterPrice: 50, returnWithoutPrice: 50, exchangePrice: 70, cities: [] };
     setSettings((prev: Settings) => ({ ...prev, shippingOptions: { ...prev.shippingOptions, [companyName]: [...(prev.shippingOptions[companyName] || []), newOption] } }));
   };
   const updateShippingOption = (id: string, field: keyof ShippingOption, value: string | number) => {
@@ -807,7 +596,7 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
                                                   <button type="button" onClick={(e) => resetAllToLinked(e, opt.id)} className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-indigo-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700 rounded" title="ربط جميع المدن بسعر المنطقة">
                                                       <LinkIcon size={12} className="inline mr-1"/> ربط الكل
                                                   </button>
-                                                  <div className="w-px bg-slate-200 dark:bg-slate-700 mx-0.5"></div>
+                                                  <div className="w-px bg-slate-200 dark:border-slate-700 mx-0.5"></div>
                                                   <button type="button" onClick={(e) => unlinkAll(e, opt.id, opt)} className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-orange-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700 rounded" title="فك ربط جميع المدن لتعديل الأسعار">
                                                       <Unlink size={12} className="inline mr-1"/> فك الكل
                                                   </button>
@@ -827,99 +616,26 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
                                           {showReturnAfter && <div>إرجاع(م)</div>}
                                           {showReturnWithout && <div>إرجاع(ب)</div>}
                                           {showExchange && <div>استبدال</div>}
-                                          <div>حالة</div>
+                                          <div>حذف</div>
                                       </div>
-
-                                      <div className="space-y-1 mb-4">
-                                          {opt.cities && opt.cities.length > 0 ? (
-                                              opt.cities.map(city => {
-                                                  // Determine prices to display based on whether city is linked to parent
-                                                  const isLinked = city.useParentFees;
-                                                  const isActive = city.active !== false; // Default true
-                                                  
-                                                  return (
-                                                  <div key={city.id} className={`grid gap-2 items-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm group text-[10px] text-center transition-all ${!isActive ? 'opacity-60 grayscale bg-slate-100 dark:bg-slate-800/50' : 'bg-white dark:bg-slate-900'}`} style={{ gridTemplateColumns: gridTemplate }}>
-                                                      <div className={`text-right font-bold px-2 truncate ${!isActive ? 'text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`} title={city.name}>
-                                                          {city.name}
-                                                      </div>
-                                                      <div>
-                                                          <button 
-                                                              type="button"
-                                                              onClick={() => toggleCityLink(opt.id, city.id, city, opt)}
-                                                              disabled={!isActive}
-                                                              className={`p-1 rounded transition-colors ${isLinked ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'} disabled:opacity-50`}
-                                                              title={isLinked ? 'مرتبط بسعر المنطقة (اضغط لفك الربط)' : 'سعر مخصص (اضغط للربط بالمنطقة)'}
-                                                          >
-                                                              {isLinked ? <LinkIcon size={14} /> : <Unlock size={14} />}
-                                                          </button>
-                                                      </div>
-                                                      <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                          <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.price : city.shippingPrice} onChange={(e) => updateCityField(opt.id, city.id, 'shippingPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
-                                                      </div>
-                                                      <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                          <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.extraKgPrice : city.extraKgPrice} onChange={(e) => updateCityField(opt.id, city.id, 'extraKgPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
-                                                      </div>
-                                                      {showReturnAfter && (
-                                                          <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                              <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.returnAfterPrice : city.returnAfterPrice} onChange={(e) => updateCityField(opt.id, city.id, 'returnAfterPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
-                                                          </div>
-                                                      )}
-                                                      {showReturnWithout && (
-                                                          <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                              <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.returnWithoutPrice : city.returnWithoutPrice} onChange={(e) => updateCityField(opt.id, city.id, 'returnWithoutPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
-                                                          </div>
-                                                      )}
-                                                      {showExchange && (
-                                                          <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                              <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.exchangePrice : city.exchangePrice} onChange={(e) => updateCityField(opt.id, city.id, 'exchangePrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
-                                                          </div>
-                                                      )}
-                                                      <div>
-                                                          <button onClick={() => toggleCityStatus(opt.id, city.id)} className={`p-1.5 rounded transition-colors ${isActive ? 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20' : 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`} title={isActive ? "إلغاء تفعيل المدينة" : "إعادة تفعيل المدينة"}>
-                                                              {isActive ? <XCircle size={16}/> : <RefreshCcw size={16}/>}
-                                                          </button>
-                                                      </div>
-                                                  </div>
-                                              )})
-                                          ) : (
-                                              <p className="text-xs text-slate-400 italic text-center py-2">لا توجد مدن مضافة لهذه المنطقة.</p>
-                                          )}
-                                      </div>
-
-                                      <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                                          <div className="grid gap-2 items-center" style={{ gridTemplateColumns: gridTemplate }}>
-                                              <input 
-                                                  type="text" 
-                                                  placeholder="اسم مدينة جديدة" 
-                                                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500"
-                                                  value={newCityName}
-                                                  onChange={(e) => setNewCityName(e.target.value)}
-                                              />
-                                              <button 
-                                                  type="button"
-                                                  onClick={() => setNewCityUseParent(!newCityUseParent)}
-                                                  className={`flex items-center justify-center p-1.5 rounded-lg transition-all ${newCityUseParent ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}
-                                                  title={newCityUseParent ? 'مرتبط بأسعار المنطقة' : 'تخصيص الأسعار يدوياً'}
-                                              >
-                                                  {newCityUseParent ? <LinkIcon size={14} /> : <Unlock size={14} />}
-                                              </button>
-                                              
-                                              <input type="number" disabled={newCityUseParent} placeholder="شحن" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityPrice} onChange={(e) => setNewCityPrice(e.target.value)} />
-                                              <input type="number" disabled={newCityUseParent} placeholder="ك.ز" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityExtraKg} onChange={(e) => setNewCityExtraKg(e.target.value)} />
-                                              
-                                              {showReturnAfter && <input type="number" disabled={newCityUseParent} placeholder="إ(م)" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityReturnAfter} onChange={(e) => setNewCityReturnAfter(e.target.value)} />}
-                                              {showReturnWithout && <input type="number" disabled={newCityUseParent} placeholder="إ(ب)" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityReturnWithout} onChange={(e) => setNewCityReturnWithout(e.target.value)} />}
-                                              {showExchange && <input type="number" disabled={newCityUseParent} placeholder="تبديل" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityExchange} onChange={(e) => setNewCityExchange(e.target.value)} />}
-                                              
-                                              <button 
-                                                  onClick={() => addCity(opt.id)} 
-                                                  disabled={!newCityName || (!newCityUseParent && !newCityPrice)}
-                                                  className="flex items-center justify-center p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                                                  title="إضافة"
-                                              >
-                                                  <Plus size={16}/>
-                                              </button>
-                                          </div>
+                                      
+                                      <div className="space-y-1">
+                                          {(opt.cities || []).map((city: CityOption) => (
+                                              <div key={city.id} className={`grid gap-2 p-2 rounded-lg border items-center text-center ${city.active !== false ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 opacity-60'}`} style={{ gridTemplateColumns: gridTemplate }}>
+                                                  <div className="text-right font-bold text-xs text-slate-700 dark:text-slate-300 pr-2">{city.name}</div>
+                                                  <button onClick={() => toggleCityLink(opt.id, city.id, city, opt)} className={`p-1.5 rounded-md ${city.useParentFees ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`} title={city.useParentFees ? "مرتبط بسعر المنطقة" : "سعر مخصص"}>
+                                                      {city.useParentFees ? <LinkIcon size={14}/> : <Unlink size={14}/>}
+                                                  </button>
+                                                  <input type="number" disabled={city.useParentFees || city.active === false} className="w-full text-center bg-slate-50 dark:bg-slate-800 p-1.5 rounded border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:bg-transparent" value={city.shippingPrice} onChange={(e) => updateCityField(opt.id, city.id, 'shippingPrice', Number(e.target.value))} />
+                                                  <input type="number" disabled={city.useParentFees || city.active === false} className="w-full text-center bg-slate-50 dark:bg-slate-800 p-1.5 rounded border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:bg-transparent" value={city.extraKgPrice} onChange={(e) => updateCityField(opt.id, city.id, 'extraKgPrice', Number(e.target.value))} />
+                                                  {showReturnAfter && <input type="number" disabled={city.useParentFees || city.active === false} className="w-full text-center bg-slate-50 dark:bg-slate-800 p-1.5 rounded border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:bg-transparent" value={city.returnAfterPrice} onChange={(e) => updateCityField(opt.id, city.id, 'returnAfterPrice', Number(e.target.value))} />}
+                                                  {showReturnWithout && <input type="number" disabled={city.useParentFees || city.active === false} className="w-full text-center bg-slate-50 dark:bg-slate-800 p-1.5 rounded border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:bg-transparent" value={city.returnWithoutPrice} onChange={(e) => updateCityField(opt.id, city.id, 'returnWithoutPrice', Number(e.target.value))} />}
+                                                  {showExchange && <input type="number" disabled={city.useParentFees || city.active === false} className="w-full text-center bg-slate-50 dark:bg-slate-800 p-1.5 rounded border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:bg-transparent" value={city.exchangePrice} onChange={(e) => updateCityField(opt.id, city.id, 'exchangePrice', Number(e.target.value))} />}
+                                                  <button onClick={() => toggleCityStatus(opt.id, city.id)} className={`p-1.5 rounded-md ${city.active !== false ? 'text-slate-400 hover:text-red-500' : 'text-emerald-500'}`}>
+                                                      {city.active !== false ? <Trash2 size={14}/> : <RefreshCcw size={14}/>}
+                                                  </button>
+                                              </div>
+                                          ))}
                                       </div>
                                   </div>
                               </div>
@@ -927,83 +643,133 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
                       </tr>
                   )}
               </React.Fragment>
-            )})}
+              );
+            })}
           </tbody>
         </table>
       </div>
-      {confirmDelete && <DeleteConfirmModal title="حذف المنطقة؟" desc="هل أنت متأكد من حذف هذه المنطقة؟" onConfirm={removeShippingOption} onCancel={() => setConfirmDelete(null)} />}
-      {managingZone && <CityManagerModal isOpen={!!managingZoneId} onClose={() => setManagingZoneId(null)} zone={managingZone} onSave={handleUpdateZoneCities} />}
+      <CityManagerModal isOpen={!!managingZoneId} onClose={() => setManagingZoneId(null)} zone={managingZone} onSave={handleUpdateZoneCities} />
     </SectionCard>
   );
 };
-const CompanyFinancialsEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
-    const companyFees = settings.companySpecificFees[companyName] || { useCustomFees: false };
-    const handleCompanyFeeChange = (field: keyof CompanyFees, value: any) => { setSettings((prev: Settings) => ({ ...prev, companySpecificFees: { ...prev.companySpecificFees, [companyName]: { ...prev.companySpecificFees[companyName], [field]: value } } })); };
-    return (
-        <SectionCard title={`الإعدادات المالية لـ ${companyName}`} icon={<Wallet size={22} />}>
-            <div className="space-y-6">
-                <div className="flex items-center justify-between bg-emerald-50 dark:bg-emerald-950/30 p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/50">
-                    <div>
-                        <span className="text-sm font-bold text-emerald-800 dark:text-emerald-400">تفعيل إعدادات مالية خاصة</span>
-                        <p className="text-xs text-emerald-600 dark:text-emerald-500 font-medium">تجاهل القيم العامة واستخدام قيم مخصصة لهذه الشركة.</p>
-                    </div>
-                    <ToggleButton active={companyFees.useCustomFees} onToggle={() => handleCompanyFeeChange('useCustomFees', !companyFees.useCustomFees)} variant="emerald" />
-                </div>
-                <div className={`space-y-6 ${!companyFees.useCustomFees && 'opacity-40 pointer-events-none grayscale'}`}>
-                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> {/* تم تعديل الشبكة لتكون 4 أعمدة */}
-                        <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 dark:text-slate-500">التأمين %</label><input type="number" value={companyFees.insuranceFeePercent || 0} onChange={(e) => handleCompanyFeeChange('insuranceFeePercent', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold" /></div>
-                        
-                        {/* الإضافة الجديدة: خانة الوزن الافتراضي */}
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-indigo-600 dark:text-indigo-400">الوزن الافتراضي (كجم)</label>
-                            <input 
-                                type="number" 
-                                value={companyFees.baseWeight ?? 5} 
-                                onChange={(e) => handleCompanyFeeChange('baseWeight', Number(e.target.value))} 
-                                className="w-full p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl font-bold text-indigo-700 dark:text-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" 
-                                placeholder="مثلاً 5" 
-                            />
-                        </div>
 
-                        <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 dark:text-slate-500">المعاينة ج.م</label><input type="number" value={companyFees.inspectionFee || 0} onChange={(e) => handleCompanyFeeChange('inspectionFee', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold" /></div>
-                        <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 dark:text-slate-500">مرتجع ثابت ج.م</label><input type="number" value={companyFees.returnShippingFee || 0} onChange={(e) => handleCompanyFeeChange('returnShippingFee', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold" /></div>
-                    </div>
-                     <div className="bg-amber-50 dark:bg-amber-950/20 p-5 rounded-xl border border-amber-200 dark:border-amber-900/40 space-y-4">
-                        <div className="flex justify-between items-center"><span className="text-sm font-bold text-amber-900 dark:text-amber-300">رسوم COD</span><ToggleButton active={companyFees.enableCodFees} onToggle={() => handleCompanyFeeChange('enableCodFees', !companyFees.enableCodFees)} variant="amber" /></div>
-                        <div className={`grid grid-cols-3 gap-3 ${!companyFees.enableCodFees && 'opacity-40 grayscale pointer-events-none'}`}>
-                            <CodInput label="حد المجاني" value={companyFees.codThreshold || 0} onChange={(val) => handleCompanyFeeChange('codThreshold', val)} />
-                            <CodInput label="النسبة %" value={companyFees.codFeeRate || 0} step="0.01" onChange={(val) => handleCompanyFeeChange('codFeeRate', val)} />
-                            <CodInput label="الضريبة %" value={companyFees.codTaxRate || 0} step="0.1" onChange={(val) => handleCompanyFeeChange('codTaxRate', val)} />
-                        </div>
-                    </div>
-                     <div className="pt-6 border-t border-slate-200 dark:border-slate-800">
-                        <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-4">سياسات التسعير المتقدمة</h4>
-                        <div className="space-y-4">
-                            <PolicyToggle 
-                                label="تفعيل تسعير الاستبدال" 
-                                description="يضيف عمود 'سعر الاستبدال' في جدول تسعير المناطق."
-                                active={companyFees.enableExchange} onToggle={() => handleCompanyFeeChange('enableExchange', !companyFees.enableExchange)} />
-                            <PolicyToggle 
-                                label="تفعيل تسعير الإرجاع بعد المعاينة" 
-                                description="يضيف عمود 'سعر الإرجاع بعد المعاينة' في جدول تسعير المناطق."
-                                active={companyFees.enableReturnAfter} onToggle={() => handleCompanyFeeChange('enableReturnAfter', !companyFees.enableReturnAfter)} />
-                            <PolicyToggle 
-                                label="تفعيل تسعير الإرجاع بدون معاينة" 
-                                description="يضيف عمود 'سعر الإرجاع بدون معاينة' في جدول تسعير المناطق."
-                                active={companyFees.enableReturnWithout} onToggle={() => handleCompanyFeeChange('enableReturnWithout', !companyFees.enableReturnWithout)} />
-                            <PolicyToggle 
-                                label="تطبيق رسوم مرتجع ثابتة" 
-                                description="يخصم مبلغ 'مرتجع ثابت' من المحفظة كخسارة إضافية عند إرجاع أي طلب."
-                                active={companyFees.enableFixedReturn} 
-                                onToggle={() => handleCompanyFeeChange('enableFixedReturn', !companyFees.enableFixedReturn)} />
-                        </div>
-                     </div>
+const FinancialCard: React.FC<{ label: string; name: string; value: number; isActive: boolean; onToggle: () => void; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; icon: React.ReactNode; desc: string; }> = ({ label, name, value, isActive, onToggle, onChange, icon, desc }) => (
+    <div className={`p-4 rounded-xl border transition-all ${isActive ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-60'}`}>
+        <div className="flex justify-between items-start mb-3">
+            <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-bold text-sm">
+                {icon} {label}
+            </div>
+            <ToggleButton active={isActive} onToggle={onToggle} variant="emerald" />
+        </div>
+        <input type="number" name={name} value={value} onChange={onChange} disabled={!isActive} className="w-full p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-lg text-slate-800 dark:text-white disabled:bg-transparent" />
+        <p className="text-[10px] text-slate-400 mt-2">{desc}</p>
+    </div>
+);
+
+const CompanyFinancialsEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
+    const fees = settings.companySpecificFees[companyName] || {};
+    const updateFee = (field: keyof CompanyFees, value: any) => {
+        setSettings((prev: Settings) => ({ ...prev, companySpecificFees: { ...prev.companySpecificFees, [companyName]: { ...prev.companySpecificFees[companyName], [field]: value } } }));
+    };
+    return (
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-6">
+            <PolicyToggle label="استخدام رسوم خاصة لهذه الشركة" active={fees.useCustomFees} onToggle={() => updateFee('useCustomFees', !fees.useCustomFees)} />
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 transition-all ${!fees.useCustomFees && 'opacity-40 pointer-events-none grayscale'}`}>
+                <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-600 dark:text-slate-400">نسبة التأمين (%)</label>
+                    <input type="number" value={fees.insuranceFeePercent} onChange={e => updateFee('insuranceFeePercent', Number(e.target.value))} className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold" />
+                </div>
+                <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-600 dark:text-slate-400">رسوم المعاينة (ج.م)</label>
+                    <input type="number" value={fees.inspectionFee} onChange={e => updateFee('inspectionFee', Number(e.target.value))} className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold" />
                 </div>
             </div>
-        </SectionCard>
+        </div>
     );
 };
-const FinancialCard: React.FC<any> = ({ label, name, value, isActive, onToggle, onChange, icon, desc }) => ( <div className={`p-5 rounded-2xl border transition-all ${isActive ? 'bg-white dark:bg-slate-800/30 border-slate-300 dark:border-slate-700' : 'bg-slate-100 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800 opacity-60'}`}> <div className="flex items-center justify-between mb-4"> <label className="text-sm font-black text-slate-800 dark:text-slate-300 flex items-center gap-2">{icon} {label}</label> <ToggleButton active={isActive} onToggle={onToggle} /> </div> <div className="relative"> <input type="number" name={name} disabled={!isActive} className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed font-black dark:text-white shadow-inner transition-all" value={value} onChange={onChange} /> </div> <p className="text-[10px] text-slate-500 dark:text-slate-500 mt-3 leading-relaxed font-bold">{desc}</p> </div> );
-const CodInput: React.FC<any> = ({ label, value, onChange, step = "1" }) => ( <div className="space-y-1"> <label className="text-[10px] font-black text-amber-700 dark:text-amber-500 uppercase tracking-tight">{label}</label> <input type="number" step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full px-2 py-2.5 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-900/60 rounded-xl text-sm outline-none font-black dark:text-white" /> </div> );
+
+const CityManagerModal: React.FC<{ isOpen: boolean; onClose: () => void; zone: any; onSave: (cities: any[]) => void; }> = ({ isOpen, onClose, zone, onSave }) => {
+    const [selectedCities, setSelectedCities] = useState<string[]>([]);
+    
+    useEffect(() => {
+        if (isOpen && zone) {
+            setSelectedCities((zone.cities || []).map((c: any) => c.name));
+        }
+    }, [isOpen, zone]);
+
+    if (!isOpen) return null;
+
+    const govData = EGYPT_GOVERNORATES.find(g => g.name === zone?.label);
+    const availableCities = govData ? govData.cities : [];
+
+    const toggleCity = (cityName: string) => {
+        setSelectedCities(prev => 
+            prev.includes(cityName) 
+                ? prev.filter(c => c !== cityName) 
+                : [...prev, cityName]
+        );
+    };
+
+    const handleSave = () => {
+        const newCities = selectedCities.map(cityName => {
+            const existing = (zone.cities || []).find((c: any) => c.name === cityName);
+            if (existing) return existing;
+            return {
+                id: Math.random().toString(36).substr(2, 9),
+                name: cityName,
+                shippingPrice: zone.price,
+                extraKgPrice: zone.extraKgPrice,
+                returnAfterPrice: zone.returnAfterPrice,
+                returnWithoutPrice: zone.returnWithoutPrice,
+                exchangePrice: zone.exchangePrice,
+                useParentFees: true,
+                active: true
+            };
+        });
+        onSave(newCities);
+    };
+
+    return (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-right">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-black dark:text-white">إدارة مدن {zone?.label}</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-red-500"><X size={24}/></button>
+                </div>
+                
+                <div className="space-y-4">
+                    <p className="text-sm text-slate-500 font-bold">اختر المدن التي تخدمها هذه الشركة في محافظة {zone?.label}:</p>
+                    
+                    <div className="grid grid-cols-2 gap-2 max-h-[40vh] overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                        {availableCities.length > 0 ? availableCities.map(city => (
+                            <button 
+                                key={city}
+                                onClick={() => toggleCity(city)}
+                                className={`flex items-center justify-between p-3 rounded-lg border transition-all ${selectedCities.includes(city) ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-500/50 dark:text-indigo-300' : 'bg-white border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}
+                            >
+                                <span className="text-sm font-bold">{city}</span>
+                                {selectedCities.includes(city) ? <CheckCircle2 size={16} /> : <div className="w-4 h-4 rounded-full border-2 border-slate-300 dark:border-slate-600" />}
+                            </button>
+                        )) : (
+                            <div className="col-span-2 py-8 text-center text-slate-400 italic">لا توجد بيانات مدن لهذه المحافظة</div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="mt-8 flex gap-3">
+                    <button onClick={handleSave} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg hover:bg-indigo-700 transition-all active:scale-95">حفظ التغييرات</button>
+                    <button onClick={onClose} className="flex-1 py-3 text-slate-500 font-black hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const PolicyToggle: React.FC<{ label: string; active: boolean; onToggle: () => void; }> = ({ label, active, onToggle }) => (
+    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+        <span className="font-bold text-slate-700 dark:text-slate-300">{label}</span>
+        <ToggleButton active={active} onToggle={onToggle} variant="indigo" />
+    </div>
+);
 
 export default ShippingPage;
