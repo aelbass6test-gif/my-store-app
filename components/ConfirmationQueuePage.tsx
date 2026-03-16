@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Order, User, ConfirmationLog, OrderStatus, Settings, OrderItem, Product, Store } from '../types';
-import EditableField from './EditableField';
+import EditableField from '../components/EditableField';
 
 const QUICK_WA_TEMPLATES = [
     { id: 'no_answer', label: 'لم يتم الرد', text: 'حاولنا الاتصال بك لتأكيد طلبك ولم نتمكن من الوصول إليك. برجاء إبلاغنا بالوقت المناسب للاتصال.' },
