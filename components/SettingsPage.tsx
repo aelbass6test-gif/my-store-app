@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Settings, PlatformIntegration, Store } from '../types';
-import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X } from 'lucide-react';
+import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag } from 'lucide-react';
 import { clearStoreData } from '../services/databaseService';
 
 interface SettingsPageProps {
@@ -37,7 +37,6 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
       {onManualSave && (
           <DatabaseManagementCard onSync={onManualSave} />
       )}
-      <CommunicationSettingsCard settings={settings} setSettings={setSettings} />
       <PlatformIntegrationCard 
         integration={settings.integration} 
         onSave={handleIntegrationSave} 
@@ -114,147 +113,6 @@ const DatabaseManagementCard: React.FC<{ onSync: () => Promise<{ success: boolea
                     تم تحديث قاعدة البيانات بنجاح!
                 </div>
             )}
-        </div>
-    );
-};
-
-const CommunicationSettingsCard: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
-    const [activeTab, setActiveTab] = useState<'whatsapp' | 'scripts'>('whatsapp');
-    const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
-    const [editedText, setEditedText] = useState('');
-    const [editedLabel, setEditedLabel] = useState('');
-
-    const templates = settings.whatsappTemplates || [];
-    const scripts = settings.callScripts || [];
-
-    const handleSaveTemplate = (id: string, isScript: boolean) => {
-        if (isScript) {
-            setSettings(prev => ({
-                ...prev,
-                callScripts: prev.callScripts?.map(s => s.id === id ? { ...s, title: editedLabel, text: editedText } : s)
-            }));
-        } else {
-            setSettings(prev => ({
-                ...prev,
-                whatsappTemplates: prev.whatsappTemplates?.map(t => t.id === id ? { ...t, label: editedLabel, text: editedText } : t)
-            }));
-        }
-        setEditingTemplate(null);
-    };
-
-    const handleDelete = (id: string, isScript: boolean) => {
-        if (isScript) {
-            setSettings(prev => ({ ...prev, callScripts: prev.callScripts?.filter(s => s.id !== id) }));
-        } else {
-            setSettings(prev => ({ ...prev, whatsappTemplates: prev.whatsappTemplates?.filter(t => t.id !== id) }));
-        }
-    };
-
-    const handleAdd = (isScript: boolean) => {
-        const newId = Date.now().toString();
-        if (isScript) {
-            setSettings(prev => ({
-                ...prev,
-                callScripts: [...(prev.callScripts || []), { id: newId, title: 'سكريبت جديد', text: 'نص السكريبت هنا...' }]
-            }));
-        } else {
-            setSettings(prev => ({
-                ...prev,
-                whatsappTemplates: [...(prev.whatsappTemplates || []), { id: newId, label: 'رسالة جديدة', text: 'نص الرسالة هنا...' }]
-            }));
-        }
-        setEditingTemplate(newId);
-        setEditedLabel(isScript ? 'سكريبت جديد' : 'رسالة جديدة');
-        setEditedText(isScript ? 'نص السكريبت هنا...' : 'نص الرسالة هنا...');
-    };
-
-    return (
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex items-center gap-3 text-emerald-600 dark:text-emerald-400 mb-6 border-b border-slate-200 dark:border-slate-800 pb-6">
-                <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg"><MessageSquare size={24}/></div>
-                <div>
-                    <h2 className="text-xl font-black dark:text-white">التواصل والتأكيد</h2>
-                    <p className="text-xs text-slate-500">تخصيص رسائل الواتساب وسكريبتات الرد على العملاء.</p>
-                </div>
-            </div>
-
-            <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-slate-700 pb-2">
-                <button 
-                    onClick={() => setActiveTab('whatsapp')}
-                    className={`pb-2 px-4 font-bold text-sm transition-colors relative ${activeTab === 'whatsapp' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                >
-                    رسائل الواتساب
-                    {activeTab === 'whatsapp' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600 dark:bg-emerald-400 rounded-t-full" />}
-                </button>
-                <button 
-                    onClick={() => setActiveTab('scripts')}
-                    className={`pb-2 px-4 font-bold text-sm transition-colors relative ${activeTab === 'scripts' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                >
-                    سكريبتات المكالمات
-                    {activeTab === 'scripts' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600 dark:bg-emerald-400 rounded-t-full" />}
-                </button>
-            </div>
-
-            <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                    <h3 className="font-bold text-slate-800 dark:text-white">
-                        {activeTab === 'whatsapp' ? 'قوالب رسائل الواتساب' : 'سكريبتات الرد الجاهزة'}
-                    </h3>
-                    <button 
-                        onClick={() => handleAdd(activeTab === 'scripts')}
-                        className="flex items-center gap-2 text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 px-3 py-1.5 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
-                    >
-                        <Plus size={14} /> إضافة جديد
-                    </button>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                    {(activeTab === 'whatsapp' ? templates : scripts).map((item: any) => (
-                        <div key={item.id} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                            {editingTemplate === item.id ? (
-                                <div className="space-y-3">
-                                    <input 
-                                        type="text" 
-                                        value={editedLabel} 
-                                        onChange={e => setEditedLabel(e.target.value)}
-                                        className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500"
-                                        placeholder="عنوان الرسالة / السكريبت"
-                                    />
-                                    <textarea 
-                                        value={editedText} 
-                                        onChange={e => setEditedText(e.target.value)}
-                                        className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 min-h-[100px]"
-                                        placeholder="النص..."
-                                    />
-                                    <div className="flex gap-2 justify-end">
-                                        <button onClick={() => setEditingTemplate(null)} className="p-2 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg"><X size={16}/></button>
-                                        <button onClick={() => handleSaveTemplate(item.id, activeTab === 'scripts')} className="p-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg"><Save size={16}/></button>
-                                    </div>
-                                    {activeTab === 'whatsapp' && (
-                                        <p className="text-xs text-slate-500 mt-2">
-                                            متغيرات متاحة: <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">[اسم العميل]</span> <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">[اسم المتجر]</span> <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">[اسم المنتج]</span>
-                                        </p>
-                                    )}
-                                </div>
-                            ) : (
-                                <div>
-                                    <div className="flex justify-between items-start mb-2">
-                                        <h4 className="font-bold text-slate-800 dark:text-white text-sm">{item.label || item.title}</h4>
-                                        <div className="flex gap-2">
-                                            <button onClick={() => { setEditingTemplate(item.id); setEditedLabel(item.label || item.title); setEditedText(item.text); }} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg"><Edit3 size={14}/></button>
-                                            <button onClick={() => handleDelete(item.id, activeTab === 'scripts')} className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg"><Trash2 size={14}/></button>
-                                        </div>
-                                    </div>
-                                    <p className="text-sm text-slate-600 dark:text-slate-400 whitespace-pre-wrap">{item.text}</p>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                    {(activeTab === 'whatsapp' ? templates : scripts).length === 0 && (
-                        <div className="text-center p-6 text-slate-500 text-sm">لا توجد قوالب مضافة.</div>
-                    )}
-                </div>
-            </div>
         </div>
     );
 };
