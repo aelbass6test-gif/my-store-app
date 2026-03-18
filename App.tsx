@@ -752,6 +752,7 @@ export const AppComponent = () => {
     const pageProps = {
         users, setUsers, allStoresData, setAllStoresData, currentUser, activeStore,
         orders: activeStoreId ? allStoresData[activeStoreId]?.orders || [] : [],
+        products: activeStoreId ? allStoresData[activeStoreId]?.settings?.products || [] : [],
         settings: activeStoreId ? allStoresData[activeStoreId]?.settings || INITIAL_SETTINGS : INITIAL_SETTINGS,
         wallet: activeStoreId ? allStoresData[activeStoreId]?.wallet || { balance: 0, transactions: [] } : { balance: 0, transactions: [] },
         cart,
@@ -915,7 +916,7 @@ export const AppComponent = () => {
                 }>
                     <Route index element={<Dashboard {...pageProps} />} />
                     <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} forceSync={pageProps.forceSync} />} />
-                    <Route path="orders" element={<OrdersList {...pageProps} addLoyaltyPointsForOrder={() => {}} />} />
+                    <Route path="orders" element={<OrdersList {...pageProps} currentUser={currentUser} addLoyaltyPointsForOrder={() => {}} />} />
                     <Route path="products" element={<ProductsPage {...pageProps} />} />
                     <Route path="customers" element={<CustomersPage orders={pageProps.orders} loyaltyData={{}} updateCustomerLoyaltyPoints={() => {}} />} />
                     <Route path="wallet" element={<WalletPage {...pageProps} />} />
@@ -973,3 +974,4 @@ export const AppWrapper = () => (
 );
 
 export default AppWrapper;
+
