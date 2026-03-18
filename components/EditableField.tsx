@@ -10,6 +10,7 @@ interface EditableFieldProps {
     onCancel?: () => void;
     editComponent: React.ReactNode;
     displayComponent: React.ReactNode;
+    disabled?: boolean;
 }
 
 const EditableField: React.FC<EditableFieldProps> = ({
@@ -20,7 +21,8 @@ const EditableField: React.FC<EditableFieldProps> = ({
     onSave,
     onCancel,
     editComponent,
-    displayComponent
+    displayComponent,
+    disabled = false
 }) => {
     return (
         <div className="space-y-1">
@@ -46,7 +48,7 @@ const EditableField: React.FC<EditableFieldProps> = ({
                     <div className="flex-1 pl-4">
                         {displayComponent}
                     </div>
-                    {onEdit && (
+                    {onEdit && !disabled && (
                         <button onClick={onEdit} className="p-1 text-slate-400 hover:text-blue-500 shrink-0">
                             <Edit3 size={14} />
                         </button>
