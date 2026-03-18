@@ -69,6 +69,7 @@ interface ConfirmationQueuePageProps {
   settings: Settings;
   activeStore?: Store;
   onRefresh?: () => void;
+  forceSync?: () => Promise<void>;
 }
 
 interface DetailSectionProps {
@@ -278,7 +279,7 @@ const EmployeePerformance = ({ orders, currentUser, setNotification }: { orders:
     );
 };
 
-const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, setOrders, currentUser, settings, activeStore, onRefresh }) => {
+const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, setOrders, currentUser, settings, activeStore, onRefresh, forceSync }) => {
     const [activeOrder, setActiveOrder] = useState<Order | null>(null);
     const [actionNotes, setActionNotes] = useState('');
     const [selectedAction, setSelectedAction] = useState(CONFIRMATION_ACTIONS[0]);
@@ -539,6 +540,8 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                     ? { ...o, lockedBy: undefined, lockedByName: undefined, lockedAt: undefined } 
                     : o
             ));
+            // Trigger immediate sync to release lock
+            if (forceSync) forceSync();
         }
         setActiveOrder(null);
     };
@@ -575,6 +578,8 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
             };
             setOrders(current => current.map(o => o.id === order.id ? updatedOrder : o));
             setActiveOrder(updatedOrder);
+            // Trigger immediate sync to broadcast lock
+            if (forceSync) forceSync();
         } else {
             setActiveOrder(orderToActivate);
         }
