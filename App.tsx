@@ -69,25 +69,25 @@ interface EmployeeRegisterRequestData {
 
 const MainLayout = ({ currentUser, handleLogout, isSidebarOpen, setSidebarOpen, activeStore, theme, setTheme }: any) => {
     return (
-        <div className="flex flex-col h-screen bg-slate-50 dark:bg-gradient-to-b dark:from-slate-950 dark:to-[#111827] text-slate-800 dark:text-slate-200" dir="rtl">
-            <Header currentUser={currentUser} onLogout={handleLogout} onToggleSidebar={() => setSidebarOpen(true)} theme={theme} setTheme={setTheme} />
-            <div className="flex flex-1 overflow-hidden">
-                <Sidebar activeStore={activeStore} isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
-                <main className="flex-1 overflow-y-auto p-4 md:p-6">
-                    <Outlet />
-                </main>
-            </div>
-        </div>
+        <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-50" dir="rtl">
+    <Header currentUser={currentUser} onLogout={handleLogout} onToggleSidebar={() => setSidebarOpen(true)} theme={theme} setTheme={setTheme} activeStore={activeStore} />
+    <div className="flex flex-1 overflow-hidden">
+        <Sidebar activeStore={activeStore} isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar">
+            <Outlet />
+        </main>
+    </div>
+</div>
     );
 };
 
 const AdminLayout = ({ currentUser, handleLogout, theme, setTheme }: any) => (
-    <div className="flex flex-col h-screen bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200" dir="rtl">
-        <Header currentUser={currentUser} onLogout={handleLogout} theme={theme} setTheme={setTheme} onToggleSidebar={() => {}} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
-            <Outlet />
-        </main>
-    </div>
+    <div className="flex flex-col h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-50" dir="rtl">
+    <Header currentUser={currentUser} onLogout={handleLogout} theme={theme} setTheme={setTheme} onToggleSidebar={() => {}} />
+    <main className="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar">
+        <Outlet />
+    </main>
+</div>
 );
 
 const EmployeeLayoutWrapper = ({ children, ...props }: any) => {
@@ -757,6 +757,25 @@ export const AppComponent = () => {
         wallet: activeStoreId ? allStoresData[activeStoreId]?.wallet || { balance: 0, transactions: [] } : { balance: 0, transactions: [] },
         cart,
         forceSync,
+        customers: activeStoreId ? allStoresData[activeStoreId]?.customers || [] : [],
+        setCustomers: (updater: any) => {
+            if(activeStoreId) {
+                setAllStoresData(p => {
+                    const currentCustomers = p[activeStoreId]?.customers || [];
+                    const newCustomers = typeof updater === 'function' ? updater(currentCustomers) : updater;
+                    
+                    if (currentCustomers === newCustomers) return p;
+
+                    return {
+                        ...p, 
+                        [activeStoreId]: {
+                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
+                            customers: newCustomers
+                        }
+                    };
+                });
+            }
+        },
         setOrders: (updater: any) => {
             if(activeStoreId) {
                 setAllStoresData(p => {
@@ -811,6 +830,24 @@ export const AppComponent = () => {
                 });
             }
         },
+        setCart: (updater: any) => {
+            if(activeStoreId) {
+                setAllStoresData(p => {
+                    const currentCart = p[activeStoreId]?.cart || [];
+                    const newCart = typeof updater === 'function' ? updater(currentCart) : updater;
+                    
+                    if (currentCart === newCart) return p;
+
+                    return {
+                        ...p, 
+                        [activeStoreId]: {
+                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
+                            cart: newCart
+                        }
+                    };
+                });
+            }
+        },
     };
 
     const handlePlaceOrder = (orderData: any) => {
@@ -839,8 +876,13 @@ export const AppComponent = () => {
             productCost: pageProps.cart.reduce((sum: number, item: any) => sum + ((item.cost || 0) * (item.quantity || 1)), 0),
             weight: pageProps.cart.reduce((sum: number, item: any) => sum + ((item.weight || 0) * (item.quantity || 1)), 0),
             discount: orderData.discount || 0,
-            orderType: 'new',
+            orderType: 'standard',
             paymentMethod: 'cash_on_delivery',
+            productName: pageProps.cart.map((i: any) => i.name).join(', '),
+            includeInspectionFee: false,
+            isInsured: false,
+            paymentStatus: 'بانتظار الدفع',
+            preparationStatus: 'بانتظار التجهيز',
         };
         
         pageProps.setOrders((prev: Order[]) => [newOrder, ...prev]);
@@ -893,8 +935,8 @@ export const AppComponent = () => {
                         <Outlet/>
                     </EmployeeLayoutWrapper>
                 }>
-                    <Route index element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} />} />
-                    <Route path="dashboard" element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} />} />
+                    <Route index element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} />} />
+                    <Route path="dashboard" element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} />} />
                     <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} forceSync={pageProps.forceSync} />} />
                     <Route path="my-activity" element={<EmployeeActivityPage currentUser={currentUser} orders={pageProps.orders} />} />
                     <Route path="account-settings" element={<EmployeeAccountSettingsPage currentUser={currentUser} setCurrentUser={setCurrentUser} users={users} setUsers={setUsers} />} />
