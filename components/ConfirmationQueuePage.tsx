@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Order, User, ConfirmationLog, AuditLog, OrderStatus, Settings, OrderItem, Product, Store } from '../types';
-import { PhoneForwarded, Check, CheckCircle, X, User as UserIcon, MapPin, Package, CalendarDays, Phone, PhoneCall, MessageSquare, Edit3, Save, Plus, Clock, ChevronsUpDown, ArrowRight, Truck, Tag, XCircle, Eye, Search, RefreshCw, History as HistoryIcon, TrendingUp, AlertTriangle, Bell, Send, FileText, Filter, Lock, Unlock, Trophy, Medal, MessageCircle, ListChecks, Users } from 'lucide-react';
+import { PhoneForwarded, Check, CheckCircle, X, User as UserIcon, MapPin, Package, CalendarDays, Phone, PhoneCall, MessageSquare, Edit3, Save, Plus, Clock, ChevronsUpDown, ArrowRight, Truck, Tag, XCircle, Eye, Search, RefreshCw, History as HistoryIcon, TrendingUp, AlertTriangle, Bell, Send, FileText, Filter, Lock, Unlock, Trophy, Medal, MessageCircle, ListChecks, Users, ArrowRightLeft } from 'lucide-react';
 import EditableField from './EditableField';
 
 const QUICK_WA_TEMPLATES = [
@@ -234,7 +234,7 @@ const EmployeePerformance = ({ orders, currentUser, setNotification }: { orders:
     }, [stats.rank, setNotification]);
 
     return (
-        <div className="bg-indigo-600 text-white p-4 rounded-xl shadow-lg mb-6 flex justify-between items-center relative overflow-hidden">
+        <div className="bg-indigo-600 text-white p-4 rounded-xl shadow-lg mb-6 flex flex-col sm:flex-row justify-between items-center gap-4 sm:gap-0 relative overflow-hidden">
             <div className="absolute -right-4 -top-4 opacity-20 text-white">
                 <Trophy size={100} />
             </div>
@@ -281,6 +281,156 @@ const EmployeePerformance = ({ orders, currentUser, setNotification }: { orders:
 
 const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, setOrders, currentUser, settings, activeStore, onRefresh, forceSync }) => {
     const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+    const [showDashboard, setShowDashboard] = useState(false);
+    const [callStartTime, setCallStartTime] = useState<number | null>(null);
+    const [callDuration, setCallDuration] = useState<number>(0);
+    const [autoDialer, setAutoDialer] = useState(false);
+    const [sentiment, setSentiment] = useState<'إيجابي' | 'محايد' | 'سلبي' | 'غاضب' | 'مستعجل'>('محايد');
+    const [isScriptsOpen, setIsScriptsOpen] = useState(false);
+    const [isVerifyingAddress, setIsVerifyingAddress] = useState(false);
+    const [addressVerified, setAddressVerified] = useState<boolean | null>(null);
+    const [notification, setNotification] = useState<string | null>(null);
+    const prevOrdersCount = useRef(0);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+    const [transferTo, setTransferTo] = useState('');
+
+    const truncateString = (str: string, num: number) => {
+        if (!str) return '';
+        if (str.length <= num) return str;
+        return str.slice(0, num) + '...';
+    };
+
+    const isReadOnly = useMemo(() => {
+        if (!activeOrder) return false;
+        if (currentUser?.isAdmin) return false;
+        
+        const isStoreOwner = currentUser?.stores?.some(s => s.id === activeStore?.id);
+        
+        // Read only if cancelled or returned
+        if (activeOrder.status === 'ملغي' || activeOrder.status === 'مرتجع' || activeOrder.status === 'مرتجع_جزئي' || activeOrder.status === 'فشل_التوصيل') return true;
+        // Read only if assigned to someone else and not me
+        if (activeOrder.assignedTo && activeOrder.assignedTo !== currentUser?.phone && !isStoreOwner) return true;
+        
+        // Read only if status is 'جاري_المراجعة' and user is not the store owner
+        if (activeOrder.status === 'جاري_المراجعة' && !isStoreOwner) return true;
+        
+        return false;
+    }, [activeOrder, currentUser, activeStore]);
+
+    const showNotification = (title: string, body: string) => {
+        if (!("Notification" in window)) return;
+        if (Notification.permission === "granted") {
+            new Notification(title, { body, icon: '/favicon.ico' });
+        } else if (Notification.permission !== "denied") {
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    new Notification(title, { body, icon: '/favicon.ico' });
+                }
+            });
+        }
+    };
+
+    const prevMyOrdersCount = useRef(0);
+    const isFirstRender = useRef(true);
+
+    useEffect(() => {
+        const initAudio = () => {
+            if (!audioRef.current) {
+                audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                audioRef.current.load();
+                // Play and immediately pause to unlock audio context on iOS
+                audioRef.current.play().then(() => {
+                    if (audioRef.current) {
+                        audioRef.current.pause();
+                        audioRef.current.currentTime = 0;
+                    }
+                }).catch(() => {});
+            }
+            document.removeEventListener('click', initAudio);
+            document.removeEventListener('touchstart', initAudio);
+        };
+        
+        document.addEventListener('click', initAudio);
+        document.addEventListener('touchstart', initAudio);
+        
+        return () => {
+            document.removeEventListener('click', initAudio);
+            document.removeEventListener('touchstart', initAudio);
+        };
+    }, []);
+
+    useEffect(() => {
+        const pendingCount = orders.filter(o => o.status === 'في_انتظار_المكالمة').length;
+        const myPendingCount = orders.filter(o => o.status === 'في_انتظار_المكالمة' && o.assignedTo === currentUser?.phone).length;
+        const isStoreOwner = currentUser?.stores?.some(s => s.id === activeStore?.id) || currentUser?.isAdmin;
+        
+        if (!isFirstRender.current) {
+            if (myPendingCount > prevMyOrdersCount.current) {
+                // Play sound for new orders assigned to me
+                if (!audioRef.current) {
+                    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                }
+                audioRef.current.play().catch(e => console.error("Error playing sound:", e));
+                showNotification("طلب جديد!", `تم تعيين طلب جديد لك. لديك ${myPendingCount} طلبات في الانتظار`);
+                
+                // Vibrate on mobile
+                if (navigator.vibrate) {
+                    navigator.vibrate([200, 100, 200]);
+                }
+            } else if (pendingCount > prevOrdersCount.current) {
+                // Notify for any new order
+                if (!audioRef.current) {
+                    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                }
+                audioRef.current.play().catch(e => console.error("Error playing sound:", e));
+                showNotification("طلب جديد!", `هناك ${pendingCount} طلب في انتظار التأكيد`);
+                
+                if (navigator.vibrate) {
+                    navigator.vibrate([200, 100, 200]);
+                }
+            }
+        }
+
+        prevOrdersCount.current = pendingCount;
+        prevMyOrdersCount.current = myPendingCount;
+        isFirstRender.current = false;
+    }, [orders, currentUser, activeStore]);
+
+    const [autoDistribute, setAutoDistribute] = useState(true);
+
+    useEffect(() => {
+        if (!autoDistribute) return;
+        
+        const unassignedOrders = orders.filter(o => !o.assignedTo && o.status === 'في_انتظار_المكالمة');
+        const activeEmployees = settings.employees?.filter(e => e.status === 'active') || [];
+        
+        if (unassignedOrders.length > 0 && activeEmployees.length > 0) {
+            setOrders(currentOrders => {
+                const updated = [...currentOrders];
+                let empIdx = 0;
+                let hasChanges = false;
+
+                unassignedOrders.forEach(order => {
+                    const emp = activeEmployees[empIdx];
+                    const idx = updated.findIndex(o => o.id === order.id);
+                    if (idx !== -1 && !updated[idx].assignedTo) {
+                        updated[idx] = {
+                            ...updated[idx],
+                            assignedTo: emp.phone || emp.id,
+                            assignedToName: emp.name
+                        };
+                        hasChanges = true;
+                    }
+                    empIdx = (empIdx + 1) % activeEmployees.length;
+                });
+
+                return hasChanges ? updated : currentOrders;
+            });
+        }
+    }, [orders.length, settings.employees, autoDistribute]);
+
     const [actionNotes, setActionNotes] = useState('');
     const [selectedAction, setSelectedAction] = useState(CONFIRMATION_ACTIONS[0]);
     const [cancellationReason, setCancellationReason] = useState('');
@@ -305,11 +455,12 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
     const [filterGovernorate, setFilterGovernorate] = useState<string>('');
     const [filterShippingCompany, setFilterShippingCompany] = useState<string>('');
-    const [filterStatus, setFilterStatus] = useState<string>('');
+    const [filterStatus, setFilterStatus] = useState<string>('في_انتظار_المكالمة');
     const [sortBy, setSortBy] = useState<'date_asc' | 'date_desc' | 'price_desc'>('date_asc');
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [showMyOrdersOnly, setShowMyOrdersOnly] = useState(false);
+    const [showMyOrdersOnly, setShowMyOrdersOnly] = useState(!currentUser?.isAdmin);
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
 
     const pendingOrders = useMemo(() => {
         let filtered = orders.filter(o => o.status === 'في_انتظار_المكالمة' || o.status === 'جاري_المراجعة' || o.status === 'ملغي');
@@ -353,14 +504,42 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
 
     // Removed auto-assign useEffect as user requested a manual button for this.
 
-    const [callStartTime, setCallStartTime] = useState<number | null>(null);
-    const [callDuration, setCallDuration] = useState<number>(0);
-    const [autoDialer, setAutoDialer] = useState(false);
-    const [sentiment, setSentiment] = useState<'إيجابي' | 'محايد' | 'سلبي' | 'غاضب' | 'مستعجل'>('محايد');
-    const [isScriptsOpen, setIsScriptsOpen] = useState(false);
-    const [isVerifyingAddress, setIsVerifyingAddress] = useState(false);
-    const [addressVerified, setAddressVerified] = useState<boolean | null>(null);
-    const [notification, setNotification] = useState<string | null>(null);
+    const pendingTransfers = useMemo(() => {
+        return orders.filter(o => o.transferTo === currentUser?.phone && o.transferStatus === 'pending');
+    }, [orders, currentUser]);
+
+    const handleAcceptTransfer = (orderId: string) => {
+        const targetEmployee = settings.employees?.find(e => e.phone === currentUser?.phone || e.phone === currentUser?.phone);
+        setOrders(current => current.map(o => 
+            o.id === orderId 
+                ? { 
+                    ...o, 
+                    transferStatus: 'accepted',
+                    assignedTo: targetEmployee?.phone,
+                    assignedToName: targetEmployee?.name,
+                    transferTo: undefined,
+                    transferFrom: undefined
+                  } 
+                : o
+        ));
+    };
+
+    const handleCancelTransfer = (orderId: string) => {
+        setOrders(current => current.map(o => 
+            o.id === orderId 
+                ? { 
+                    ...o, 
+                    transferStatus: undefined,
+                    transferTo: undefined,
+                    transferFrom: undefined,
+                    assignedTo: currentUser?.phone,
+                    assignedToName: currentUser?.fullName
+                  } 
+                : o
+        ));
+        setNotification("تم استرجاع الطلب بنجاح");
+        setTimeout(() => setNotification(null), 3000);
+    };
 
     useEffect(() => {
         if (notification) {
@@ -400,22 +579,25 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                 return;
             }
 
+            const isStoreOwner = currentUser?.stores?.some(s => s.id === activeStore?.id) || currentUser?.isAdmin;
+            const availableOrders = pendingOrders.filter(o => isStoreOwner || !o.assignedTo || o.assignedTo === currentUser?.phone);
+
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                if (!activeOrder && pendingOrders.length > 0) {
-                    handleSelectOrder(pendingOrders[0]);
+                if (!activeOrder && availableOrders.length > 0) {
+                    handleSelectOrder(availableOrders[0]);
                 } else if (activeOrder) {
-                    const currentIndex = pendingOrders.findIndex(o => o.id === activeOrder.id);
-                    if (currentIndex < pendingOrders.length - 1) {
-                        handleSelectOrder(pendingOrders[currentIndex + 1]);
+                    const currentIndex = availableOrders.findIndex(o => o.id === activeOrder.id);
+                    if (currentIndex !== -1 && currentIndex < availableOrders.length - 1) {
+                        handleSelectOrder(availableOrders[currentIndex + 1]);
                     }
                 }
             } else if (e.key === 'ArrowUp') {
                 e.preventDefault();
                 if (activeOrder) {
-                    const currentIndex = pendingOrders.findIndex(o => o.id === activeOrder.id);
+                    const currentIndex = availableOrders.findIndex(o => o.id === activeOrder.id);
                     if (currentIndex > 0) {
-                        handleSelectOrder(pendingOrders[currentIndex - 1]);
+                        handleSelectOrder(availableOrders[currentIndex - 1]);
                     }
                 }
             } else if (e.key === 'Escape') {
@@ -536,7 +718,19 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
             }
         }
 
+        const isStoreOwner = currentUser?.stores?.some(s => s.id === activeStore?.id) || currentUser?.isAdmin;
+        if (order.assignedTo && order.assignedTo !== currentUser?.phone && !isStoreOwner) {
+            setNotification(`هذا الطلب مخصص للموظف ${order.assignedToName}`);
+            return;
+        }
+
         const orderToActivate = { ...order };
+        if (!orderToActivate.assignedTo) {
+            orderToActivate.assignedTo = currentUser?.phone;
+            orderToActivate.assignedToName = currentUser?.fullName;
+            setOrders(prev => prev.map(o => o.id === orderToActivate.id ? orderToActivate : o));
+            setNotification("تم إسناد الطلب إليك تلقائياً");
+        }
         if (!orderToActivate.items || orderToActivate.items.length === 0) {
             orderToActivate.items = [{
                 productId: settings.products?.find(p => p.name === order.productName)?.id || 'legacy-product-id',
@@ -548,13 +742,18 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
             }];
         }
         
-        // Lock the order
+        // Lock the order and assign if unassigned
         if (currentUser) {
+            const isUnassigned = !orderToActivate.assignedTo || orderToActivate.assignedTo === 'غير موزع';
             const updatedOrder = { 
                 ...orderToActivate, 
                 lockedBy: currentUser.phone, 
                 lockedByName: currentUser.fullName, 
-                lockedAt: new Date().toISOString() 
+                lockedAt: new Date().toISOString(),
+                ...(isUnassigned ? {
+                    assignedTo: currentUser.phone,
+                    assignedToName: currentUser.fullName || currentUser.name || currentUser.phone
+                } : {})
             };
             setOrders(current => current.map(o => o.id === order.id ? updatedOrder : o));
             setActiveOrder(updatedOrder);
@@ -564,7 +763,54 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
             setActiveOrder(orderToActivate);
         }
     };
-    
+
+    const handleTransferOrder = () => {
+        if (!activeOrder || !transferTo || !currentUser) return;
+        
+        if (transferTo === currentUser.phone) {
+            setNotification("لا يمكنك تحويل الطلب لنفسك");
+            return;
+        }
+
+        const targetEmployee = settings.employees?.find(e => e.phone === transferTo || e.id === transferTo);
+        if (!targetEmployee) return;
+
+        const now = new Date().toISOString();
+        const newLog: AuditLog = {
+            id: Math.random().toString(36).substr(2, 9),
+            timestamp: now,
+            userId: currentUser.phone,
+            userName: currentUser.fullName,
+            action: 'transfer',
+            details: `تم تحويل الطلب إلى ${targetEmployee.name}`,
+            field: 'assignedTo',
+            oldValue: activeOrder.assignedTo || 'غير محدد',
+            newValue: targetEmployee.phone || targetEmployee.id
+        };
+
+        setOrders(current => current.map(o => 
+            o.id === activeOrder.id 
+                ? { 
+                    ...o, 
+                    transferStatus: 'pending',
+                    transferTo: targetEmployee.phone || targetEmployee.id,
+                    transferFrom: currentUser.phone,
+                    lockedBy: undefined,
+                    lockedByName: undefined,
+                    lockedAt: undefined,
+                    auditLogs: [...(o.auditLogs || []), newLog]
+                  } 
+                : o
+        ));
+
+        if (forceSync) forceSync();
+        setActiveOrder(null);
+        setIsTransferModalOpen(false);
+        setTransferTo('');
+        setNotification(`تم تحويل الطلب إلى ${targetEmployee.name} بنجاح`);
+        setTimeout(() => setNotification(null), 3000);
+    };
+
     const handleActionSubmit = (action: string) => {
         if (!activeOrder || !currentUser) return;
         
@@ -612,7 +858,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                 ...order, 
                 status: newStatus || order.status, 
                 sentiment: sentiment,
-                callAttempts: [...(order.callAttempts || []), { 
+                callAttempts: [...(Array.isArray(order.callAttempts) ? order.callAttempts : []), { 
                     id: `call-${Date.now()}`, 
                     userId: currentUser?.email || 'unknown', 
                     userName: currentUser?.fullName || 'unknown', 
@@ -642,9 +888,11 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
 
         // Auto-dialer logic
         if (autoDialer) {
-            const nextOrder = pendingOrders.find(o => o.id !== activeOrderId);
+            const isStoreOwner = currentUser?.stores?.some(s => s.id === activeStore?.id) || currentUser?.isAdmin;
+            const availableOrders = pendingOrders.filter(o => o.id !== activeOrderId && (isStoreOwner || !o.assignedTo || o.assignedTo === currentUser?.phone));
+            const nextOrder = availableOrders[0];
             if (nextOrder) {
-                setActiveOrder(nextOrder);
+                handleSelectOrder(nextOrder);
             } else {
                 setActiveOrder(null);
             }
@@ -801,49 +1049,71 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     }, [activeOrder, settings.shippingOptions]);
 
     return (
-        <div className="h-full flex flex-col relative">
-            {notification && (
-                <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-red-600 text-white px-6 py-3 rounded-full shadow-lg font-bold animate-in fade-in slide-in-from-top-4">
-                    {notification}
-                </div>
-            )}
-            <div className="flex items-center gap-4 mb-6 flex-shrink-0 justify-between">
-                <div className="flex items-center gap-4">
-                    <div className="p-3 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 rounded-xl"><PhoneForwarded size={28} /></div>
-                    <div>
-                        <h1 className="text-3xl font-black text-slate-800 dark:text-white">قائمة تأكيد الطلبات</h1>
-                        <p className="text-slate-500 dark:text-slate-400 mt-1">تواصل مع العملاء لتأكيد طلباتهم الجديدة.</p>
+        <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden">
+            {/* Top Stats Bar / Dashboard Integration */}
+            <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center justify-between gap-4 overflow-x-auto no-scrollbar shrink-0 rounded-b-2xl shadow-sm">
+                <div className="flex items-center gap-4 min-w-max">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                            <ListChecks size={18} />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase leading-none">قيد التأكيد</p>
+                            <p className="text-sm font-black text-slate-800 dark:text-white">{pendingOrders.length}</p>
+                        </div>
+                    </div>
+                    <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800" />
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                            <TrendingUp size={18} />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase leading-none">معدل التأكيد</p>
+                            <p className="text-sm font-black text-slate-800 dark:text-white">
+                                {orders.length > 0 ? ((orders.filter(o => o.status === 'جاري_المراجعة').length / orders.length) * 100).toFixed(0) : 0}%
+                            </p>
+                        </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
+
+                <div className="flex items-center gap-2 min-w-max">
                     <button 
-                        onClick={() => {
-                            const unassigned = orders.filter(o => o.status === 'في_انتظار_المكالمة' && !o.assignedTo);
-                            const employees = settings.employees?.filter(e => e.status === 'active') || [];
-                            if (employees.length === 0 || unassigned.length === 0) {
-                                alert('لا يوجد طلبات غير موزعة أو لا يوجد موظفين نشطين.');
-                                return;
-                            }
-                            
-                            let empIndex = 0;
-                            const updatedOrders = orders.map(o => {
-                                if (o.status === 'في_انتظار_المكالمة' && !o.assignedTo) {
-                                    const emp = employees[empIndex % employees.length];
-                                    empIndex++;
-                                    return { ...o, assignedTo: emp.id };
-                                }
-                                return o;
-                            });
-                            setOrders(updatedOrders);
-                            alert(`تم توزيع ${unassigned.length} طلب بنجاح.`);
-                        }} 
-                        className="glass-card px-4 py-2 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-white/50 transition-all flex items-center gap-2 font-bold border border-indigo-100 dark:border-indigo-900/30"
-                        title="توزيع تلقائي للموظفين"
+                        onClick={() => setShowDashboard(!showDashboard)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            showDashboard 
+                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' 
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
                     >
-                        توزيع تلقائي <Users size={20} />
+                        <Trophy size={14} />
+                        <span className="hidden sm:inline">لوحة الإنجازات</span>
+                    </button>
+                    <button 
+                        onClick={handleRefresh}
+                        className="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-all"
+                        title="تحديث القائمة"
+                    >
+                        <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
                     </button>
                 </div>
             </div>
+
+            {showDashboard && (
+                <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    className="px-4 pt-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0"
+                >
+                    <EmployeePerformance orders={orders} currentUser={currentUser} setNotification={(msg) => console.log(msg)} />
+                </motion.div>
+            )}
+
+            <div className="flex flex-1 overflow-hidden relative">
+                {notification && (
+                    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[100] bg-red-600 text-white px-6 py-3 rounded-full shadow-lg font-bold animate-in fade-in slide-in-from-top-4">
+                        {notification}
+                    </div>
+                )}
 
             <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex overflow-hidden min-h-[600px]">
                 <div className={`w-full md:w-1/3 border-l border-slate-200 dark:border-slate-800 flex flex-col h-full transition-all duration-300 ${activeOrder ? 'hidden md:flex' : 'flex'}`}>
@@ -872,6 +1142,17 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                     <div className="absolute left-0 top-full mt-2 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 p-4 z-50">
                                         <h4 className="font-bold text-sm mb-3">تصفية وفرز</h4>
                                         <div className="space-y-3">
+                                            <div>
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={autoDistribute}
+                                                        onChange={(e) => setAutoDistribute(e.target.checked)}
+                                                        className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                                                    />
+                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">توزيع تلقائي للطلبات</span>
+                                                </label>
+                                            </div>
                                             <div>
                                                 <label className="text-xs text-slate-500 block mb-1">ترتيب حسب</label>
                                                 <select 
@@ -917,11 +1198,12 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                 )}
                             </div>
                             <button 
-                                onClick={handleRefresh} 
-                                className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                title="تحديث القائمة"
+                                onClick={() => setIsSelectionMode(!isSelectionMode)} 
+                                className={`p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold ${isSelectionMode ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                                title="تحديد متعدد"
                             >
-                                <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+                                <ListChecks size={18} />
+                                <span className="hidden sm:inline">{isSelectionMode ? 'إلغاء التحديد' : 'تحديد'}</span>
                             </button>
                             <button 
                                 onClick={() => setAutoDialer(!autoDialer)} 
@@ -942,7 +1224,32 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                         </div>
                     </div>
                     
-                    <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg m-2">
+                    {/* Pending Transfers */}
+                    {pendingTransfers.length > 0 && (
+                        <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 m-2">
+                            <h3 className="font-bold text-indigo-800 dark:text-indigo-200 mb-3">طلبات محولة إليك:</h3>
+                            <div className="space-y-2">
+                                {pendingTransfers.map(order => {
+                                    const sender = settings.employees?.find(e => e.phone === order.transferFrom);
+                                    return (
+                                        <div key={order.id} className="flex justify-between items-center bg-white dark:bg-slate-800 p-3 rounded-lg shadow-sm">
+                                            <div className="flex flex-col">
+                                                <span className="font-bold text-sm">طلب #{order.orderNumber}</span>
+                                                <span className="text-xs text-slate-500">محول من: {sender?.name || order.transferFrom}</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => handleAcceptTransfer(order.id)} className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-emerald-700">قبول</button>
+                                                <button onClick={() => handleCancelTransfer(order.id)} className="bg-red-600 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-red-700">رفض</button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Filters */}
+                    <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-full m-2">
                         <button 
                             onClick={() => setShowMyOrdersOnly(false)}
                             className={`flex-1 py-2 text-sm font-bold text-center rounded-md transition-all ${!showMyOrdersOnly ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
@@ -957,11 +1264,11 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                         </button>
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-2 p-2 bg-slate-100/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                        {[{value: '', label: 'الكل'}, {value: 'في_انتظار_المكالمة', label: 'في انتظار المكالمة'}, {value: 'جاري_المراجعة', label: 'جاري المراجعة'}, {value: 'ملغي', label: 'ملغي'}].map((tab) => (
+                        {[{value: 'في_انتظار_المكالمة', label: 'في انتظار المكالمة'}, {value: 'جاري_المراجعة', label: 'جاري المراجعة'}, {value: 'ملغي', label: 'ملغي'}].map((tab) => (
                             <button
                                 key={tab.value}
                                 onClick={() => setFilterStatus(tab.value)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
                                     filterStatus === tab.value 
                                         ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm' 
                                         : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
@@ -978,9 +1285,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                         </div>
                     ) : (
                         <div className="flex-1 overflow-y-auto relative">
-                            <div className="p-4">
-                                <EmployeePerformance orders={orders} currentUser={currentUser} setNotification={setNotification} />
-                            </div>
+                            {/* Removed redundant EmployeePerformance from list */}
                             
                             {/* Bulk Actions Bar */}
                             {selectedOrderIds.length > 0 && (
@@ -1054,52 +1359,60 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                             )}
 
                             {/* Select All Checkbox */}
-                            <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3 bg-slate-50/50 dark:bg-slate-800/20">
-                                <input 
-                                    type="checkbox" 
-                                    checked={selectedOrderIds.length === pendingOrders.length && pendingOrders.length > 0}
-                                    onChange={(e) => {
-                                        if (e.target.checked) {
-                                            setSelectedOrderIds(pendingOrders.map(o => o.id));
-                                        } else {
-                                            setSelectedOrderIds([]);
-                                        }
-                                    }}
-                                    className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
-                                />
-                                <span className="text-xs text-slate-500 font-bold">تحديد الكل</span>
-                            </div>
+                            {isSelectionMode && (
+                                <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3 bg-slate-50/50 dark:bg-slate-800/20">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={selectedOrderIds.length === pendingOrders.length && pendingOrders.length > 0}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setSelectedOrderIds(pendingOrders.map(o => o.id));
+                                            } else {
+                                                setSelectedOrderIds([]);
+                                            }
+                                        }}
+                                        className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                                    />
+                                    <span className="text-xs text-slate-500 font-bold">تحديد الكل</span>
+                                </div>
+                            )}
 
                             {pendingOrders.map(order => {
                                 const orderAgeHours = (new Date().getTime() - new Date(order.date).getTime()) / (1000 * 60 * 60);
                                 const isHighPriority = orderAgeHours > 2;
                                 const isSelected = selectedOrderIds.includes(order.id);
+                                const isStoreOwner = currentUser?.stores?.some(s => s.id === activeStore?.id) || currentUser?.isAdmin;
+                                const isPendingTransfer = order.transferStatus === 'pending' && order.transferFrom === currentUser?.phone;
+                                const isAssignedToOther = (order.assignedTo && order.assignedTo !== currentUser?.phone && !isStoreOwner) || isPendingTransfer;
                                 
                                 return (
                                     <div 
                                         key={order.id} 
-                                        className={`w-full text-right flex items-stretch transition-colors border-b border-slate-100 dark:border-slate-800 relative ${activeOrder?.id === order.id ? 'bg-cyan-50 dark:bg-cyan-900/30' : isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+                                        className={`w-full text-right flex items-stretch transition-colors border-b border-slate-100 dark:border-slate-800 relative ${activeOrder?.id === order.id ? 'bg-cyan-50 dark:bg-cyan-900/30' : isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'} ${isAssignedToOther ? 'opacity-50 grayscale cursor-not-allowed bg-slate-100 dark:bg-slate-900' : ''}`}
                                     >
-                                        {isHighPriority && (
+                                        {isHighPriority && !isAssignedToOther && (
                                             <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500" title="طلب قديم - أولوية عالية" />
                                         )}
-                                        <div className="p-4 pr-4 flex items-center justify-center border-l border-slate-100 dark:border-slate-800/50">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={isSelected}
-                                                onChange={(e) => {
-                                                    if (e.target.checked) {
-                                                        setSelectedOrderIds(prev => [...prev, order.id]);
-                                                    } else {
-                                                        setSelectedOrderIds(prev => prev.filter(id => id !== order.id));
-                                                    }
-                                                }}
-                                                className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer"
-                                            />
-                                        </div>
+                                        {isSelectionMode && (
+                                            <div className="p-4 pr-4 flex items-center justify-center border-l border-slate-100 dark:border-slate-800/50">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={isSelected}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedOrderIds(prev => [...prev, order.id]);
+                                                        } else {
+                                                            setSelectedOrderIds(prev => prev.filter(id => id !== order.id));
+                                                        }
+                                                    }}
+                                                    className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer"
+                                                />
+                                            </div>
+                                        )}
                                         <button 
                                             onClick={() => handleSelectOrder(order)} 
-                                            className="flex-1 p-4 pl-4 text-right"
+                                            className="flex-1 p-4 pl-4 text-right relative"
+                                            disabled={isAssignedToOther}
                                         >
                                             <div className="flex justify-between items-start">
                                                 <h4 className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
@@ -1107,16 +1420,31 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                     {order.lockedBy && order.lockedBy !== currentUser?.phone && (
                                                         <Lock size={12} className="text-red-500" />
                                                     )}
+                                                    {order.status === 'في_انتظار_المكالمة' && (
+                                                        <span className="bg-red-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
+                                                            جديد
+                                                        </span>
+                                                    )}
+                                                    {isPendingTransfer && (
+                                                        <span className="bg-amber-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">
+                                                            معلق (تحويل)
+                                                        </span>
+                                                    )}
                                                 </h4>
                                                 <div className="text-left">
                                                     <div className="text-[10px] font-black text-slate-400 uppercase">{formatOrderTime(order.date)}</div>
-                                                    <div className={`text-[10px] font-bold ${isHighPriority ? 'text-red-500' : 'text-slate-500'}`}>{timeSince(order.date)}</div>
+                                                    <div className={`text-[9px] font-bold mt-1 flex items-center gap-1 justify-end ${isAssignedToOther ? 'text-red-500' : 'text-slate-500'}`}>
+                                                        <UserIcon size={10} />
+                                                        {order.assignedToName || 'غير موزع'}
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-1">{order.productName}</p>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-1">
+                                                {truncateString(order.productName || (order.items && order.items[0]?.name) || '', 25)}
+                                            </p>
                                             <div className="flex justify-between items-center mt-2">
                                                 <p className="text-xs font-black text-indigo-600 dark:text-indigo-400">{(order.totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0))).toLocaleString()} ج.م</p>
-                                                {order.callAttempts && order.callAttempts.length > 0 ? (
+                                                {Array.isArray(order.callAttempts) && order.callAttempts.length > 0 ? (
                                                     <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
                                                         {order.callAttempts.length} محاولات
                                                     </span>
@@ -1130,16 +1458,40 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                     )}
                 </div>
 
-                <div className={`w-full md:w-2/3 flex flex-col h-full transition-all duration-300 ${activeOrder ? 'flex' : 'hidden md:flex'}`}>
+                <div className={`w-full md:w-2/3 flex flex-col h-full transition-all duration-300 ${activeOrder ? 'flex' : 'hidden md:flex'} ${isReadOnly ? 'opacity-60 grayscale-[0.5]' : ''}`}>
                     {activeOrder ? (
                         <>
                             <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 flex-shrink-0">
                                 <button onClick={() => setActiveOrder(null)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"><ArrowRight size={20}/></button>
                                 <div className="flex-1 flex items-center justify-between">
                                     <h3 className="font-bold text-slate-800 dark:text-white">تفاصيل الطلب #{activeOrder.orderNumber}</h3>
-                                    <div className="flex items-center gap-2 text-sm font-mono text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full">
-                                        <PhoneCall size={14} className={callDuration > 0 ? "animate-pulse text-emerald-500" : ""} />
-                                        {formatDuration(callDuration)}
+                                    <div className="flex items-center gap-2">
+                                        <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${activeOrder.assignedTo ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                            <UserIcon size={12} />
+                                            {activeOrder.assignedToName || 'غير موزع'}
+                                        </div>
+                                        {!isReadOnly && (
+                                            <button 
+                                                onClick={() => setIsTransferModalOpen(true)}
+                                                className="flex items-center gap-1 bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-xs font-bold hover:bg-indigo-200 transition-colors"
+                                            >
+                                                <ArrowRightLeft size={14} />
+                                                تحويل الطلب
+                                            </button>
+                                        )}
+                                        {activeOrder.transferStatus === 'pending' && activeOrder.transferFrom === currentUser?.phone && (
+                                            <button 
+                                                onClick={() => handleCancelTransfer(activeOrder.id)}
+                                                className="flex items-center gap-1 bg-amber-100 text-amber-600 px-3 py-1 rounded-full text-xs font-bold hover:bg-amber-200 transition-colors"
+                                            >
+                                                <X size={14} />
+                                                إلغاء التحويل
+                                            </button>
+                                        )}
+                                        <div className="flex items-center gap-2 text-sm font-mono text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full">
+                                            <PhoneCall size={14} className={callDuration > 0 ? "animate-pulse text-emerald-500" : ""} />
+                                            {formatDuration(callDuration)}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1151,17 +1503,18 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                     <div className="flex justify-between items-center mb-3">
                                         <h4 className="font-bold text-indigo-800 dark:text-indigo-300 text-sm flex items-center gap-2"><PhoneCall size={16}/> تتبع محاولات الاتصال</h4>
                                         <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[10px] font-black">
-                                            المحاولة رقم {(activeOrder.callAttempts?.length || 0) + 1}
+                                            المحاولة رقم {(Array.isArray(activeOrder.callAttempts) ? activeOrder.callAttempts.length : 0) + 1}
                                         </span>
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                         {CALL_STATUS_ACTIONS.map(status => (
                                             <button
                                                 key={status.label}
+                                                disabled={isReadOnly}
                                                 onClick={() => {
                                                     handleActionSubmit(status.action);
                                                 }}
-                                                className={`p-2 rounded-lg text-xs font-bold transition-all hover:scale-105 active:scale-95 ${status.color}`}
+                                                className={`p-2 rounded-lg text-xs font-bold transition-all hover:scale-105 active:scale-95 ${status.color} ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 {status.label}
                                             </button>
@@ -1175,8 +1528,10 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             icon={<UserIcon size={14}/>}
                                             label="الاسم"
                                             isEditing={isEditingName}
+                                            disabled={isReadOnly}
                                             onEdit={() => { setIsEditingName(true); setEditedName(activeOrder.customerName); }}
                                             onSave={handleSaveName}
+                                            onCancel={() => setIsEditingName(false)}
                                             editComponent={
                                                 <input type="text" value={editedName} onChange={e => setEditedName(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold"/>
                                             }
@@ -1274,7 +1629,8 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         <EditableField
                                             icon={<Phone size={14}/>}
                                             label="هاتف إضافي"
-                                            isEditing={isEditingPhone2}
+                                            isEditing={!isReadOnly && isEditingPhone2}
+                                            disabled={isReadOnly}
                                             onEdit={() => { setIsEditingPhone2(true); setEditedPhone2(activeOrder.customerPhone2 || ''); }}
                                             onSave={handleSavePhone2}
                                             onCancel={() => setIsEditingPhone2(false)}
@@ -1311,9 +1667,11 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         <EditableField
                                             icon={<MapPin size={14}/>}
                                             label="العنوان"
-                                            isEditing={isEditingAddress}
+                                            isEditing={!isReadOnly && isEditingAddress}
+                                            disabled={isReadOnly}
                                             onEdit={() => { setIsEditingAddress(true); setEditedAddress(activeOrder.customerAddress); setEditedGovernorate(activeOrder.shippingArea); setEditedCity(activeOrder.city || ''); }}
                                             onSave={handleSaveAddress}
+                                            onCancel={() => setIsEditingAddress(false)}
                                             editComponent={
                                                 <div className="space-y-2 w-full">
                                                     <select 
@@ -1384,7 +1742,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                                 setAddressVerified((activeOrder.customerAddress || '').length > 15);
                                                                 setIsVerifyingAddress(false);
                                                             }} 
-                                                            disabled={isVerifyingAddress}
+                                                            disabled={isVerifyingAddress || isReadOnly}
                                                             className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-[10px] font-bold ${addressVerified === true ? 'bg-green-100 text-green-700' : addressVerified === false ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                                                             title="التحقق من العنوان"
                                                         >
@@ -1400,7 +1758,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         <div>
                                             <div className="flex justify-between items-center mb-2">
                                                 <label className="text-xs text-slate-500 flex items-center gap-1"><Package size={14}/> المنتجات</label>
-                                                <button onClick={() => setIsProductModalOpen(true)} className="text-xs font-bold text-blue-600 hover:underline">تعديل</button>
+                                                {!isReadOnly && <button onClick={() => setIsProductModalOpen(true)} className="text-xs font-bold text-blue-600 hover:underline">تعديل</button>}
                                             </div>
                                             <div className="space-y-2">
                                                 {(activeOrder.items || []).map(item => {
@@ -1410,7 +1768,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                         <div key={item.productId + (item.variantId || '')} className="flex justify-between items-center bg-slate-100 dark:bg-slate-700/50 p-2 rounded-lg">
                                                             <div>
                                                                 <div className="flex items-center gap-2">
-                                                                    <p className="font-bold text-sm text-slate-800 dark:text-white">{item.name}</p>
+                                                                    <p className="font-bold text-sm text-slate-800 dark:text-white">{truncateString(item.name, 30)}</p>
                                                                     {isLowStock && (
                                                                         <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
                                                                             <AlertTriangle size={10}/> مخزون منخفض ({product.stockQuantity})
@@ -1432,9 +1790,11 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         <EditableField
                                             icon={<Truck size={14}/>}
                                             label="شركة الشحن"
-                                            isEditing={isEditingShippingCompany}
+                                            isEditing={!isReadOnly && isEditingShippingCompany}
+                                            disabled={isReadOnly}
                                             onEdit={() => { setIsEditingShippingCompany(true); setEditedShippingCompany(activeOrder.shippingCompany); }}
                                             onSave={handleSaveShippingCompany}
+                                            onCancel={() => setIsEditingShippingCompany(false)}
                                             editComponent={
                                                 <select value={editedShippingCompany} onChange={e => setEditedShippingCompany(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold">
                                                     {Object.keys(settings.shippingOptions || {}).filter(c => settings.activeCompanies?.[c]).map(company => (
@@ -1449,9 +1809,11 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         <EditableField
                                             icon={<Edit3 size={14}/>}
                                             label="ملاحظات الطلب"
-                                            isEditing={isEditingNotes}
+                                            isEditing={!isReadOnly && isEditingNotes}
+                                            disabled={isReadOnly}
                                             onEdit={() => { setIsEditingNotes(true); setEditedNotes(activeOrder.notes || ''); }}
                                             onSave={handleSaveNotes}
+                                            onCancel={() => setIsEditingNotes(false)}
                                             editComponent={
                                                 <textarea value={editedNotes} onChange={e => setEditedNotes(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold" rows={2}></textarea>
                                             }
@@ -1487,6 +1849,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             icon={<Tag size={14}/>}
                                             label="الخصم"
                                             isEditing={isEditingDiscount}
+                                            disabled={isReadOnly}
                                             onEdit={() => { setIsEditingDiscount(true); setEditedDiscount(activeOrder.discount || 0); }}
                                             onSave={handleSaveDiscount}
                                             onCancel={() => setIsEditingDiscount(false)}
@@ -1549,7 +1912,12 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                     <h4 className="font-bold text-slate-600 dark:text-slate-400 text-sm">تسجيل إجراء ومتابعة</h4>
                                     <div className="flex gap-2">
                                         <div className="relative flex-1">
-                                            <select value={selectedAction} onChange={e => setSelectedAction(e.target.value)} className="w-full p-3 pr-4 pl-8 appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold outline-none focus:ring-2 focus:ring-indigo-500">
+                                            <select 
+                                                value={selectedAction} 
+                                                onChange={e => setSelectedAction(e.target.value)} 
+                                                disabled={isReadOnly}
+                                                className={`w-full p-3 pr-4 pl-8 appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold outline-none focus:ring-2 focus:ring-indigo-500 ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            >
                                                 {CONFIRMATION_ACTIONS.map(action => <option key={action} value={action}>{action}</option>)}
                                             </select>
                                             <ChevronsUpDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
@@ -1571,7 +1939,8 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             <select 
                                                 value={cancellationReason} 
                                                 onChange={e => setCancellationReason(e.target.value)} 
-                                                className="w-full p-3 pr-4 pl-8 appearance-none bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-red-500 text-red-700 dark:text-red-400"
+                                                disabled={isReadOnly}
+                                                className={`w-full p-3 pr-4 pl-8 appearance-none bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-red-500 text-red-700 dark:text-red-400 ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 <option value="">{selectedAction === 'تم الإلغاء' ? 'اختر سبب الإلغاء (إجباري)' : 'اختر سبب التأجيل (إجباري)'}</option>
                                                 {CANCELLATION_REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
@@ -1585,7 +1954,8 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             <select 
                                                 value={reminderTime} 
                                                 onChange={e => setReminderTime(Number(e.target.value))} 
-                                                className="w-full p-3 pr-4 pl-8 appearance-none bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 text-blue-700 dark:text-blue-400"
+                                                disabled={isReadOnly}
+                                                className={`w-full p-3 pr-4 pl-8 appearance-none bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 text-blue-700 dark:text-blue-400 ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 <option value="">تذكير بالمتابعة (اختياري)</option>
                                                 {REMINDER_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
@@ -1594,20 +1964,32 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         </div>
                                     )}
 
-                                    <textarea placeholder="إضافة ملاحظات (اختياري)..." rows={2} value={actionNotes} onChange={e => setActionNotes(e.target.value)} className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                                    <textarea 
+                                        placeholder="إضافة ملاحظات (اختياري)..." 
+                                        rows={2} 
+                                        value={actionNotes} 
+                                        onChange={e => setActionNotes(e.target.value)} 
+                                        disabled={isReadOnly}
+                                        className={`w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    ></textarea>
                                     
                                     <div className="flex flex-wrap gap-2">
                                         {QUICK_NOTES.map(note => (
                                             <button
                                                 key={note}
                                                 onClick={() => setActionNotes(prev => prev ? `${prev} | ${note}` : note)}
-                                                className="px-2 py-1 bg-slate-100 dark:bg-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-400 rounded-full hover:bg-indigo-100 hover:text-indigo-600 transition-colors"
+                                                disabled={isReadOnly}
+                                                className={`px-2 py-1 bg-slate-100 dark:bg-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-400 rounded-full hover:bg-indigo-100 hover:text-indigo-600 transition-colors ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 + {note}
                                             </button>
                                         ))}
                                     </div>
-                                    <button onClick={() => handleActionSubmit(selectedAction)} className="w-full p-3 bg-indigo-600/10 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg font-bold hover:bg-indigo-600/20 flex flex-col items-center justify-center gap-1 transition-colors">
+                                    <button 
+                                        onClick={() => handleActionSubmit(selectedAction)} 
+                                        disabled={isReadOnly}
+                                        className={`w-full p-3 bg-indigo-600/10 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg font-bold hover:bg-indigo-600/20 flex flex-col items-center justify-center gap-1 transition-colors ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    >
                                         <div className="flex items-center gap-2"><Save size={18}/> حفظ الإجراء</div>
                                         <span className="text-[10px] opacity-70 font-mono">Ctrl + Enter</span>
                                     </button>
@@ -1670,11 +2052,11 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                 <div>
                                     <h4 className="font-bold text-slate-600 dark:text-slate-400 text-sm mb-3">اتخاذ قرار نهائي</h4>
                                     <div className="grid grid-cols-2 gap-3">
-                                        <button onClick={() => handleActionSubmit('تم الإلغاء')} className="w-full p-3 bg-red-600/10 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-lg font-bold hover:bg-red-600/20 flex flex-col items-center justify-center gap-1 transition-colors">
+                                        <button onClick={() => handleActionSubmit('تم الإلغاء')} disabled={isReadOnly} className={`w-full p-3 bg-red-600/10 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-lg font-bold hover:bg-red-600/20 flex flex-col items-center justify-center gap-1 transition-colors ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                             <div className="flex items-center gap-2"><X size={18}/> إلغاء الطلب</div>
                                             <span className="text-[10px] opacity-70 font-mono">Ctrl + Backspace</span>
                                         </button>
-                                        <button onClick={() => handleActionSubmit('تم التأكيد')} className="w-full p-3 bg-emerald-600/10 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg font-bold hover:bg-emerald-600/20 flex flex-col items-center justify-center gap-1 transition-colors">
+                                        <button onClick={() => handleActionSubmit('تم التأكيد')} disabled={isReadOnly} className={`w-full p-3 bg-emerald-600/10 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg font-bold hover:bg-emerald-600/20 flex flex-col items-center justify-center gap-1 transition-colors ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                             <div className="flex items-center gap-2"><Check size={18}/> تأكيد الطلب</div>
                                             <span className="text-[10px] opacity-70 font-mono">Ctrl + Enter</span>
                                         </button>
@@ -1763,7 +2145,65 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                     </motion.div>
                 </div>
             )}
+
+            {/* Transfer Order Modal */}
+            {isTransferModalOpen && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                    <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+                    >
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <ArrowRightLeft className="text-indigo-600" size={20} />
+                                تحويل الطلب لموظف آخر
+                            </h3>
+                            <button onClick={() => setIsTransferModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold text-slate-600 dark:text-slate-400">اختر الموظف</label>
+                                <select 
+                                    value={transferTo}
+                                    onChange={(e) => setTransferTo(e.target.value)}
+                                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                                >
+                                    <option value="">اختر موظف...</option>
+                                    {settings.employees?.filter(e => e.phone !== currentUser?.phone).map(emp => (
+                                        <option key={emp.id} value={emp.phone || emp.id}>{emp.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-xl border border-amber-100 dark:border-amber-800/50 flex gap-3">
+                                <AlertTriangle className="text-amber-600 shrink-0" size={18} />
+                                <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                                    سيتم نقل الطلب بالكامل للموظف المختار وسيتم تسجيل هذه العملية في سجل التدقيق.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="p-6 bg-slate-50 dark:bg-slate-800/50 flex gap-3">
+                            <button 
+                                onClick={() => setIsTransferModalOpen(false)}
+                                className="flex-1 py-3 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700 transition-colors"
+                            >
+                                إلغاء
+                            </button>
+                            <button 
+                                onClick={handleTransferOrder}
+                                disabled={!transferTo}
+                                className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-indigo-200 dark:shadow-none"
+                            >
+                                تأكيد التحويل
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
         </div>
+    </div>
     );
 };
 
