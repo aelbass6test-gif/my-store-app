@@ -62,6 +62,9 @@ export interface ProductVariant {
   id: string;
   sku: string;
   price: number;
+  costPrice?: number;
+  weight?: number;
+  stock?: number;
   stockQuantity: number;
   options: { [optionName: string]: string };
 }
@@ -77,6 +80,7 @@ export interface Product {
   thumbnail?: string;
   images?: string[];
   inStock?: boolean;
+  stock?: number;
   stockQuantity: number;
   collectionId?: string; 
   hasVariants: boolean;
@@ -145,6 +149,7 @@ export interface Employee {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   permissions: Permission[];
   status?: 'active' | 'invited' | 'pending';
 }
@@ -303,6 +308,12 @@ export interface CallScript {
   text: string;
 }
 
+export interface EmployeeDashboardSettings {
+  showAssignedOrders: boolean;
+  showOrderStatuses: OrderStatus[];
+  showFollowUpReminders: boolean;
+}
+
 export interface Settings {
   enableGlobalFinancials: boolean; 
   insuranceFeePercent: number;
@@ -344,6 +355,7 @@ export interface Settings {
   collections: Collection[];
   whatsappTemplates?: WhatsAppTemplate[];
   callScripts?: CallScript[];
+  employeeDashboardSettings?: EmployeeDashboardSettings;
 }
 
 export interface OrderItem {
@@ -379,11 +391,14 @@ export interface CallAttempt {
 
 export interface AuditLog {
   id: string;
-  userId: string;
-  userName: string;
-  field: string;
-  oldValue: string;
-  newValue: string;
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  action?: string;
+  details?: string;
+  field?: string;
+  oldValue?: string;
+  newValue?: string;
   timestamp: string;
 }
 
@@ -399,6 +414,7 @@ export interface Order {
   customerPhone2?: string;
   customerAddress: string;
   city?: string;
+  governorate?: string;
   notes?: string;
   items: OrderItem[];
   shippingFee: number;
@@ -477,6 +493,7 @@ export interface Site {
 }
 
 export interface User {
+  name?: string;
   fullName: string;
   phone: string;
   password: string;
@@ -509,4 +526,5 @@ export interface ChatMessage {
   content: string;
   created_at: string;
   is_read: boolean;
+  is_file?: boolean;
 }
