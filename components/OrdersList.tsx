@@ -792,8 +792,9 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, products, se
   };
 
   const handleAutoAssign = () => {
-    if (!settings.employees || settings.employees.length === 0) {
-      alert("لا يوجد موظفين متاحين للتوزيع.");
+    const activeEmployees = settings.employees?.filter(e => e.status === 'active') || [];
+    if (activeEmployees.length === 0) {
+      alert("لا يوجد موظفين نشطين متاحين للتوزيع.");
       return;
     }
     const unassignedOrders = orders.filter(o => !o.assignedTo && o.status === 'في_انتظار_المكالمة');
@@ -802,17 +803,16 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, products, se
       return;
     }
     
-    if (window.confirm(`سيتم توزيع ${unassignedOrders.length} طلب على ${settings.employees.length} موظف. هل أنت متأكد؟`)) {
-      const employees = settings.employees;
+    if (window.confirm(`سيتم توزيع ${unassignedOrders.length} طلب على ${activeEmployees.length} موظف. هل أنت متأكد؟`)) {
       let empIndex = 0;
       
       setOrders(prev => prev.map(o => {
         if (!o.assignedTo && o.status === 'في_انتظار_المكالمة') {
-          const emp = employees[empIndex];
-          empIndex = (empIndex + 1) % employees.length;
+          const emp = activeEmployees[empIndex];
+          empIndex = (empIndex + 1) % activeEmployees.length;
           return {
             ...o,
-            assignedTo: emp.id,
+            assignedTo: emp.phone || emp.id,
             assignedToName: emp.name
           };
         }
@@ -865,83 +865,96 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, products, se
       animate="visible"
     >
       {/* Header & Main Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-2">إدارة الطلبات</h1>
-          <div className="flex items-center gap-3">
-            <p className="text-slate-500 font-medium">لديك {filteredOrders.length} طلب في هذا القسم</p>
-            <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-0.5 rounded text-xs font-bold">كود المتجر: {activeStore?.id}</span>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center justify-between w-full lg:w-auto">
+          <div>
+            <h1 className="text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1">إدارة الطلبات</h1>
+            <div className="flex items-center gap-2">
+              <p className="text-xs md:text-sm text-slate-500 font-medium">{filteredOrders.length} طلب</p>
+              <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-1.5 py-0.5 rounded text-[10px] font-bold">المتجر: {activeStore?.id}</span>
+            </div>
           </div>
+          
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="lg:hidden bg-primary text-white p-3 rounded-2xl font-black shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
+          >
+            <Plus size={24} />
+          </button>
         </div>
         
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 lg:pb-0">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
             <button 
               onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
               title="عرض القائمة"
             >
-              <LayoutList size={20} />
+              <LayoutList size={18} />
             </button>
             <button 
               onClick={() => setViewMode('kanban')}
-              className={`p-2 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white dark:bg-slate-700 text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white dark:bg-slate-700 text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
               title="عرض كانبان"
             >
-              <LayoutGrid size={20} />
+              <LayoutGrid size={18} />
             </button>
           </div>
 
           <button 
             onClick={handleAutoAssign}
-            className="glass-card px-4 py-2 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-white/50 transition-all flex items-center gap-2 font-bold border border-indigo-100 dark:border-indigo-900/30"
-            title="توزيع تلقائي للموظفين"
+            className="glass-card px-3 py-2 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-white/50 transition-all flex items-center gap-2 font-bold border border-indigo-100 dark:border-indigo-900/30 text-xs shrink-0"
           >
-            توزيع تلقائي <Users size={20} />
+            توزيع <Users size={16} />
           </button>
 
           <button 
             onClick={handleExportPDF}
-            className="glass-card px-4 py-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-white/50 transition-all flex items-center gap-2 font-bold border border-red-100 dark:border-red-900/30"
-            title="تصدير PDF"
+            className="glass-card px-3 py-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-white/50 transition-all flex items-center gap-2 font-bold border border-red-100 dark:border-red-900/30 text-xs shrink-0"
           >
-            تصدير PDF <FileText size={20} />
+            PDF <FileText size={16} />
           </button>
 
-          <button 
-            onClick={handleExportOrders}
-            className="glass-card p-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-white/50 transition-all"
-            title="تصدير تقرير HTML"
-          >
-            <FileText size={20} />
-          </button>
-
-          <button 
-            onClick={handleExportCSV}
-            className="glass-card p-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-white/50 transition-all"
-            title="تصدير CSV"
-          >
-            <Download size={20} />
-          </button>
           <button 
             onClick={() => setShowAddModal(true)}
-            className="bg-primary text-white px-6 py-3 rounded-2xl font-black shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
+            className="hidden lg:flex bg-primary text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all items-center gap-2 text-sm shrink-0"
           >
-            <Plus size={20} />
-            إنشاء طلب جديد
+            <Plus size={18} />
+            إنشاء طلب
           </button>
         </div>
       </div>
 
+      {/* Quick Stats Bar */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
+        {[
+          { label: 'في انتظار المراجعة', count: quickStats.awaitingWaybill, icon: FileSearch, color: 'bg-amber-500' },
+          { label: 'قيد الشحن', count: quickStats.onTheWay, icon: Truck, color: 'bg-indigo-500' },
+          { label: 'تم التوصيل', count: quickStats.delivered, icon: CheckCircle, color: 'bg-emerald-500' },
+          { label: 'مرتجع / فشل', count: quickStats.failed, icon: XCircle, color: 'bg-rose-500' },
+          { label: 'ملغي', count: quickStats.canceled, icon: Trash2, color: 'bg-slate-500' },
+        ].map((stat, idx) => (
+          <div key={idx} className="glass-card p-3 md:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-3">
+            <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl ${stat.color} flex items-center justify-center text-white shadow-lg shrink-0`}>
+              <stat.icon className="w-4 h-4 md:w-5 md:h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] md:text-xs font-bold text-slate-500 uppercase leading-none mb-1">{stat.label}</p>
+              <p className="text-sm md:text-lg font-black text-slate-800 dark:text-white leading-none">{stat.count}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Sticky Filter Bar */}
-      <div className="sticky top-0 z-30 py-4 -mx-4 px-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
-        <div className="flex flex-col gap-4 max-w-full">
-          <div className="flex items-center gap-2 p-2 bg-slate-200/50 dark:bg-slate-800/50 rounded-2xl overflow-x-auto">
+      <div className="sticky top-0 z-30 py-2 -mx-4 px-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
+        <div className="flex flex-col gap-3 max-w-full">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-200/50 dark:bg-slate-800/50 rounded-xl overflow-x-auto no-scrollbar">
             {['الجميع', 'في_انتظار_المكالمة', 'جاري_المراجعة', 'قيد_التنفيذ', 'تم_الارسال', 'قيد_الشحن', 'تم_توصيلها', 'تم_التحصيل', 'مرتجع', 'مرتجع_جزئي', 'فشل_التوصيل', 'ملغي', 'مؤرشف', 'مرتجع_بعد_الاستلام', 'تم_الاستبدال'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap ${
                   activeTab === tab 
                     ? 'bg-white dark:bg-slate-700 text-primary shadow-sm' 
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
@@ -952,26 +965,26 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, products, se
             ))}
           </div>
 
-          <div className="flex items-center gap-3 w-full lg:w-auto">
+          <div className="flex items-center gap-2 w-full lg:w-auto">
             <div className="relative flex-1 lg:w-80">
-              <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input 
                 type="text"
-                placeholder="ابحث برقم الطلب، اسم العميل، أو البوليصة..."
+                placeholder="ابحث..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pr-12 pl-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                className="w-full pr-10 pl-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
               />
             </div>
             <button 
               onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              className={`p-3 rounded-2xl border transition-all ${
+              className={`p-2.5 rounded-xl border transition-all ${
                 showAdvancedFilters 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500'
               }`}
             >
-              <Filter size={20} />
+              <Filter size={18} />
             </button>
           </div>
         </div>
@@ -1294,109 +1307,109 @@ const OrderCard = ({
   return (
     <motion.div 
       variants={itemVariants}
-      className={`glass-card p-6 rounded-[32px] border-2 transition-all relative group ${
+      className={`glass-card p-4 md:p-6 rounded-2xl md:rounded-[32px] border-2 transition-all relative group ${
         isSelected ? 'border-primary ring-4 ring-primary/10' : 'border-transparent'
       }`}
     >
       {/* Selection Checkbox */}
       <button 
         onClick={onSelect}
-        className={`absolute top-6 left-6 w-6 h-6 rounded-lg border-2 transition-all flex items-center justify-center ${
+        className={`absolute top-4 right-4 md:top-6 md:right-6 w-5 h-5 md:w-6 md:h-6 rounded-lg border-2 transition-all flex items-center justify-center z-10 ${
           isSelected ? 'bg-primary border-primary' : 'bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
         }`}
       >
-        {isSelected && <CheckCircle size={14} className="text-white" />}
+        {isSelected && <CheckCircle size={12} className="text-white" />}
       </button>
 
       {/* Card Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <div className={`w-16 h-16 rounded-2xl ${statusInfo.color} flex items-center justify-center text-white shadow-xl`}>
-            <StatusIcon size={32} />
+      <div className="flex items-start justify-between mb-4 md:mb-6">
+        <div className="flex items-center gap-3 md:gap-4">
+          <div className={`w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl ${statusInfo.color} flex items-center justify-center text-white shadow-lg`}>
+            <StatusIcon className="w-6 h-6 md:w-8 md:h-8" />
           </div>
           <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xl font-black text-slate-900 dark:text-white tracking-tight">#{order.orderNumber}</span>
+            <div className="flex items-center gap-2 mb-0.5 md:mb-1.5">
+              <span className="text-lg md:text-xl font-black text-slate-900 dark:text-white tracking-tight">#{order.orderNumber}</span>
               {order.orderType === 'exchange' && (
-                <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[11px] font-black px-3 py-1 rounded-full uppercase tracking-wider">استبدال</span>
+                <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[9px] md:text-[11px] font-black px-2 py-0.5 md:px-3 md:py-1 rounded-full uppercase tracking-wider">استبدال</span>
               )}
             </div>
-            <div className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-2 text-[10px] md:text-sm font-bold text-slate-500 dark:text-slate-400">
               <span>{new Date(order.date).toLocaleDateString('ar-EG')}</span>
               <span className="text-slate-300">•</span>
               <span>{order.shippingCompany}</span>
             </div>
           </div>
         </div>
-        <div className={`px-5 py-2 rounded-full text-xs font-black uppercase tracking-widest ${statusInfo.color} text-white shadow-md`}>
+        <div className={`px-3 py-1 md:px-5 md:py-2 rounded-full text-[10px] md:text-xs font-black uppercase tracking-widest ${statusInfo.color} text-white shadow-md`}>
           {statusInfo.label}
         </div>
       </div>
 
       {/* Customer Info */}
-      <div className="space-y-5 mb-8">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 shadow-sm">
-            <UserIcon size={20} />
+      <div className="space-y-3 md:space-y-5 mb-6 md:mb-8">
+        <div className="flex items-center gap-3 md:gap-4">
+          <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 shadow-sm">
+            <UserIcon className="w-4 h-4 md:w-5 md:h-5" />
           </div>
-          <span className="text-base font-black text-slate-800 dark:text-slate-100">{order.customerName}</span>
+          <span className="text-sm md:text-base font-black text-slate-800 dark:text-slate-100">{order.customerName}</span>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 shadow-sm">
-            <MapPin size={20} />
+        <div className="flex items-center gap-3 md:gap-4">
+          <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 shadow-sm">
+            <MapPin className="w-4 h-4 md:w-5 md:h-5" />
           </div>
-          <span className="text-sm font-bold text-slate-600 dark:text-slate-300 truncate">{order.governorate || order.shippingArea} - {order.city || 'غير محدد'}</span>
+          <span className="text-xs md:text-sm font-bold text-slate-600 dark:text-slate-300 truncate">{order.governorate || order.shippingArea} - {order.city || 'غير محدد'}</span>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 shadow-sm">
-            <Phone size={20} />
+        <div className="flex items-center gap-3 md:gap-4">
+          <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 shadow-sm">
+            <Phone className="w-4 h-4 md:w-5 md:h-5" />
           </div>
-          <span className="text-base font-mono font-black text-slate-700 dark:text-slate-200">{order.customerPhone}</span>
-          <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-emerald-500 hover:scale-110 transition-transform bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-lg">
-            <MessageCircle size={20} />
+          <span className="text-sm md:text-base font-mono font-black text-slate-700 dark:text-slate-200">{order.customerPhone}</span>
+          <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-emerald-500 hover:scale-110 transition-transform bg-emerald-50 dark:bg-emerald-900/20 p-1.5 md:p-2 rounded-lg">
+            <MessageCircle className="w-4.5 h-4.5 md:w-5 md:h-5" />
           </a>
         </div>
       </div>
 
       {/* Items Summary */}
-      <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">المنتجات</span>
-          <span className="text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full">{order.items.length} قطع</span>
+      <div className="p-4 md:p-5 rounded-xl md:rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 mb-6 md:mb-8">
+        <div className="flex items-center justify-between mb-3 md:mb-4">
+          <span className="text-[10px] md:text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">المنتجات</span>
+          <span className="text-[10px] md:text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full">{order.items.length} قطع</span>
         </div>
-        <div className="space-y-3">
+        <div className="space-y-2 md:space-y-3">
           {order.items.slice(0, 2).map((item, idx) => (
-            <div key={idx} className="flex justify-between text-sm">
-              <span className="text-slate-800 dark:text-slate-100 font-bold truncate max-w-[180px]">{item.name}</span>
+            <div key={idx} className="flex justify-between text-xs md:text-sm">
+              <span className="text-slate-800 dark:text-slate-100 font-bold truncate max-w-[140px] md:max-w-[180px]">{item.name}</span>
               <span className="text-slate-600 dark:text-slate-400 font-black">x{item.quantity}</span>
             </div>
           ))}
           {order.items.length > 2 && (
-            <p className="text-xs font-bold text-primary mt-2">+{order.items.length - 2} منتجات أخرى</p>
+            <p className="text-[10px] md:text-xs font-bold text-primary mt-1 md:mt-2">+{order.items.length - 2} منتجات أخرى</p>
           )}
         </div>
       </div>
 
       {/* Financials & Status */}
-      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 mb-6">
-        <div className="flex justify-between items-center mb-5">
-          <div className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">إجمالي المبلغ</div>
-          <div className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">
-            {totalAmount.toLocaleString()} <span className="text-sm font-bold text-slate-500 dark:text-slate-400">ج.م</span>
+      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl md:rounded-2xl p-4 md:p-5 mb-4 md:mb-6">
+        <div className="flex justify-between items-center mb-4 md:mb-5">
+          <div className="text-[10px] md:text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">إجمالي المبلغ</div>
+          <div className="text-xl md:text-2xl font-black text-slate-900 dark:text-white tabular-nums">
+            {totalAmount.toLocaleString()} <span className="text-xs md:text-sm font-bold text-slate-500 dark:text-slate-400">ج.م</span>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3 md:gap-4">
           <div className="relative">
             <select 
               value={order.status}
               onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
-              className={`w-full appearance-none pr-4 pl-10 py-3 rounded-xl text-xs font-black text-white border-none cursor-pointer focus:ring-2 focus:ring-offset-2 transition-all shadow-md ${statusInfo.color}`}
+              className={`w-full appearance-none pr-3 pl-8 md:pr-4 md:pl-10 py-2 md:py-3 rounded-lg md:rounded-xl text-[10px] md:text-xs font-black text-white border-none cursor-pointer focus:ring-2 focus:ring-offset-2 transition-all shadow-md ${statusInfo.color}`}
             >
               {ORDER_STATUSES.map(s => (
                 <option key={s} value={s} className="text-slate-900 bg-white">{ORDER_STATUS_METADATA[s]?.label || s}</option>
               ))}
             </select>
-            <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white pointer-events-none" />
+            <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-white pointer-events-none" />
           </div>
           <div className="relative">
             <select 
