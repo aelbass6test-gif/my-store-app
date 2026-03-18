@@ -282,7 +282,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
     }
 
     const searched = baseFilter.filter((o: Order) => 
-      o.customerName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      (o.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
       (o.orderNumber && o.orderNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (o.waybillNumber && o.waybillNumber.toLowerCase().includes(searchTerm.toLowerCase()))
     );
@@ -320,9 +320,9 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
     const fullAddress = `${orderData.customerAddress}, ${orderData.buildingDetails || ''}`.trim();
     const finalNotes = orderData.notes || '';
 
-    const totalProductPrice = orderData.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const totalProductCost = orderData.items.reduce((sum, item) => sum + item.cost * item.quantity, 0);
-    const totalWeight = orderData.items.reduce((sum, item) => sum + item.weight * item.quantity, 0);
+    const totalProductPrice = orderData.items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0);
+    const totalProductCost = orderData.items.reduce((sum, item) => sum + (item.cost || 0) * (item.quantity || 1), 0);
+    const totalWeight = orderData.items.reduce((sum, item) => sum + (item.weight || 0) * (item.quantity || 1), 0);
     const productNames = orderData.items.map(item => item.name).join(', ');
 
     const orderToAdd: Omit<Order, 'id'> & { totalAmountOverride?: number } = {
@@ -732,7 +732,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
 
   const getWhatsAppLink = (order: Order) => {
       let msg = '';
-      const name = order.customerName.split(' ')[0];
+      const name = (order.customerName || '').split(' ')[0];
       switch(order.status) {
           case 'جاري_المراجعة': msg = `أهلاً بك يا ${name} 👋، بنأكد مع حضرتك طلبك (${order.productName}) من متجرنا. العنوان: ${order.customerAddress}. هل البيانات صحيحة؟`; break;
           case 'قيد_التنفيذ': msg = `يا ${name}، طلبك قيد التجهيز حالياً وهيسلم لشركة الشحن قريباً.`; break;
@@ -740,7 +740,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
           case 'فشل_التوصيل': msg = `يا ${name}، المندوب حاول يوصلك النهاردة وماعرفش. ياريت ترد عليه أو تأكد معانا ميعاد تاني.`; break;
           default: msg = `أهلاً ${name}، بخصوص طلبك رقم ${order.orderNumber}...`;
       }
-      let phone = order.customerPhone.replace(/\D/g, '');
+      let phone = (order.customerPhone || '').replace(/\D/g, '');
       if (phone.startsWith('0')) {
           phone = '20' + phone.substring(1);
       } else if (phone.length === 10 && !phone.startsWith('0')) {
@@ -1065,8 +1065,8 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
     const filteredCustomers = useMemo(() => {
         if (!customerSearch) return [];
         return customers.filter(c => 
-            c.name.toLowerCase().includes(customerSearch.toLowerCase()) || 
-            c.phone.includes(customerSearch)
+            (c.name || '').toLowerCase().includes(customerSearch.toLowerCase()) || 
+            (c.phone || '').includes(customerSearch)
         );
     }, [customerSearch, customers]);
     
@@ -1077,7 +1077,7 @@ const NewOrderScreen: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, 
         }
     }
 
-    const subtotal = useMemo(() => (orderData.items || []).reduce((sum, item) => sum + item.price * item.quantity, 0), [orderData.items]);
+    const subtotal = useMemo(() => (orderData.items || []).reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0), [orderData.items]);
     
     const inspectionFee = useMemo(() => {
         if (!orderData.includeInspectionFee) return 0;
