@@ -6,7 +6,7 @@ import * as db from './services/databaseService';
 import { supabase } from './services/supabaseClient';
 import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
-import { oneToolzProducts } from './src/data/one-toolz-products';
+import { oneToolzProducts } from './data/one-toolz-products';
 
 // Page Components (will be loaded via router)
 import SignUpPage from './components/SignUpPage';
@@ -700,9 +700,17 @@ export const AppComponent = () => {
           supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleUserChange).subscribe()
         ];
 
+        // Fallback polling mechanism in case Realtime is not enabled in Supabase
+        const pollingInterval = setInterval(() => {
+            if (activeStoreId && !isSavingRef.current) {
+                refreshStoreData(activeStoreId);
+            }
+        }, 15000); // Poll every 15 seconds
+
         return () => {
-            console.log('[REALTIME] Removing subscriptions.');
+            console.log('[REALTIME] Removing subscriptions and polling.');
             subscriptions.forEach(sub => supabase.removeChannel(sub));
+            clearInterval(pollingInterval);
         };
     }, [activeStoreId]); 
 
@@ -779,6 +787,59 @@ export const AppComponent = () => {
                 });
             }
         },
+    };
+
+    const handlePlaceOrder = (orderData: any) => {
+        if (!activeStoreId) return '123';
+        const newOrder: Order = {
+            id: `order-${Date.now()}`,
+            orderNumber: `ORD-${Math.floor(Math.random() * 10000)}`,
+            customerName: orderData.customerName,
+            customerPhone: orderData.customerPhone,
+            customerAddress: orderData.customerAddress,
+            shippingCompany: orderData.shippingCompany,
+            shippingArea: orderData.shippingArea,
+            shippingFee: orderData.shippingFee,
+            notes: orderData.notes,
+            status: 'في_انتظار_المكالمة',
+            date: new Date().toISOString(),
+            items: pageProps.cart.map((item: any) => ({
+                productId: item.id,
+                name: item.name,
+                quantity: item.quantity,
+                price: item.price,
+                cost: item.cost || 0,
+                weight: item.weight || 0,
+            })),
+            productPrice: pageProps.cart.reduce((sum: number, item: any) => sum + ((item.price || 0) * (item.quantity || 1)), 0),
+            productCost: pageProps.cart.reduce((sum: number, item: any) => sum + ((item.cost || 0) * (item.quantity || 1)), 0),
+            weight: pageProps.cart.reduce((sum: number, item: any) => sum + ((item.weight || 0) * (item.quantity || 1)), 0),
+            discount: orderData.discount || 0,
+            orderType: 'new',
+            paymentMethod: 'cash_on_delivery',
+        };
+        
+        pageProps.setOrders((prev: Order[]) => [newOrder, ...prev]);
+        pageProps.setCart([]); // Clear cart
+        return newOrder.id;
+    };
+
+    const handleAddToCart = (product: any) => {
+        pageProps.setCart((prev: any[]) => {
+            const existing = prev.find(item => item.id === product.id);
+            if (existing) {
+                return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+            }
+            return [...prev, { ...product, quantity: 1 }];
+        });
+    };
+
+    const handleUpdateCartQuantity = (id: string, quantity: number) => {
+        pageProps.setCart((prev: any[]) => prev.map(item => item.id === id ? { ...item, quantity } : item));
+    };
+
+    const handleRemoveFromCart = (id: string) => {
+        pageProps.setCart((prev: any[]) => prev.filter(item => item.id !== id));
     };
 
     return (
@@ -871,8 +932,8 @@ export const AppComponent = () => {
                     <Route path="settings/developer" element={<ComingSoonPage />} />
                 </Route>
 
-                <Route path="store" element={<StorefrontPage {...pageProps} onAddToCart={() => {}} onUpdateCartQuantity={() => {}} onRemoveFromCart={() => {}} />} />
-                <Route path="checkout" element={<CheckoutPage {...pageProps} onPlaceOrder={() => '123'} />} />
+                <Route path="store" element={<StorefrontPage {...pageProps} onAddToCart={handleAddToCart} onUpdateCartQuantity={handleUpdateCartQuantity} onRemoveFromCart={handleRemoveFromCart} />} />
+                <Route path="checkout" element={<CheckoutPage {...pageProps} onPlaceOrder={handlePlaceOrder} />} />
                 <Route path="order-success/:orderId" element={<OrderSuccessPage {...pageProps} />} />
                 <Route path="*" element={<CatchAllRedirect currentUser={currentUser} isEmployeeSession={isEmployeeSession} />} />
             </Routes>
