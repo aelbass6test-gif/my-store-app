@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, Settings as SettingsIcon, X } from 'lucide-react';
+import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X } from 'lucide-react';
 import { Order, Settings, OrderStatus, Wallet, Transaction, PaymentStatus, PreparationStatus, OrderItem, Product, CustomerProfile, Store } from '../types';
 import { ORDER_STATUSES, EGYPT_GOVERNORATES } from '../constants';
 import { motion, Variants } from 'framer-motion';
@@ -32,7 +32,9 @@ const PAYMENT_STATUSES: PaymentStatus[] = ['بانتظار الدفع', 'مدف�
 interface OrdersListProps {
   orders: Order[];
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
+  products: Product[];
   settings: Settings;
+  currentUser: User | null;
   setWallet: React.Dispatch<React.SetStateAction<Wallet>>;
   addLoyaltyPointsForOrder: (order: Order) => void;
   activeStore?: Store;
@@ -166,7 +168,7 @@ const WaybillModal: React.FC<{ order: Order; onClose: () => void; onSave: (waybi
 };
 
 
-const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, setWallet, addLoyaltyPointsForOrder, activeStore, customers, setCustomers }) => {
+const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, products, settings, currentUser, setWallet, addLoyaltyPointsForOrder, activeStore, customers, setCustomers }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -174,12 +176,40 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
   const [showSummaryModal, setShowSummaryModal] = useState<Order | null>(null);
   
   const [activeTab, setActiveTab] = useState('الجميع');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [orderToConfirm, setOrderToConfirm] = useState<Omit<Order, 'id'> | null>(null);
   const [orderForWaybill, setOrderForWaybill] = useState<{ orderId: string, newStatus: OrderStatus } | null>(null);
+  
+  // Advanced Filters
+  const [filterGov, setFilterGov] = useState('');
+  const [filterCompany, setFilterCompany] = useState('');
+  const [filterEmployee, setFilterEmployee] = useState('');
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showAuditLog, setShowAuditLog] = useState<Order | null>(null);
+  const [showAssignment, setShowAssignment] = useState<Order | null>(null);
+  
+  const addAuditLog = (orderId: string, action: string, details: string) => {
+    setOrders(prev => prev.map(o => {
+      if (o.id === orderId) {
+        const newLog = {
+          action,
+          details,
+          timestamp: new Date().toISOString(),
+          userEmail: currentUser?.email || 'System'
+        };
+        return {
+          ...o,
+          auditLogs: [...(o.auditLogs || []), newLog]
+        };
+      }
+      return o;
+    }));
+  };
   
   const activeCompanies = useMemo(() => 
     Object.keys(settings.shippingOptions).filter(company => settings.activeCompanies[company] !== false),
@@ -281,11 +311,30 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
         baseFilter = orders.filter(o => o.status !== 'مؤرشف');
     }
 
-    const searched = baseFilter.filter((o: Order) => 
-      (o.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-      (o.orderNumber && o.orderNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (o.waybillNumber && o.waybillNumber.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const searched = baseFilter.filter((o: Order) => {
+      const matchesSearch = (o.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (o.orderNumber && o.orderNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (o.waybillNumber && o.waybillNumber.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+      const matchesGov = !filterGov || (o.governorate || o.shippingArea) === filterGov;
+      const matchesCompany = !filterCompany || o.shippingCompany === filterCompany;
+      const matchesEmployee = !filterEmployee || o.assignedTo === filterEmployee;
+      
+      let matchesDate = true;
+      if (dateRange.start || dateRange.end) {
+          const orderDate = new Date(o.date).getTime();
+          if (dateRange.start) {
+              matchesDate = matchesDate && orderDate >= new Date(dateRange.start).getTime();
+          }
+          if (dateRange.end) {
+              const endDate = new Date(dateRange.end);
+              endDate.setHours(23, 59, 59, 999);
+              matchesDate = matchesDate && orderDate <= endDate.getTime();
+          }
+      }
+
+      return matchesSearch && matchesGov && matchesCompany && matchesEmployee && matchesDate;
+    });
       
     let tabFiltered = searched;
     if (activeTab === 'بانتظار التجهيز') {
@@ -516,6 +565,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
     
     const updatedOrderData = processFinancialsForStatusChange(orderToUpdate, newStatus);
     setOrders(prevOrders => prevOrders.map(o => o.id === id ? updatedOrderData : o));
+    addAuditLog(id, 'تغيير الحالة', `تغيير حالة الطلب من ${orderToUpdate.status} إلى ${newStatus}`);
   };
 
   const handleSaveWaybill = (waybill: string) => {
@@ -532,6 +582,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
     setOrders(prevOrders => prevOrders.map(o => o.id === orderId ? updatedOrderData : o));
 
     setOrderForWaybill(null);
+    addAuditLog(orderId, 'إضافة بوليصة', `تم إضافة بوليصة رقم ${waybill} وتغيير الحالة إلى ${newStatus}`);
   };
 
 
@@ -571,6 +622,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
         const customerPaidInspection = order.includeInspectionFee ? window.confirm(`الأوردر رقم ${order.orderNumber}\nهل قام العميل بدفع رسوم المعاينة (الـ ${inspectionFee} ج)؟`) : false;
         handleCollectAction(updatedOrder, customerPaidInspection);
     }
+    addAuditLog(order.id, 'تغيير حالة الدفع', `تغيير حالة الدفع إلى ${newPaymentStatus}`);
   };
 
     const handlePostCollectionReturn = (order: Order) => {
@@ -685,13 +737,26 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
     
     setOrders(prevOrders => prevOrders.map(o => {
         if (selectedOrders.includes(o.id)) {
-            return { ...o, status: newStatus as OrderStatus };
+            const updated = processFinancialsForStatusChange(o, newStatus as OrderStatus);
+            return { ...updated, status: newStatus as OrderStatus };
         }
         return o;
     }));
 
     setSelectedOrders([]);
     if(selectElement) selectElement.value = 'default';
+  };
+
+  const handleBulkPrintLabels = () => {
+    const selected = orders.filter(o => selectedOrders.includes(o.id));
+    if (selected.length === 0) return;
+    
+    const html = selected.map(o => generateShippingLabelHTML(o, activeStore?.name || 'متجري')).join('<div style="page-break-after: always;"></div>');
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(`<html><head><title>طباعة بوالص</title></head><body>${html}</body></html>`);
+        win.document.close();
+    }
   };
 
   const handleExportCSV = () => {
@@ -787,6 +852,8 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
         </div>
       </motion.div>
 
+      <LowStockAlert products={products} />
+
       <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
          <h3 className="text-sm font-bold text-slate-500 mb-3">نظرة سريعة على شحناتك</h3>
          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -831,19 +898,113 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
               <TabButton label="الأرشيف" activeTab={activeTab} setActiveTab={setActiveTab} count={orders.filter(o => o.status === 'مؤرشف').length}/>
             </div>
             <div className="flex items-center gap-3 w-full md:w-auto">
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button 
+                  onClick={() => setViewMode('list')}
+                  className={`p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}
+                  title="عرض القائمة"
+                >
+                  <LayoutList size={18} />
+                </button>
+                <button 
+                  onClick={() => setViewMode('kanban')}
+                  className={`p-1.5 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}
+                  title="عرض الكانبان"
+                >
+                  <LayoutGrid size={18} />
+                </button>
+              </div>
               <div className="relative flex-1 md:w-64">
                 <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input type="text" placeholder="بحث برقم الطلب، العميل، الهاتف..." className="w-full pr-10 pl-4 py-2.5 bg-white dark:bg-slate-800 rounded-xl outline-none border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm transition-shadow" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               </div>
-              <button className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm hover:shadow">
+              <button 
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl font-bold transition-all shadow-sm hover:shadow ${showAdvancedFilters ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+              >
                   <Filter size={18} /> تصفية
               </button>
             </div>
           </div>
         )}
 
-        {/* Table for Desktop */}
-        <div className="overflow-x-auto hidden md:block">
+        {showAdvancedFilters && (
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/30 grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">المحافظة</label>
+              <select 
+                value={filterGov} 
+                onChange={e => setFilterGov(e.target.value)}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">كل المحافظات</option>
+                {settings.governorates.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">شركة الشحن</label>
+              <select 
+                value={filterCompany} 
+                onChange={e => setFilterCompany(e.target.value)}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">كل الشركات</option>
+                {activeCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">الموظف المسؤول</label>
+              <select 
+                value={filterEmployee} 
+                onChange={e => setFilterEmployee(e.target.value)}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">كل الموظفين</option>
+                {Array.from(new Set(orders.map(o => o.assignedTo).filter(Boolean))).map(emp => (
+                  <option key={emp} value={emp!}>{orders.find(o => o.assignedTo === emp)?.assignedToName || emp}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-slate-500 mb-1">من تاريخ</label>
+                <input 
+                  type="date" 
+                  value={dateRange.start} 
+                  onChange={e => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-slate-500 mb-1">إلى تاريخ</label>
+                <input 
+                  type="date" 
+                  value={dateRange.end} 
+                  onChange={e => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+            <div className="md:col-span-4 flex justify-end">
+              <button 
+                onClick={() => {
+                  setFilterGov('');
+                  setFilterCompany('');
+                  setFilterEmployee('');
+                  setDateRange({ start: '', end: '' });
+                }}
+                className="text-xs font-bold text-red-500 hover:text-red-600 flex items-center gap-1"
+              >
+                <XCircle size={14} /> مسح الفلاتر
+              </button>
+            </div>
+          </div>
+        )}
+
+        {viewMode === 'list' ? (
+          <>
+            {/* Table for Desktop */}
+            <div className="overflow-x-auto hidden md:block">
           <table className="w-full text-right border-collapse">
             <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider font-bold border-b border-slate-200 dark:border-slate-700">
               <tr>
@@ -877,6 +1038,15 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
                 <div className="text-center py-12 text-slate-400">لا توجد طلبات.</div>
             )}
         </div>
+        </>
+        ) : (
+          <KanbanView 
+            orders={filteredOrders} 
+            onStatusChange={updateOrderStatus}
+            onEdit={(order) => { setEditingOrder({ ...order }); setShowAddModal(true); }}
+            settings={settings}
+          />
+        )}
 
         <div className="p-4 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-slate-500">
           <div className="font-bold">عرض {paginatedOrders.length} من {filteredOrders.length} طلبات</div>
@@ -897,6 +1067,25 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, settings, se
       {orderToDelete && ( <ConfirmationModal title="حذف الطلب؟" description={`هل أنت متأكد من حذف طلب العميل "${orderToDelete.customerName}"؟`} onConfirm={handleDeleteOrder} onCancel={() => setOrderToDelete(null)} /> )}
       {showBulkDeleteConfirm && ( <ConfirmationModal title="حذف الطلبات المحددة؟" description={`هل أنت متأكد من حذف ${selectedOrders.length} طلبات؟ هذا الإجراء لا يمكن التراجع عنه.`} onConfirm={handleBulkDelete} onCancel={() => setShowBulkDeleteConfirm(false)} /> )}
       {orderForWaybill && orderForModal && ( <WaybillModal order={orderForModal} onClose={() => setOrderForWaybill(null)} onSave={handleSaveWaybill} /> )}
+      
+      {showAuditLog && (
+        <AuditLogModal 
+          order={showAuditLog} 
+          onClose={() => setShowAuditLog(null)} 
+        />
+      )}
+
+      {showAssignment && (
+        <AssignmentModal 
+          order={showAssignment} 
+          onClose={() => setShowAssignment(null)} 
+          onAssign={(empId, empName) => {
+            updateOrderField(showAssignment.id, 'assignedTo', empId);
+            updateOrderField(showAssignment.id, 'assignedToName', empName);
+            setShowAssignment(null);
+          }}
+        />
+      )}
     </motion.div>
   );
 };
@@ -937,6 +1126,8 @@ const OrderRow: React.FC<OrderRowProps> = ({ order, onStatusChange, onPaymentCha
                         <div className="absolute left-0 top-full z-20 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-1.5 overflow-hidden">
                             <button onClick={() => { onReturn(order); setMenuOpen(false); }} className="w-full text-right flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors"><RefreshCcw size={14}/> إرجاع بعد الاستلام</button>
                             <button onClick={() => { onExchange(order); setMenuOpen(false); }} className="w-full text-right flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors"><ArrowRightLeft size={14}/> إنشاء طلب استبدال</button>
+                            <button onClick={() => { setShowAuditLog(order); setMenuOpen(false); }} className="w-full text-right flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors"><FileSearch size={14}/> سجل التدقيق</button>
+                            <button onClick={() => { setShowAssignment(order); setMenuOpen(false); }} className="w-full text-right flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors"><User size={14}/> تعيين موظف</button>
                         </div>
                     )}
                 </div>
@@ -945,7 +1136,177 @@ const OrderRow: React.FC<OrderRowProps> = ({ order, onStatusChange, onPaymentCha
         </tr>
     );
 };
-interface OrderCardProps extends OrderRowProps {}
+const KanbanView: React.FC<{ orders: Order[]; onStatusChange: (id: string, newStatus: OrderStatus) => void; onEdit: (order: Order) => void; settings: Settings; }> = ({ orders, onStatusChange, onEdit, settings }) => {
+  const columns: OrderStatus[] = ['في_انتظار_المكالمة', 'جاري_المراجعة', 'قيد_التنفيذ', 'تم_الارسال', 'قيد_الشحن', 'تم_توصيلها', 'مرتجع', 'ملغي'];
+  
+  const statusColors: Record<OrderStatus, string> = { 
+    في_انتظار_المكالمة: 'border-cyan-500 bg-cyan-500/5', 
+    جاري_المراجعة: 'border-purple-500 bg-purple-500/5', 
+    قيد_التنفيذ: 'border-yellow-500 bg-yellow-500/5', 
+    تم_الارسال: 'border-sky-500 bg-sky-500/5', 
+    قيد_الشحن: 'border-blue-500 bg-blue-500/5', 
+    تم_توصيلها: 'border-teal-500 bg-teal-500/5', 
+    تم_التحصيل: 'border-emerald-500 bg-emerald-500/5', 
+    مرتجع: 'border-red-500 bg-red-500/5', 
+    مرتجع_بعد_الاستلام: 'border-orange-500 bg-orange-500/5', 
+    تم_الاستبدال: 'border-slate-500 bg-slate-500/5', 
+    مرتجع_جزئي: 'border-orange-500 bg-orange-500/5', 
+    فشل_التوصيل: 'border-red-500 bg-red-500/5', 
+    ملغي: 'border-slate-500 bg-slate-500/5', 
+    مؤرشف: 'border-slate-500 bg-slate-500/5' 
+  };
+
+  return (
+    <div className="flex gap-4 p-4 overflow-x-auto min-h-[600px] no-scrollbar">
+      {columns.map(status => {
+        const columnOrders = orders.filter(o => o.status === status);
+        return (
+          <div key={status} className="flex-shrink-0 w-80 flex flex-col gap-3">
+            <div className={`p-3 rounded-xl border-t-4 shadow-sm ${statusColors[status]} flex justify-between items-center`}>
+              <h3 className="font-black text-slate-800 dark:text-white text-sm">{status.replace(/_/g, ' ')}</h3>
+              <span className="bg-white dark:bg-slate-800 px-2 py-0.5 rounded-lg text-xs font-bold shadow-sm">{columnOrders.length}</span>
+            </div>
+            <div className="flex-1 space-y-3">
+              {columnOrders.map(order => (
+                <motion.div 
+                  key={order.id}
+                  layoutId={order.id}
+                  className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                  onClick={() => onEdit(order)}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-xs font-mono text-slate-400">#{order.orderNumber || order.id.slice(0, 6)}</span>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button className="p-1 text-slate-400 hover:text-indigo-600"><Edit3 size={14}/></button>
+                    </div>
+                  </div>
+                  <h4 className="font-bold text-slate-800 dark:text-white mb-1">{order.customerName}</h4>
+                  <p className="text-xs text-slate-500 mb-3 line-clamp-1">{order.productName}</p>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">{(order.totalAmountOverride ?? order.productPrice).toLocaleString()} ج.م</span>
+                    <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-lg text-slate-500">{order.governorate || order.shippingArea}</span>
+                  </div>
+                </motion.div>
+              ))}
+              {columnOrders.length === 0 && (
+                <div className="h-24 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-300 text-xs font-bold">
+                  لا توجد طلبات
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const AuditLogModal: React.FC<{ order: Order; onClose: () => void; }> = ({ order, onClose }) => {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[32px] overflow-hidden shadow-2xl border border-slate-100 dark:border-slate-800"
+      >
+        <div className="p-8">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-black text-slate-800 dark:text-white">سجل التدقيق (Audit Log)</h3>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+              <X size={20} className="text-slate-400" />
+            </button>
+          </div>
+          
+          <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
+            {order.auditLogs && order.auditLogs.length > 0 ? (
+              order.auditLogs.map((log, idx) => (
+                <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{log.action}</span>
+                    <span className="text-[10px] text-slate-400">{new Date(log.timestamp).toLocaleString('ar-EG')}</span>
+                  </div>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 mb-2">{log.details}</p>
+                  <div className="text-[10px] text-slate-500 font-bold">بواسطة: {log.userEmail}</div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-12 text-slate-400">لا يوجد سجل تدقيق لهذا الطلب.</div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const AssignmentModal: React.FC<{ order: Order; onClose: () => void; onAssign: (id: string, name: string) => void; }> = ({ order, onClose, onAssign }) => {
+  // Mock employees for now, in a real app these would come from settings or a separate collection
+  const employees = [
+    { id: 'emp1', name: 'أحمد محمد' },
+    { id: 'emp2', name: 'سارة علي' },
+    { id: 'emp3', name: 'محمود حسن' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[32px] overflow-hidden shadow-2xl border border-slate-100 dark:border-slate-800"
+      >
+        <div className="p-8">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-black text-slate-800 dark:text-white">تعيين موظف للطلب</h3>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+              <X size={20} className="text-slate-400" />
+            </button>
+          </div>
+          
+          <div className="space-y-3">
+            {employees.map(emp => (
+              <button 
+                key={emp.id}
+                onClick={() => onAssign(emp.id, emp.name)}
+                className={`w-full p-4 rounded-2xl border-2 text-right transition-all flex justify-between items-center ${order.assignedTo === emp.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-100 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-800'}`}
+              >
+                <span className="font-bold text-slate-800 dark:text-white">{emp.name}</span>
+                {order.assignedTo === emp.id && <CheckCircle size={18} className="text-indigo-500" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const LowStockAlert: React.FC<{ products: Product[] }> = ({ products }) => {
+  if (!products) return null;
+  const lowStockProducts = products.filter(p => p.stockQuantity <= (p.stockThreshold || 5));
+  
+  if (lowStockProducts.length === 0) return null;
+
+  return (
+    <motion.div 
+      initial={{ y: -20, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-2xl mb-6 flex items-start gap-3"
+    >
+      <AlertTriangle className="text-red-500 flex-shrink-0 mt-0.5" size={20} />
+      <div>
+        <h4 className="font-bold text-red-800 dark:text-red-300 text-sm mb-1">تنبيه: مخزون منخفض</h4>
+        <p className="text-xs text-red-600 dark:text-red-400 mb-2">المنتجات التالية وصلت للحد الأدنى للمخزون:</p>
+        <div className="flex flex-wrap gap-2">
+          {lowStockProducts.map(p => (
+            <span key={p.id} className="bg-white dark:bg-slate-800 px-2 py-1 rounded-lg text-[10px] font-bold border border-red-100 dark:border-red-900/50 shadow-sm">
+              {p.name} ({p.stock} قطعة)
+            </span>
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
 const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusChange, onPaymentChange, onPreparationChange, onEdit, onDelete, onPrintInvoice, onPrintShippingLabel, isSelected, onSelectRow, whatsappLink, onReturn, onExchange }) => {
     const statusColors: Record<OrderStatus, string> = { في_انتظار_المكالمة: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-400 border-cyan-200 dark:border-cyan-500/20', جاري_المراجعة: 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400 border-purple-200 dark:border-purple-500/20', قيد_التنفيذ: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20', تم_الارسال: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400 border-sky-200 dark:border-sky-500/20', قيد_الشحن: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border-blue-200 dark:border-blue-500/20', تم_توصيلها: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-400 border-teal-200 dark:border-teal-500/20', تم_التحصيل: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20', مرتجع: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border-red-200 dark:border-red-500/20', مرتجع_بعد_الاستلام: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400 border-orange-200 dark:border-orange-500/20', تم_الاستبدال: 'bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300 border-slate-200 dark:border-slate-500/20', مرتجع_جزئي: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400 border-orange-200 dark:border-orange-500/20', فشل_التوصيل: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border-red-200 dark:border-red-500/20', ملغي: 'bg-slate-50 text-slate-600 dark:bg-slate-500/10 dark:text-slate-400 border-slate-200 dark:border-slate-500/20', مؤرشف: 'bg-slate-50 text-slate-600 dark:bg-slate-500/10 dark:text-slate-400 border-slate-200 dark:border-slate-500/20' };
     const paymentStatusColors: Record<PaymentStatus, string> = { 'بانتظار الدفع': 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border-amber-200 dark:border-amber-500/20', 'مدفوع': 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20', 'مدفوع جزئياً': 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400 border-sky-200 dark:border-sky-500/20', 'مرتجع': 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border-red-200 dark:border-red-500/20' };
