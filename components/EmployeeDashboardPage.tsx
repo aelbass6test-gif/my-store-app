@@ -32,13 +32,18 @@ const EmployeeDashboardPage: React.FC<EmployeeDashboardPageProps> = ({ orders, s
 
     const stats = useMemo(() => {
         const dashboardSettings = settings.employeeDashboardSettings;
-        if (!dashboardSettings) return { pending: 0, confirmed: 0, canceled: 0 };
+        const pendingStatuses = ['في_انتظار_المكالمة', 'مؤجل'];
+        const confirmedStatuses = dashboardSettings?.showOrderStatuses || ['قيد_التنفيذ', 'تم_الارسال', 'قيد_الشحن', 'تم_توصيلها', 'تم_التحصيل'];
+        const canceledStatuses = ['ملغي', 'مرتجع'];
 
-        const pending = assignedOrders.filter(o => o.status === 'في_انتظار_المكالمة').length;
-        const confirmed = assignedOrders.filter(o => dashboardSettings.showOrderStatuses.includes(o.status)).length;
-        const canceled = assignedOrders.filter(o => o.status === 'ملغي').length;
+        const pending = assignedOrders.filter(o => pendingStatuses.includes(o.status)).length;
+        const confirmed = assignedOrders.filter(o => 
+            o.confirmationLogs?.some(log => log.userId === currentUser?.phone && log.action === 'تم التأكيد')
+        ).length;
+        const canceled = assignedOrders.filter(o => canceledStatuses.includes(o.status)).length;
+        
         return { pending, confirmed, canceled };
-    }, [assignedOrders, settings]);
+    }, [assignedOrders, settings, currentUser]);
 
     const handleStatusUpdate = (orderId: string, newStatus: OrderStatus) => {
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
