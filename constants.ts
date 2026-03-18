@@ -174,7 +174,12 @@ export const INITIAL_SETTINGS: Settings = {
   ],
   collections: [],
   whatsappTemplates: DEFAULT_WHATSAPP_TEMPLATES,
-  callScripts: DEFAULT_CALL_SCRIPTS
+  callScripts: DEFAULT_CALL_SCRIPTS,
+  employeeDashboardSettings: {
+    showAssignedOrders: true,
+    showOrderStatuses: ['في_انتظار_المكالمة', 'قيد_التنفيذ', 'جاري_المراجعة'],
+    showFollowUpReminders: true,
+  }
 };
 
 export const ORDER_STATUSES = [
@@ -193,3 +198,20 @@ export const ORDER_STATUSES = [
   'ملغي',
   'مؤرشف'
 ] as const;
+
+export const ORDER_STATUS_METADATA: Record<string, { label: string, color: string, icon: any }> = {
+  'في_انتظار_المكالمة': { label: 'بانتظار مكالمة', color: 'bg-cyan-500', icon: 'PhoneForwarded' },
+  'جاري_المراجعة': { label: 'قيد المراجعة', color: 'bg-purple-500', icon: 'FileSearch' },
+  'قيد_التنفيذ': { label: 'قيد التنفيذ', color: 'bg-amber-500', icon: 'Package' },
+  'تم_الارسال': { label: 'تم الارسال', color: 'bg-blue-500', icon: 'Truck' },
+  'قيد_الشحن': { label: 'قيد الشحن', color: 'bg-sky-500', icon: 'Truck' },
+  'تم_توصيلها': { label: 'تم التوصيل', color: 'bg-emerald-500', icon: 'CheckCircle' },
+  'تم_التحصيل': { label: 'تم التحصيل', color: 'bg-emerald-600', icon: 'Coins' },
+  'مرتجع': { label: 'مرتجع', color: 'bg-rose-500', icon: 'RefreshCcw' },
+  'مرتجع_بعد_الاستلام': { label: 'مرتجع بعد الاستلام', color: 'bg-rose-600', icon: 'RefreshCcw' },
+  'تم_الاستبدال': { label: 'تم الاستبدال', color: 'bg-indigo-500', icon: 'RefreshCcw' },
+  'مرتجع_جزئي': { label: 'مرتجع جزئي', color: 'bg-orange-500', icon: 'RefreshCcw' },
+  'فشل_التوصيل': { label: 'فشل التوصيل', color: 'bg-red-500', icon: 'XCircle' },
+  'ملغي': { label: 'ملغي', color: 'bg-slate-500', icon: 'XCircle' },
+  'مؤرشف': { label: 'مؤرشف', color: 'bg-slate-400', icon: 'Archive' },
+};
