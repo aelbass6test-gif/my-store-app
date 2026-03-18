@@ -295,7 +295,7 @@ export const AppComponent = () => {
                 setSaveMessage(e.message || 'فشل الحفظ');
                 setTimeout(() => setSaveStatus('idle'), 3000);
             }
-        }, 2500); 
+        }, 800); 
 
         return () => {
             if (debounceTimer.current) {
@@ -647,7 +647,7 @@ export const AppComponent = () => {
                 console.log(`[REALTIME] Store ${storeId} data updated via debounce.`);
             }
             refreshDebounceTimers.current[storeId] = null;
-        }, 1500);
+        }, 500);
     };
 
     const refreshGlobalData = () => {
@@ -705,7 +705,7 @@ export const AppComponent = () => {
             if (activeStoreId && !isSavingRef.current) {
                 refreshStoreData(activeStoreId);
             }
-        }, 15000); // Poll every 15 seconds
+        }, 5000); // Poll every 5 seconds
 
         return () => {
             console.log('[REALTIME] Removing subscriptions and polling.');
@@ -727,12 +727,35 @@ export const AppComponent = () => {
         />;
     }
     
+    const forceSync = async () => {
+        if (debounceTimer.current) {
+            clearTimeout(debounceTimer.current);
+        }
+        setSaveStatus('saving');
+        setSaveMessage('جاري الحفظ...');
+        try {
+            await db.saveGlobalData({ users, loyaltyData: {} });
+            if (activeStoreId && allStoresData[activeStoreId] && activeStore) {
+                const { success, error } = await db.saveStoreData(activeStore, allStoresData[activeStoreId]);
+                if (!success) throw new Error(error || 'فشل حفظ بيانات المتجر');
+            }
+            setSaveStatus('success');
+            setSaveMessage('تم الحفظ بنجاح!');
+            setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch (e: any) {
+            setSaveStatus('error');
+            setSaveMessage(e.message || 'فشل الحفظ');
+            setTimeout(() => setSaveStatus('idle'), 3000);
+        }
+    };
+
     const pageProps = {
         users, setUsers, allStoresData, setAllStoresData, currentUser, activeStore,
         orders: activeStoreId ? allStoresData[activeStoreId]?.orders || [] : [],
         settings: activeStoreId ? allStoresData[activeStoreId]?.settings || INITIAL_SETTINGS : INITIAL_SETTINGS,
         wallet: activeStoreId ? allStoresData[activeStoreId]?.wallet || { balance: 0, transactions: [] } : { balance: 0, transactions: [] },
         cart,
+        forceSync,
         setOrders: (updater: any) => {
             if(activeStoreId) {
                 setAllStoresData(p => {
@@ -871,7 +894,7 @@ export const AppComponent = () => {
                 }>
                     <Route index element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} />} />
                     <Route path="dashboard" element={<EmployeeDashboardPage currentUser={currentUser} orders={pageProps.orders} />} />
-                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} />} />
+                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} forceSync={pageProps.forceSync} />} />
                     <Route path="my-activity" element={<EmployeeActivityPage currentUser={currentUser} orders={pageProps.orders} />} />
                     <Route path="account-settings" element={<EmployeeAccountSettingsPage currentUser={currentUser} setCurrentUser={setCurrentUser} users={users} setUsers={setUsers} />} />
                 </Route>
@@ -891,7 +914,7 @@ export const AppComponent = () => {
                     />
                 }>
                     <Route index element={<Dashboard {...pageProps} />} />
-                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} />} />
+                    <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} forceSync={pageProps.forceSync} />} />
                     <Route path="orders" element={<OrdersList {...pageProps} addLoyaltyPointsForOrder={() => {}} />} />
                     <Route path="products" element={<ProductsPage {...pageProps} />} />
                     <Route path="customers" element={<CustomersPage orders={pageProps.orders} loyaltyData={{}} updateCustomerLoyaltyPoints={() => {}} />} />
