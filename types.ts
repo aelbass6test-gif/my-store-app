@@ -90,6 +90,7 @@ export interface Product {
   profitMode?: 'manual' | 'margin' | 'commission';
   basePrice?: number;
   commissionPercentage?: number;
+  stockThreshold?: number;
 }
 
 export type TransactionCategory = 'shipping' | 'insurance' | 'inspection' | 'collection' | 'cod' | 'return' | 'manual_deposit' | 'manual_withdrawal' | 'expense_ads' | 'expense_salary' | 'expense_rent' | 'expense_other' | 'inventory_purchase';
@@ -366,6 +367,16 @@ export interface ConfirmationLog {
   duration?: number; // Call duration in seconds
 }
 
+export interface CallAttempt {
+  id: string;
+  userId: string;
+  userName: string;
+  timestamp: string;
+  status: string;
+  notes?: string;
+  duration?: number;
+}
+
 export interface AuditLog {
   id: string;
   userId: string;
@@ -422,8 +433,9 @@ export interface Order {
   lockedByName?: string;
   lockedAt?: string;
   assignedTo?: string;
+  assignedToName?: string;
   auditLogs?: AuditLog[];
-  callAttempts?: number;
+  callAttempts?: CallAttempt[];
   sentiment?: string;
 }
 
