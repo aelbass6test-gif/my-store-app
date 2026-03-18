@@ -448,6 +448,9 @@ export interface Order {
   lockedBy?: string;
   lockedByName?: string;
   lockedAt?: string;
+  transferStatus?: 'pending' | 'accepted' | 'rejected';
+  transferTo?: string;
+  transferFrom?: string;
   assignedTo?: string;
   assignedToName?: string;
   auditLogs?: AuditLog[];
