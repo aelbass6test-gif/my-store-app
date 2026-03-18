@@ -1,7 +1,7 @@
 // FIX: Import 'useMemo' from 'react' to resolve 'Cannot find name' error.
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { User } from '../types';
+import { User, Store } from '../types';
 import { Menu, ChevronDown, User as UserIcon, Settings, LogOut, ExternalLink, Replace, Sun, Moon, Monitor } from 'lucide-react';
 
 const PATH_TITLES: { [key: string]: string } = {
@@ -34,9 +34,10 @@ interface HeaderProps {
     onToggleSidebar: () => void;
     theme: string;
     setTheme: (theme: string) => void;
+    activeStore?: Store;
 }
 
-const Header: React.FC<HeaderProps> = ({ currentUser, onLogout, onToggleSidebar, theme, setTheme }) => {
+const Header: React.FC<HeaderProps> = ({ currentUser, onLogout, onToggleSidebar, theme, setTheme, activeStore }) => {
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const userMenuRef = useRef<HTMLDivElement>(null);
     const location = useLocation();
@@ -79,60 +80,67 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onLogout, onToggleSidebar,
     };
 
     return (
-        <header className="h-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 sticky top-0 z-40 flex-shrink-0">
-            <div className="flex items-center gap-4">
-                <button onClick={onToggleSidebar} className="md:hidden text-slate-500">
-                    <Menu size={24} />
-                </button>
-                <h1 className="text-xl font-bold text-slate-800 dark:text-white">{pageTitle}</h1>
-            </div>
+        <header className="h-20 glass border-b border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between px-8 sticky top-0 z-40 flex-shrink-0">
+            <div className="flex items-center gap-6">
+    <button onClick={onToggleSidebar} className="md:hidden p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-500">
+        <Menu size={24} />
+    </button>
+    <div className="flex items-center gap-3">
+        <h1 className="text-xl font-display font-black text-slate-900 dark:text-white tracking-tight">{pageTitle}</h1>
+        {activeStore && (
+            <span className="hidden sm:inline-block px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black rounded-lg border border-slate-200 dark:border-slate-700">
+                ID: {activeStore.id}
+            </span>
+        )}
+    </div>
+</div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-6">
                 <button 
                     onClick={handleManageStoresClick}
-                    className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                    className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-black text-sm text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm"
                 >
                     <Replace size={16} />
                     <span>تغيير المتجر</span>
                 </button>
                 
                 <div className="relative" ref={userMenuRef}>
-                    <button onClick={() => setIsUserMenuOpen(prev => !prev)} className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-full font-bold flex items-center justify-center text-sm bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-2 border-white dark:border-slate-900">
+                    <button onClick={() => setIsUserMenuOpen(prev => !prev)} className="flex items-center gap-3 p-1 pr-3 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                        <div className="hidden md:block text-right">
+                            <div className="font-bold text-sm text-slate-800 dark:text-white leading-none mb-1">{currentUser?.fullName}</div>
+                            <div className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">{currentUser?.isAdmin ? 'مدير النظام' : 'صاحب المتجر'}</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-xl font-bold flex items-center justify-center text-sm bg-primary text-white shadow-lg shadow-primary/20">
                             {currentUser ? getUserInitials(currentUser.fullName) : '..'}
                         </div>
-                        <div className="hidden md:block text-right">
-                            <div className="font-bold text-sm text-slate-800 dark:text-white">{currentUser?.fullName}</div>
-                            <div className="text-xs text-slate-500">{currentUser?.email}</div>
-                        </div>
-                        <ChevronDown size={16} className={`hidden md:block text-slate-400 transition-transform ${isUserMenuOpen && 'rotate-180'}`} />
+                        <ChevronDown size={14} className={`hidden md:block text-slate-400 transition-transform duration-300 ${isUserMenuOpen && 'rotate-180'}`} />
                     </button>
                     {isUserMenuOpen && (
-                        <div className="absolute left-0 top-14 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-200 p-2 z-50">
-                            <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700 mb-2">
+                        <div className="absolute left-0 top-14 w-64 glass rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-200 p-2 z-50">
+                            <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 mb-2">
                                 <p className="font-bold text-sm text-slate-800 dark:text-white truncate">{currentUser?.fullName}</p>
-                                <p className="text-xs text-slate-500 truncate">{currentUser?.email}</p>
+                                <p className="text-xs text-slate-400 truncate">{currentUser?.email}</p>
                             </div>
-                            <Link to={currentUser?.isAdmin ? "/admin/account-settings" : "/account-settings"} onClick={() => setIsUserMenuOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm">
+                            <Link to={currentUser?.isAdmin ? "/admin/account-settings" : "/account-settings"} onClick={() => setIsUserMenuOpen(false)} className="flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm transition-colors">
                                 <UserIcon size={16} /> <span>ملفي الشخصي</span>
                             </Link>
-                            <a href="https://docs.wuilt.com" target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-3 px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm">
+                            <a href="https://docs.wuilt.com" target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm transition-colors">
                                 <div className="flex items-center gap-3">
                                     <Settings size={16} /> <span>مركز المساعدة</span>
                                 </div>
                                 <ExternalLink size={14} />
                             </a>
-                            <div className="w-full h-px bg-slate-100 dark:border-slate-700 my-1"></div>
-                            <div className="px-3 py-2">
-                                <p className="text-xs font-bold text-slate-400 mb-2">المظهر</p>
-                                <div className="flex bg-slate-100 dark:bg-slate-700 rounded-md p-1 gap-1">
-                                    <button onClick={() => setTheme('light')} className={`w-full flex justify-center items-center gap-1.5 py-1 text-xs rounded-sm font-bold transition-colors ${theme === 'light' ? 'bg-white dark:bg-slate-900 shadow text-slate-800 dark:text-slate-200' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}><Sun size={14}/><span>فاتح</span></button>
-                                    <button onClick={() => setTheme('dark')} className={`w-full flex justify-center items-center gap-1.5 py-1 text-xs rounded-sm font-bold transition-colors ${theme === 'dark' ? 'bg-white dark:bg-slate-900 shadow text-slate-800 dark:text-slate-200' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}><Moon size={14}/><span>داكن</span></button>
-                                    <button onClick={() => setTheme('system')} className={`w-full flex justify-center items-center gap-1.5 py-1 text-xs rounded-sm font-bold transition-colors ${theme === 'system' ? 'bg-white dark:bg-slate-900 shadow text-slate-800 dark:text-slate-200' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}><Monitor size={14}/><span>النظام</span></button>
+                            <div className="w-full h-px bg-slate-100 dark:bg-slate-700 my-2"></div>
+                            <div className="px-4 py-2">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">المظهر</p>
+                                <div className="flex bg-slate-100 dark:bg-slate-900/50 rounded-xl p-1 gap-1">
+                                    <button onClick={() => setTheme('light')} className={`flex-1 flex justify-center items-center gap-1.5 py-1.5 text-xs rounded-lg font-bold transition-all ${theme === 'light' ? 'bg-white dark:bg-slate-800 shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}><Sun size={14}/><span>فاتح</span></button>
+                                    <button onClick={() => setTheme('dark')} className={`flex-1 flex justify-center items-center gap-1.5 py-1.5 text-xs rounded-lg font-bold transition-all ${theme === 'dark' ? 'bg-white dark:bg-slate-800 shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}><Moon size={14}/><span>داكن</span></button>
+                                    <button onClick={() => setTheme('system')} className={`flex-1 flex justify-center items-center gap-1.5 py-1.5 text-xs rounded-lg font-bold transition-all ${theme === 'system' ? 'bg-white dark:bg-slate-800 shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}><Monitor size={14}/><span>تلقائي</span></button>
                                 </div>
                             </div>
-                            <div className="w-full h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
-                            <button onClick={handleLogout} className="w-full text-right flex items-center gap-3 px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-red-500 font-bold text-sm">
+                            <div className="w-full h-px bg-slate-100 dark:bg-slate-700 my-2"></div>
+                            <button onClick={handleLogout} className="w-full text-right flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 font-bold text-sm transition-colors">
                                 <LogOut size={16} /> <span>تسجيل الخروج</span>
                             </button>
                         </div>

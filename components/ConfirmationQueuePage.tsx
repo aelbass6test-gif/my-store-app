@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Order, User, ConfirmationLog, AuditLog, OrderStatus, Settings, OrderItem, Product, Store } from '../types';
-import { PhoneForwarded, Check, CheckCircle, X, User as UserIcon, MapPin, Package, CalendarDays, Phone, PhoneCall, MessageSquare, Edit3, Save, Plus, Clock, ChevronsUpDown, ArrowRight, Truck, Tag, XCircle, Eye, Search, RefreshCw, History as HistoryIcon, TrendingUp, AlertTriangle, Bell, Send, FileText, Filter, Lock, Unlock, Trophy, Medal, MessageCircle, ListChecks } from 'lucide-react';
+import { PhoneForwarded, Check, CheckCircle, X, User as UserIcon, MapPin, Package, CalendarDays, Phone, PhoneCall, MessageSquare, Edit3, Save, Plus, Clock, ChevronsUpDown, ArrowRight, Truck, Tag, XCircle, Eye, Search, RefreshCw, History as HistoryIcon, TrendingUp, AlertTriangle, Bell, Send, FileText, Filter, Lock, Unlock, Trophy, Medal, MessageCircle, ListChecks, Users } from 'lucide-react';
 import EditableField from './EditableField';
 
 const QUICK_WA_TEMPLATES = [
@@ -48,18 +48,18 @@ const QUICK_NOTES = [
 ];
 
 const CALL_STATUS_ACTIONS = [
-    { label: 'لم يرد', action: 'العميل لم يرد', color: 'bg-amber-100 text-amber-700' },
-    { label: 'مشغول', action: 'الخط مشغول', color: 'bg-orange-100 text-orange-700' },
-    { label: 'مغلق', action: 'الهاتف مغلق', color: 'bg-red-100 text-red-700' },
-    { label: 'سيعاود الاتصال', action: 'سيعاود الاتصال لاحقاً', color: 'bg-blue-100 text-blue-700' },
+    { label: 'لم يرد', action: 'العميل لم يرد', color: 'bg-amber-500 text-white' },
+    { label: 'مشغول', action: 'الخط مشغول', color: 'bg-orange-500 text-white' },
+    { label: 'مغلق', action: 'الهاتف مغلق', color: 'bg-red-500 text-white' },
+    { label: 'سيعاود الاتصال', action: 'سيعاود الاتصال لاحقاً', color: 'bg-blue-500 text-white' },
 ];
 
 const SENTIMENT_OPTIONS = [
-    { value: 'إيجابي', label: 'إيجابي', color: 'bg-green-100 text-green-700' },
-    { value: 'محايد', label: 'محايد', color: 'bg-slate-100 text-slate-700' },
-    { value: 'سلبي', label: 'سلبي', color: 'bg-orange-100 text-orange-700' },
-    { value: 'غاضب', label: 'غاضب', color: 'bg-red-100 text-red-700' },
-    { value: 'مستعجل', label: 'مستعجل', color: 'bg-purple-100 text-purple-700' },
+    { value: 'إيجابي', label: 'إيجابي', color: 'bg-emerald-500 text-white' },
+    { value: 'محايد', label: 'محايد', color: 'bg-slate-500 text-white' },
+    { value: 'سلبي', label: 'سلبي', color: 'bg-orange-500 text-white' },
+    { value: 'غاضب', label: 'غاضب', color: 'bg-red-500 text-white' },
+    { value: 'مستعجل', label: 'مستعجل', color: 'bg-purple-500 text-white' },
 ];
 
 interface ConfirmationQueuePageProps {
@@ -234,13 +234,13 @@ const EmployeePerformance = ({ orders, currentUser, setNotification }: { orders:
     }, [stats.rank, setNotification]);
 
     return (
-        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white p-4 rounded-xl shadow-lg mb-6 flex justify-between items-center relative overflow-hidden">
-            <div className="absolute -right-4 -top-4 opacity-10">
+        <div className="bg-indigo-600 text-white p-4 rounded-xl shadow-lg mb-6 flex justify-between items-center relative overflow-hidden">
+            <div className="absolute -right-4 -top-4 opacity-20 text-white">
                 <Trophy size={100} />
             </div>
             <div className="relative z-10">
                 <div className="flex items-center gap-2 mb-1">
-                    <h4 className="text-sm font-bold opacity-90">إنجازك اليوم</h4>
+                    <h4 className="text-sm font-bold text-white">إنجازك اليوم</h4>
                     {stats.rank === 1 && stats.confirmed > 0 && (
                         <span className="bg-yellow-400 text-yellow-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                             <Medal size={12} /> المركز الأول
@@ -258,21 +258,21 @@ const EmployeePerformance = ({ orders, currentUser, setNotification }: { orders:
                     )}
                 </div>
                 <div className="flex gap-4 mt-2">
-                    <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded-lg">
+                    <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-lg">
                         <CheckCircle size={14} className="text-emerald-300" />
-                        <span className="font-black">{stats.confirmed} مؤكد</span>
+                        <span className="font-black text-white">{stats.confirmed} مؤكد</span>
                     </div>
-                    <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded-lg">
+                    <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-lg">
                         <XCircle size={14} className="text-red-300" />
-                        <span className="font-black">{stats.canceled} ملغي</span>
+                        <span className="font-black text-white">{stats.canceled} ملغي</span>
                     </div>
                 </div>
             </div>
             <div className="text-right relative z-10">
-                <p className="text-3xl font-black">{stats.total}</p>
-                <p className="text-[10px] opacity-80 uppercase tracking-wider">إجمالي العمليات</p>
+                <p className="text-3xl font-black text-white">{stats.total}</p>
+                <p className="text-[10px] font-bold text-white uppercase tracking-wider">إجمالي العمليات</p>
                 {stats.rank > 3 && stats.confirmed > 0 && (
-                    <p className="text-[10px] mt-1 text-indigo-200">ترتيبك: {stats.rank} من {stats.totalEmployees}</p>
+                    <p className="text-[10px] mt-1 text-white font-bold">ترتيبك: {stats.rank} من {stats.totalEmployees}</p>
                 )}
             </div>
         </div>
@@ -337,9 +337,6 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
 
         if (filterStatus) {
             filtered = filtered.filter(o => o.status === filterStatus);
-        } else {
-            // Default to only showing pending orders if no status filter is applied
-            filtered = filtered.filter(o => o.status === 'في_انتظار_المكالمة');
         }
 
         return filtered.sort((a, b) => {
@@ -354,24 +351,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         });
     }, [orders, searchTerm, filterGovernorate, filterShippingCompany, filterStatus, sortBy, showMyOrdersOnly, currentUser]);
 
-    useEffect(() => {
-        const unassigned = orders.filter(o => o.status === 'في_انتظار_المكالمة' && !o.assignedTo);
-        const employees = settings.employees?.filter(e => e.status === 'active') || [];
-
-        
-        if (employees.length > 0 && unassigned.length > 0) {
-            let empIndex = 0;
-            const updatedOrders = orders.map(o => {
-                if (o.status === 'في_انتظار_المكالمة' && !o.assignedTo) {
-                    const emp = employees[empIndex % employees.length];
-                    empIndex++;
-                    return { ...o, assignedTo: emp.phone || emp.id || 'system' };
-                }
-                return o;
-            });
-            setOrders(updatedOrders);
-        }
-    }, [orders, settings.employees]);
+    // Removed auto-assign useEffect as user requested a manual button for this.
 
     const [callStartTime, setCallStartTime] = useState<number | null>(null);
     const [callDuration, setCallDuration] = useState<number>(0);
@@ -632,7 +612,14 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                 ...order, 
                 status: newStatus || order.status, 
                 sentiment: sentiment,
-                callAttempts: (order.callAttempts || 0) + 1,
+                callAttempts: [...(order.callAttempts || []), { 
+                    id: `call-${Date.now()}`, 
+                    userId: currentUser?.email || 'unknown', 
+                    userName: currentUser?.fullName || 'unknown', 
+                    timestamp: new Date().toISOString(), 
+                    status: selectedAction, 
+                    notes: actionNotes 
+                }],
                 confirmationLogs: [...(order.confirmationLogs || []), newLog],
                 cancellationReason: cancellationReason || order.cancellationReason,
                 followUpReminder: reminderDateStr || order.followUpReminder,
@@ -820,11 +807,41 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                     {notification}
                 </div>
             )}
-            <div className="flex items-center gap-4 mb-6 flex-shrink-0">
-                <div className="p-3 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 rounded-xl"><PhoneForwarded size={28} /></div>
-                <div>
-                    <h1 className="text-3xl font-black text-slate-800 dark:text-white">قائمة تأكيد الطلبات</h1>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">تواصل مع العملاء لتأكيد طلباتهم الجديدة.</p>
+            <div className="flex items-center gap-4 mb-6 flex-shrink-0 justify-between">
+                <div className="flex items-center gap-4">
+                    <div className="p-3 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 rounded-xl"><PhoneForwarded size={28} /></div>
+                    <div>
+                        <h1 className="text-3xl font-black text-slate-800 dark:text-white">قائمة تأكيد الطلبات</h1>
+                        <p className="text-slate-500 dark:text-slate-400 mt-1">تواصل مع العملاء لتأكيد طلباتهم الجديدة.</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={() => {
+                            const unassigned = orders.filter(o => o.status === 'في_انتظار_المكالمة' && !o.assignedTo);
+                            const employees = settings.employees?.filter(e => e.status === 'active') || [];
+                            if (employees.length === 0 || unassigned.length === 0) {
+                                alert('لا يوجد طلبات غير موزعة أو لا يوجد موظفين نشطين.');
+                                return;
+                            }
+                            
+                            let empIndex = 0;
+                            const updatedOrders = orders.map(o => {
+                                if (o.status === 'في_انتظار_المكالمة' && !o.assignedTo) {
+                                    const emp = employees[empIndex % employees.length];
+                                    empIndex++;
+                                    return { ...o, assignedTo: emp.id };
+                                }
+                                return o;
+                            });
+                            setOrders(updatedOrders);
+                            alert(`تم توزيع ${unassigned.length} طلب بنجاح.`);
+                        }} 
+                        className="glass-card px-4 py-2 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-white/50 transition-all flex items-center gap-2 font-bold border border-indigo-100 dark:border-indigo-900/30"
+                        title="توزيع تلقائي للموظفين"
+                    >
+                        توزيع تلقائي <Users size={20} />
+                    </button>
                 </div>
             </div>
 
@@ -887,22 +904,9 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                     className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-sm"
                                                 />
                                             </div>
-                                            <div>
-                                                <label className="text-xs text-slate-500 block mb-1">حالة الطلب</label>
-                                                <select 
-                                                    value={filterStatus} 
-                                                    onChange={(e) => setFilterStatus(e.target.value)}
-                                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-sm"
-                                                >
-                                                    <option value="">الكل</option>
-                                                    <option value="في_انتظار_المكالمة">في انتظار المكالمة</option>
-                                                    <option value="جاري_المراجعة">جاري المراجعة</option>
-                                                    <option value="ملغي">ملغي</option>
-                                                </select>
-                                            </div>
                                             <div className="pt-2 border-t border-slate-100 dark:border-slate-700 flex justify-end">
                                                 <button 
-                                                    onClick={() => { setFilterGovernorate(''); setFilterShippingCompany(''); setFilterStatus(''); setSortBy('date_asc'); }}
+                                                    onClick={() => { setFilterGovernorate(''); setFilterShippingCompany(''); setSortBy('date_asc'); }}
                                                     className="text-xs text-red-500 hover:text-red-600 font-bold"
                                                 >
                                                     إعادة ضبط
@@ -928,32 +932,6 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                 <span className="hidden sm:inline">تلقائي</span>
                             </button>
                             <button 
-                                onClick={() => {
-                                    const unassigned = orders.filter(o => o.status === 'في_انتظار_المكالمة' && !o.assignedTo);
-                                    const employees = settings.employees?.filter(e => e.status === 'active') || [];
-                                    if (employees.length === 0 || unassigned.length === 0) {
-                                        alert('لا يوجد طلبات غير موزعة أو لا يوجد موظفين نشطين.');
-                                        return;
-                                    }
-                                    
-                                    let empIndex = 0;
-                                    const updatedOrders = orders.map(o => {
-                                        if (o.status === 'في_انتظار_المكالمة' && !o.assignedTo) {
-                                            const emp = employees[empIndex % employees.length];
-                                            empIndex++;
-                                            return { ...o, assignedTo: emp.phone };
-                                        }
-                                        return o;
-                                    });
-                                    setOrders(updatedOrders);
-                                    alert(`تم توزيع ${unassigned.length} طلب بنجاح.`);
-                                }} 
-                                className="p-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold"
-                                title="توزيع الطلبات تلقائياً"
-                            >
-                                <ListChecks size={18} />
-                            </button>
-                            <button 
                                 onClick={() => setIsScriptsOpen(true)} 
                                 className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold"
                                 title="سكريبتات الرد"
@@ -964,19 +942,34 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                         </div>
                     </div>
                     
-                    <div className="flex border-b border-slate-200 dark:border-slate-800">
+                    <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg m-2">
                         <button 
                             onClick={() => setShowMyOrdersOnly(false)}
-                            className={`flex-1 py-2 text-sm font-bold text-center transition-colors ${!showMyOrdersOnly ? 'border-b-2 border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/10' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                            className={`flex-1 py-2 text-sm font-bold text-center rounded-md transition-all ${!showMyOrdersOnly ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                         >
                             كل الطلبات
                         </button>
                         <button 
                             onClick={() => setShowMyOrdersOnly(true)}
-                            className={`flex-1 py-2 text-sm font-bold text-center transition-colors ${showMyOrdersOnly ? 'border-b-2 border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/10' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                            className={`flex-1 py-2 text-sm font-bold text-center rounded-md transition-all ${showMyOrdersOnly ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                         >
                             طلباتي فقط
                         </button>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-2 p-2 bg-slate-100/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                        {[{value: '', label: 'الكل'}, {value: 'في_انتظار_المكالمة', label: 'في انتظار المكالمة'}, {value: 'جاري_المراجعة', label: 'جاري المراجعة'}, {value: 'ملغي', label: 'ملغي'}].map((tab) => (
+                            <button
+                                key={tab.value}
+                                onClick={() => setFilterStatus(tab.value)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                                    filterStatus === tab.value 
+                                        ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm' 
+                                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
                     </div>
                     {pendingOrders.length === 0 ? (
                         <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400">
@@ -1112,7 +1105,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                 <h4 className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
                                                     {order.customerName}
                                                     {order.lockedBy && order.lockedBy !== currentUser?.phone && (
-                                                        <Lock size={12} className="text-red-500" title={`مقفول بواسطة ${order.lockedByName}`} />
+                                                        <Lock size={12} className="text-red-500" />
                                                     )}
                                                 </h4>
                                                 <div className="text-left">
@@ -1123,9 +1116,9 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-1">{order.productName}</p>
                                             <div className="flex justify-between items-center mt-2">
                                                 <p className="text-xs font-black text-indigo-600 dark:text-indigo-400">{(order.totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0))).toLocaleString()} ج.م</p>
-                                                {order.callAttempts && order.callAttempts > 0 ? (
+                                                {order.callAttempts && order.callAttempts.length > 0 ? (
                                                     <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
-                                                        {order.callAttempts} محاولات
+                                                        {order.callAttempts.length} محاولات
                                                     </span>
                                                 ) : null}
                                             </div>
@@ -1158,7 +1151,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                     <div className="flex justify-between items-center mb-3">
                                         <h4 className="font-bold text-indigo-800 dark:text-indigo-300 text-sm flex items-center gap-2"><PhoneCall size={16}/> تتبع محاولات الاتصال</h4>
                                         <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[10px] font-black">
-                                            المحاولة رقم {activeOrder.callAttempts || 0}
+                                            المحاولة رقم {(activeOrder.callAttempts?.length || 0) + 1}
                                         </span>
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

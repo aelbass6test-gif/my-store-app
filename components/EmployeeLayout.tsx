@@ -4,6 +4,7 @@ import { User, Store, StoreData } from '../types';
 import { Wind, LogOut, Settings, User as UserIcon, Sun, Moon, Monitor, Replace, ChevronDown, Check, LayoutDashboard, PhoneForwarded, Download, MessageSquare, History } from 'lucide-react';
 import FloatingChat, { FloatingChatHandles } from './FloatingChat';
 import IosInstallPrompt from './IosInstallPrompt';
+import { supabase } from '../services/supabaseClient';
 
 interface EmployeeLayoutProps {
     currentUser: User | null;
@@ -26,9 +27,39 @@ const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({ currentUser, onLogout, 
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const [isStoreMenuOpen, setIsStoreMenuOpen] = useState(false);
     const [showIosInstallModal, setShowIosInstallModal] = useState(false);
+    const [onlineUsers, setOnlineUsers] = useState<Record<string, { lastSeen: number }>>({});
     const userMenuRef = useRef<HTMLDivElement>(null);
     const storeMenuRef = useRef<HTMLDivElement>(null);
     const chatRef = useRef<FloatingChatHandles>(null);
+
+    useEffect(() => {
+        if (!currentUser || !activeStoreId) return;
+
+        const channel = supabase.channel(`presence:${activeStoreId}`);
+
+        channel
+            .on('presence', { event: 'sync' }, () => {
+                const state = channel.presenceState();
+                const users: Record<string, { lastSeen: number }> = {};
+                Object.keys(state).forEach(key => {
+                    const presence = state[key][0] as any;
+                    users[presence.userId] = { lastSeen: presence.lastSeen };
+                });
+                setOnlineUsers(users);
+            })
+            .subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    await channel.track({
+                        userId: currentUser.phone,
+                        lastSeen: Date.now(),
+                    });
+                }
+            });
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [currentUser, activeStoreId]);
 
     const employeeStores = useMemo(() => {
         if (!currentUser) return [];
@@ -182,7 +213,7 @@ const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({ currentUser, onLogout, 
             <main className="flex-1 overflow-y-auto">
                 {children}
             </main>
-            <FloatingChat ref={chatRef} currentUser={currentUser} storeOwner={storeOwner} activeStoreId={activeStoreId} />
+            <FloatingChat ref={chatRef} currentUser={currentUser} storeOwner={storeOwner} activeStoreId={activeStoreId} employees={allStoresData[activeStoreId || '']?.settings.employees || []} onlineUsers={onlineUsers} />
             {showIosInstallModal && <IosInstallPrompt onClose={() => setShowIosInstallModal(false)} />}
         </div>
     );

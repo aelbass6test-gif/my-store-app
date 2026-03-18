@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User, Settings, ChatMessage, Employee } from '../types';
 // FIX: Import `MessageSquare` icon from `lucide-react` to fix 'Cannot find name' error.
-import { Send, User as UserIcon, Search, CornerDownLeft, MessageSquare } from 'lucide-react';
+import { Send, User as UserIcon, Search, CornerDownLeft, MessageSquare, Paperclip } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface TeamChatPageProps {
@@ -16,16 +16,17 @@ interface TeamChatPageProps {
 
 const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId, settings, users }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [activeChat, setActiveChat] = useState<Employee | null>(null);
+  const [activeChat, setActiveChat] = useState<Employee | 'general' | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const chatBodyRef = useRef<HTMLDivElement>(null);
+  const notificationSound = useRef(new Audio('https://actions.google.com/sounds/v1/notifications/beep_short.ogg'));
 
   useEffect(() => {
-    // Filter out the owner/current user from the employee list
+    // Filter out the current user from the employee list, assuming currentUser.email or phone matches employee.email or phone
     if (currentUser) {
-      setEmployees(settings.employees.filter(e => e.id !== currentUser.phone && e.status === 'active'));
+      setEmployees(settings.employees.filter(e => e.email !== currentUser.email));
     }
   }, [settings.employees, currentUser]);
 
@@ -45,12 +46,18 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
     setLoading(true);
 
     const fetchMessages = async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('chat_messages')
         .select('*')
-        .eq('store_id', activeStoreId)
-        .or(`and(sender_id.eq.${currentUser.phone},receiver_id.eq.${activeChat.id}),and(sender_id.eq.${activeChat.id},receiver_id.eq.${currentUser.phone})`)
-        .order('created_at', { ascending: true });
+        .eq('store_id', activeStoreId);
+
+      if (activeChat === 'general') {
+        query = query.eq('receiver_id', 'general');
+      } else {
+        query = query.or(`and(sender_id.eq.${currentUser.phone},receiver_id.eq.${activeChat.id}),and(sender_id.eq.${activeChat.id},receiver_id.eq.${currentUser.phone})`);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: true });
       
       if (error) {
         console.error('Error fetching messages:', error);
@@ -62,7 +69,7 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
 
     fetchMessages();
 
-    const channel = supabase.channel(`team-chat:${activeStoreId}:${currentUser.phone}:${activeChat.id}`);
+    const channel = supabase.channel(`team-chat:${activeStoreId}:${currentUser.phone}:${activeChat === 'general' ? 'general' : activeChat.id}`);
     const subscription = channel
       .on('postgres_changes', { 
           event: 'INSERT', 
@@ -72,9 +79,21 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
       }, 
       (payload) => {
           const newMessage = payload.new as ChatMessage;
-          if ((newMessage.sender_id === currentUser.phone && newMessage.receiver_id === activeChat.id) || 
+          let isRelevant = false;
+          if (activeChat === 'general') {
+            if (newMessage.receiver_id === 'general') {
+              isRelevant = true;
+            }
+          } else if ((newMessage.sender_id === currentUser.phone && newMessage.receiver_id === activeChat.id) || 
               (newMessage.sender_id === activeChat.id && newMessage.receiver_id === currentUser.phone)) {
-              setMessages(prev => [...prev, newMessage]);
+              isRelevant = true;
+          }
+          
+          if (isRelevant) {
+            setMessages(prev => [...prev, newMessage]);
+            if (newMessage.sender_id !== currentUser.phone) {
+                notificationSound.current.play().catch(e => console.error('Error playing sound:', e));
+            }
           }
       })
       .subscribe();
@@ -95,7 +114,7 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
       .insert({
           store_id: activeStoreId,
           sender_id: currentUser.phone,
-          receiver_id: activeChat.id,
+          receiver_id: activeChat === 'general' ? 'general' : activeChat.id,
           content: content,
       });
 
@@ -114,14 +133,25 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
             <h2 className="font-bold text-lg text-slate-800 dark:text-white">محادثات الموظفين</h2>
           </div>
           <div className="flex-1 overflow-y-auto">
+            <button onClick={() => setActiveChat('general')} className={`w-full text-right p-4 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-800 ${activeChat === 'general' ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
+              <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 rounded-full flex items-center justify-center font-bold text-sm">
+                <MessageSquare size={20} />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-800 dark:text-white text-sm">دردشة الفريق العامة</h4>
+              </div>
+            </button>
             {employees.map(employee => (
-              <button key={employee.id} onClick={() => setActiveChat(employee)} className={`w-full text-right p-4 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-800 ${activeChat?.id === employee.id ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
-                <div className="w-10 h-10 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center font-bold text-slate-500 text-sm">
-                  {employee.name.substring(0, 2)}
+              <button key={employee.id} onClick={() => setActiveChat(employee)} className={`w-full text-right p-4 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-800 ${activeChat !== 'general' && activeChat?.id === employee.id ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
+                <div className="relative">
+                  <div className="w-10 h-10 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center font-bold text-slate-500 text-sm">
+                    {employee.name.substring(0, 2)}
+                  </div>
+                  <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 ${employee.status === 'active' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                 </div>
                 <div>
                   <h4 className="font-bold text-slate-800 dark:text-white text-sm">{employee.name}</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{employee.status === 'active' ? 'متصل' : 'غير متصل'}</p>
                 </div>
               </button>
             ))}
@@ -133,9 +163,11 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
           {activeChat ? (
             <>
               <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 flex-shrink-0 bg-slate-50 dark:bg-slate-800/50">
-                <div className="w-10 h-10 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center font-bold text-slate-500 text-sm">{activeChat.name.substring(0, 2)}</div>
+                <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 rounded-full flex items-center justify-center font-bold text-sm">
+                  {activeChat === 'general' ? <MessageSquare size={20} /> : activeChat.name.substring(0, 2)}
+                </div>
                 <div>
-                  <h3 className="font-bold text-slate-800 dark:text-white">{activeChat.name}</h3>
+                  <h3 className="font-bold text-slate-800 dark:text-white">{activeChat === 'general' ? 'دردشة الفريق العامة' : activeChat.name}</h3>
                   <p className="text-xs text-emerald-500">متصل</p>
                 </div>
               </div>
@@ -163,6 +195,9 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
                   />
                   <button onClick={handleSendMessage} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-indigo-600 text-white rounded-lg disabled:bg-slate-400" disabled={!newMessage.trim()}>
                     <Send size={16} />
+                  </button>
+                  <button className="absolute left-12 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-600">
+                    <Paperclip size={16} />
                   </button>
                 </div>
               </div>

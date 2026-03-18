@@ -38,6 +38,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
           <DatabaseManagementCard onSync={onManualSave} />
       )}
       <CommunicationSettingsCard settings={settings} setSettings={setSettings} />
+      <EmployeeDashboardSettingsCard settings={settings} setSettings={setSettings} />
       <PlatformIntegrationCard 
         integration={settings.integration} 
         onSave={handleIntegrationSave} 
@@ -47,6 +48,42 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
       <DangerZone activeStore={activeStore} />
     </div>
   );
+};
+
+const EmployeeDashboardSettingsCard: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
+    const dashboardSettings = settings.employeeDashboardSettings || { showAssignedOrders: true, showFollowUpReminders: true, showOrderStatuses: ['في_انتظار_المكالمة', 'جاري_المراجعة', 'قيد_التنفيذ'] };
+
+    const toggleSetting = (key: keyof typeof dashboardSettings) => {
+        setSettings(prev => ({
+            ...prev,
+            employeeDashboardSettings: {
+                ...prev.employeeDashboardSettings,
+                [key]: !dashboardSettings[key]
+            }
+        }));
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400 mb-6 border-b border-slate-200 dark:border-slate-800 pb-6">
+                <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg"><Users size={24}/></div>
+                <div>
+                    <h2 className="text-xl font-black dark:text-white">إعدادات لوحة تحكم الموظفين</h2>
+                    <p className="text-xs text-slate-500">تخصيص المعلومات التي تظهر للموظفين في لوحة التحكم.</p>
+                </div>
+            </div>
+            <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-700 dark:text-slate-300">عرض الطلبات المعينة</span>
+                    <ToggleButton active={dashboardSettings.showAssignedOrders} onToggle={() => toggleSetting('showAssignedOrders')} variant="blue" />
+                </div>
+                <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-700 dark:text-slate-300">عرض تذكيرات المتابعة</span>
+                    <ToggleButton active={dashboardSettings.showFollowUpReminders} onToggle={() => toggleSetting('showFollowUpReminders')} variant="blue" />
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const DatabaseManagementCard: React.FC<{ onSync: () => Promise<{ success: boolean, error?: string } | void> }> = ({ onSync }) => {

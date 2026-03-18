@@ -224,13 +224,11 @@ const ProductsSection: React.FC<{ settings: Settings, searchTerm: string, custom
             
             <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                 {settings.collections.length > 0 && (
-                    <div className="flex justify-center overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">
-                        <div className="flex flex-nowrap gap-3">
-                            <button onClick={() => setActiveCollectionId('all')} className={`px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${activeCollectionId === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300'}`}>الكل</button>
-                            {settings.collections.map(col => (
-                                <button key={col.id} onClick={() => setActiveCollectionId(col.id)} className={`px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${activeCollectionId === col.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300'}`}>{col.name}</button>
-                            ))}
-                        </div>
+                    <div className="flex justify-center flex-wrap gap-3 pb-2 -mx-4 px-4">
+                        <button onClick={() => setActiveCollectionId('all')} className={`px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${activeCollectionId === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300'}`}>الكل</button>
+                        {settings.collections.map(col => (
+                            <button key={col.id} onClick={() => setActiveCollectionId(col.id)} className={`px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${activeCollectionId === col.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300'}`}>{col.name}</button>
+                        ))}
                     </div>
                 )}
                  <div className="flex-shrink-0 flex items-center gap-2">

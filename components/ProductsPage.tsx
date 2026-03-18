@@ -514,7 +514,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
                 <div key={product.id} className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4 space-y-3">
                   <div className="flex gap-4">
                     <div className="flex-1">
-                      <h3 className="font-bold text-slate-800 dark:text-slate-200 line-clamp-2 mb-2">{product.name}</h3>
+                      <h3 className="font-black text-slate-900 dark:text-slate-100 line-clamp-2 mb-2">{product.name}</h3>
                       {collection && <span className="text-xs font-bold px-2 py-1 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg mt-1 inline-block">{collection.name}</span>}
                     </div>
                     {product.thumbnail ? (
@@ -526,18 +526,18 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
                     )}
                   </div>
                   <div className="grid grid-cols-3 gap-3 text-center border-t border-slate-100 dark:border-slate-800 pt-3">
-                    <div>
-                      <p className="text-xs font-bold text-slate-400">السعر</p>
-                      <p className="font-bold text-indigo-600 dark:text-indigo-400">{product.price.toLocaleString()} ج.م</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-400">المخزون</p>
-                      <p className={`font-bold ${product.stockQuantity > 0 ? 'text-slate-700 dark:text-slate-300' : 'text-red-500'}`}>{product.stockQuantity}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-400">SKU</p>
-                      <p className="font-mono text-xs text-slate-500 dark:text-slate-400 truncate">{product.sku}</p>
-                    </div>
+<div>
+  <p className="text-xs font-black text-slate-500 dark:text-slate-400">السعر</p>
+  <p className="font-black text-indigo-700 dark:text-indigo-300">{product.price.toLocaleString()} ج.م</p>
+</div>
+<div>
+  <p className="text-xs font-black text-slate-500 dark:text-slate-400">المخزون</p>
+  <p className={`font-black ${product.stockQuantity > 0 ? 'text-slate-900 dark:text-slate-100' : 'text-red-600'}`}>{product.stockQuantity}</p>
+</div>
+<div>
+  <p className="text-xs font-black text-slate-500 dark:text-slate-400">SKU</p>
+  <p className="font-mono text-xs text-slate-700 dark:text-slate-200 truncate">{product.sku}</p>
+</div>
                   </div>
                   <div className="flex items-center gap-2 justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
                     <button onClick={() => handleGeneratePost(product)} disabled={isGenerating} className="p-2 text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all" title="إنشاء منشور تسويقي">
