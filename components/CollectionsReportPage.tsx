@@ -44,7 +44,7 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
     const fee = taxableAmount * rate;
     const totalWithTax = fee * (1 + tax);
     
-    return Math.round(totalWithTax * 100) / 100;
+    return totalWithTax;
   };
 
   const collectedOrders = useMemo(() => {
@@ -250,7 +250,7 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
                </div>
                <div className="flex justify-between items-center text-sm font-bold pb-2 border-b dark:border-slate-800">
                   <span className="text-slate-500">رسوم التأمين:</span>
-                  <span className="text-red-500">-{selectedBreakdown.insuranceFee.toFixed(2)} ج.م</span>
+                  <span className="text-red-500">-{selectedBreakdown.insuranceFee.toLocaleString()} ج.م</span>
                </div>
                <div className="flex justify-between items-center text-sm font-bold pb-2 border-b dark:border-slate-800">
                   <span className="text-slate-500">رسوم المعاينة:</span>
@@ -260,7 +260,7 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
                </div>
                <div className="flex justify-between items-center text-sm font-bold pb-2 border-b dark:border-slate-800">
                   <span className="text-slate-500">رسوم تحصيل COD:</span>
-                  <span className="text-red-500">-{selectedBreakdown.codFee.toFixed(2)} ج.م</span>
+                  <span className="text-red-500">-{selectedBreakdown.codFee.toLocaleString()} ج.م</span>
                </div>
                <div className="bg-blue-600 p-4 rounded-xl text-white flex justify-between items-center mt-4">
                   <span className="font-black uppercase tracking-widest text-xs">صافي الربح النهائي</span>
