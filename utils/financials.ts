@@ -15,7 +15,7 @@ export const calculateCodFee = (order: Order, settings: Settings): number => {
     if (totalAmount <= threshold) return 0;
     const taxableAmount = totalAmount - threshold;
     const fee = taxableAmount * rate;
-    return Math.round((fee * (1 + tax)) * 100) / 100;
+    return fee * (1 + tax);
 };
 
 export const calculateOrderProfitLoss = (order: Order, settings: Settings): { profit: number; loss: number; net: number } => {
