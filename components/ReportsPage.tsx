@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { Order, Settings, Wallet, Store } from '../types';
-import { FileText, TrendingUp, Package, Truck, DollarSign, ArrowUp, ArrowDown, PieChart as PieChartIcon, Printer, AlertTriangle, MapPin, Calendar, Wallet as WalletIcon } from 'lucide-react';
+import { FileText, TrendingUp, Package, Truck, DollarSign, ArrowUp, ArrowDown, PieChart as PieChartIcon, Printer, AlertTriangle, MapPin, Calendar, Wallet as WalletIcon, Download, Loader2 } from 'lucide-react';
 import { calculateOrderProfitLoss, calculateCodFee } from '../utils/financials';
 import { generateLossesReportHTML, generateComprehensiveFinancialReportHTML } from '../utils/reportGenerator';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 
 interface ReportsPageProps {
@@ -12,7 +14,7 @@ interface ReportsPageProps {
   activeStore?: Store;
 }
 
-const ReportCard: React.FC<{ title: string; value: string; icon: React.ReactNode; subValue?: string; color: 'emerald' | 'red' | 'amber' | 'blue' }> = ({ title, value, icon, subValue, color }) => {
+const ReportCard: React.FC<{ title: string; value: string; icon: React.ReactNode; subValue?: string; color: 'emerald' | 'red' | 'amber' | 'blue'; tooltip?: string }> = ({ title, value, icon, subValue, color, tooltip }) => {
     const colorClasses = {
         emerald: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-600', border: 'border-emerald-200 dark:border-emerald-800' },
         red: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-600', border: 'border-red-200 dark:border-red-800' },
@@ -22,10 +24,13 @@ const ReportCard: React.FC<{ title: string; value: string; icon: React.ReactNode
     const currentColors = colorClasses[color];
 
     return (
-        <div className={`p-6 rounded-2xl border ${currentColors.border} bg-white dark:bg-slate-900 shadow-sm`}>
+        <div className={`p-6 rounded-2xl border ${currentColors.border} bg-white dark:bg-slate-900 shadow-sm relative group`} title={tooltip}>
             <div className="flex justify-between items-start">
                 <div className="space-y-1">
-                    <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400">{title}</h3>
+                    <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                        {title}
+                        {tooltip && <span className="text-slate-300 cursor-help">ⓘ</span>}
+                    </h3>
                     <p className="text-3xl font-black text-slate-800 dark:text-white">{value}</p>
                     {subValue && <p className="text-xs font-bold text-slate-400 dark:text-slate-500">{subValue}</p>}
                 </div>
@@ -133,11 +138,11 @@ const SalesSummaryReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ o
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                <ReportCard title="إجمالي الأرباح" value={`${reportData.totalProfit.toLocaleString('ar-EG')} ج.م`} icon={<ArrowUp size={24}/>} color='emerald' />
-                <ReportCard title="إجمالي الخسائر" value={`${reportData.totalLoss.toLocaleString('ar-EG')} ج.م`} icon={<ArrowDown size={24}/>} color='red' />
-                <ReportCard title="مبيعات المنتجات" value={`${reportData.totalProductRevenue.toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color='blue' />
-                <ReportCard title="إجمالي المصروفات" value={`${reportData.totalExpenses.toLocaleString('ar-EG')} ج.م`} icon={<DollarSign size={24}/>} color='amber' />
-                <ReportCard title="صافي المركز المالي" value={`${reportData.netFinancial.toLocaleString('ar-EG')} ج.م`} icon={<PieChartIcon size={24}/>} color='blue' />
+                <ReportCard title="إجمالي الأرباح" value={`${reportData.totalProfit.toLocaleString('ar-EG')} ج.م`} icon={<ArrowUp size={24}/>} color='emerald' tooltip="مجموع الأرباح الصافية من جميع الطلبات الناجحة (بعد خصم تكلفة المنتجات ومصاريف الشحن والرسوم)." />
+                <ReportCard title="إجمالي الخسائر" value={`${reportData.totalLoss.toLocaleString('ar-EG')} ج.م`} icon={<ArrowDown size={24}/>} color='red' tooltip="مجموع مصاريف الشحن المهدرة للطلبات المرتجعة والفاشلة." />
+                <ReportCard title="مبيعات المنتجات" value={`${reportData.totalProductRevenue.toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color='blue' tooltip="إجمالي قيمة المنتجات المباعة في الطلبات الناجحة (بالسعر الأساسي)." />
+                <ReportCard title="إجمالي المصروفات" value={`${reportData.totalExpenses.toLocaleString('ar-EG')} ج.م`} icon={<DollarSign size={24}/>} color='amber' tooltip="مجموع المصروفات الإدارية المسجلة (إعلانات، رواتب، إلخ)." />
+                <ReportCard title="صافي المركز المالي" value={`${reportData.netFinancial.toLocaleString('ar-EG')} ج.م`} icon={<PieChartIcon size={24}/>} color='blue' tooltip="الربح النهائي بعد خصم الخسائر والمصروفات من إجمالي الأرباح (إجمالي الأرباح - إجمالي الخسائر - إجمالي المصروفات)." />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -198,6 +203,10 @@ const SalesSummaryReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ o
 };
 
 const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, settings, activeStore }) => {
+    const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
+    const [isContinuous, setIsContinuous] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    
     const failedOrders = useMemo(() => {
         return orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status))
             .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -212,9 +221,28 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
         return { totalLoss, count: failedOrders.length };
     }, [failedOrders, settings]);
 
+    const handleExportPDF = async () => {
+        setIsExporting(true);
+        try {
+            const storeName = activeStore?.name || 'متجري';
+            const html = generateLossesReportHTML(failedOrders, settings, storeName, orientation, isContinuous);
+            
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.write(html);
+                printWindow.document.close();
+            }
+        } catch (error) {
+            console.error('PDF Export Error:', error);
+            handlePrint();
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     const handlePrint = () => {
         const storeName = activeStore?.name || 'متجري';
-        const html = generateLossesReportHTML(failedOrders, settings, storeName);
+        const html = generateLossesReportHTML(failedOrders, settings, storeName, orientation);
         const win = window.open('', '_blank');
         if(win) {
             win.document.write(html);
@@ -228,13 +256,58 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-slate-700 dark:text-white">تفاصيل الخسائر من الطلبات المرتجعة والفاشلة</h2>
-                <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-all">
-                    <Printer size={16}/> طباعة التقرير
-                </button>
+                <div className="flex items-center gap-4">
+                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <button 
+                            onClick={() => setIsContinuous(false)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${!isContinuous ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            صفحات
+                        </button>
+                        <button 
+                            onClick={() => setIsContinuous(true)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${isContinuous ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            متصل
+                        </button>
+                    </div>
+                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <button 
+                            onClick={() => setOrientation('portrait')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${orientation === 'portrait' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            طولي
+                        </button>
+                        <button 
+                            onClick={() => setOrientation('landscape')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${orientation === 'landscape' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            عرضي
+                        </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={handleExportPDF} 
+                            disabled={isExporting}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 dark:shadow-none disabled:opacity-50"
+                        >
+                            {isExporting ? <Loader2 size={16} className="animate-spin"/> : <Download size={16}/>}
+                            تصدير PDF
+                        </button>
+                        <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">
+                            <Printer size={16}/> طباعة
+                        </button>
+                    </div>
+                </div>
             </div>
+            
+            <div className="text-sm text-slate-600 dark:text-slate-400 bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border-r-4 border-red-500">
+                <strong>شرح توضيحي:</strong> يعرض هذا القسم تفاصيل الطلبات التي لم تنجح (مرتجع، فشل توصيل). يوضح تكلفة الشحن المهدرة وأي رسوم أخرى تحملتها، مع توضيح المنتجات والكميات المرتجعة في كل طلب لتسهيل مراجعة المخزون.
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <ReportCard title="إجمالي الخسائر المقدرة" value={`${stats.totalLoss.toLocaleString('ar-EG')} ج.م`} icon={<ArrowDown size={24}/>} color="red" />
-                <ReportCard title="عدد الطلبات الفاشلة/المرتجعة" value={stats.count.toString()} icon={<AlertTriangle size={24}/>} color="amber" />
+                <ReportCard title="إجمالي الخسائر المقدرة" value={`${stats.totalLoss.toLocaleString('ar-EG')} ج.م`} icon={<ArrowDown size={24}/>} color="red" tooltip="إجمالي المبالغ المهدرة على مصاريف الشحن للطلبات التي لم يتم تسليمها." />
+                <ReportCard title="عدد الطلبات الفاشلة/المرتجعة" value={stats.count.toString()} icon={<AlertTriangle size={24}/>} color="amber" tooltip="إجمالي عدد الطلبات التي حالتها مرتجع أو فشل توصيل." />
             </div>
              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800">
@@ -244,16 +317,16 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
                     <table className="w-full text-right">
                         <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-[10px] font-black uppercase tracking-wider">
                            <tr>
-                                <th className="px-4 py-3">العميل</th>
-                                <th className="px-4 py-3">المنتجات</th>
-                                <th className="px-4 py-3 text-center">الكمية</th>
-                                <th className="px-4 py-3">السعر</th>
-                                <th className="px-4 py-3">الشحن</th>
-                                <th className="px-4 py-3">تأمين/معاينة</th>
-                                <th className="px-4 py-3">التكلفة</th>
-                                <th className="px-4 py-3">الحالة</th>
-                                <th className="px-4 py-3">الدفع</th>
-                                <th className="px-4 py-3 text-center">الخسارة/التحصيل</th>
+                                <th className="px-4 py-3" title="اسم العميل ورقم هاتفه.">العميل</th>
+                                <th className="px-4 py-3" title="المنتجات التي تم طلبها.">المنتجات</th>
+                                <th className="px-4 py-3 text-center" title="إجمالي عدد القطع في الطلب.">الكمية</th>
+                                <th className="px-4 py-3" title="سعر بيع المنتجات للعميل.">السعر</th>
+                                <th className="px-4 py-3" title="تكلفة الشحن المدفوعة لشركة الشحن.">الشحن</th>
+                                <th className="px-4 py-3" title="رسوم التأمين والمعاينة إن وجدت.">تأمين/معاينة</th>
+                                <th className="px-4 py-3" title="تكلفة البضاعة الأصلية (سعر الجملة).">التكلفة</th>
+                                <th className="px-4 py-3" title="حالة الطلب الحالية.">الحالة</th>
+                                <th className="px-4 py-3" title="حالة تحصيل الأموال من شركة الشحن.">الدفع</th>
+                                <th className="px-4 py-3 text-center" title="قيمة الخسارة الناتجة عن هذا الطلب (عادة مصاريف الشحن المهدرة).">الخسارة/التحصيل</th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -271,14 +344,13 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
                                     const isInsured = order.isInsured ?? true;
                                     const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
 
-                                    const products = order.items.map(i => i.name).join(' + ') || order.productName;
-                                    const quantities = order.items.map(i => i.quantity).join(' + ') || '1';
+                                    const productsList = order.items.map(i => `${i.name} (الكمية: ${i.quantity})`).join(' + ') || order.productName;
 
                                     return (
                                         <tr key={order.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 text-xs">
                                             <td className="px-4 py-3 font-bold text-slate-800 dark:text-white">{order.customerName}</td>
-                                            <td className="px-4 py-3 text-slate-500 max-w-[150px] truncate" title={products}>{products}</td>
-                                            <td className="px-4 py-3 text-center font-mono">{quantities}</td>
+                                            <td className="px-4 py-3 text-slate-500 max-w-[200px] truncate" title={productsList}>{productsList}</td>
+                                            <td className="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-300">{order.items.reduce((sum, item) => sum + item.quantity, 0)}</td>
                                             <td className="px-4 py-3 font-mono">{order.productPrice.toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono">{order.shippingFee.toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono">{(insuranceFee + inspectionCost).toLocaleString()}</td>
@@ -306,6 +378,10 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
 };
 
 const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wallet, activeStore }) => {
+    const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
+    const [isContinuous, setIsContinuous] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    
     const stats = useMemo(() => {
         const collectedOrders = orders.filter(o => o.status === 'تم_التحصيل');
         const failedOrders = orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status));
@@ -480,9 +556,28 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
         };
     }, [orders, settings, wallet]);
 
+    const handleExportPDF = async () => {
+        setIsExporting(true);
+        try {
+            const storeName = activeStore?.name || 'متجري';
+            const html = generateComprehensiveFinancialReportHTML(orders, settings, wallet, storeName, orientation, isContinuous);
+            
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.write(html);
+                printWindow.document.close();
+            }
+        } catch (error) {
+            console.error('PDF Export Error:', error);
+            handlePrint();
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     const handlePrint = () => {
         const storeName = activeStore?.name || 'متجري';
-        const html = generateComprehensiveFinancialReportHTML(orders, settings, wallet, storeName);
+        const html = generateComprehensiveFinancialReportHTML(orders, settings, wallet, storeName, orientation);
         const win = window.open('', '_blank');
         if (win) {
             win.document.write(html);
@@ -496,160 +591,273 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-slate-700 dark:text-white">ملخص الأداء المالي الشامل</h2>
-                <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-all">
-                    <Printer size={16}/> طباعة التقرير
-                </button>
-            </div>
-
-            {/* 1. Sales & Revenue Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <ReportCard title="إجمالي مبيعات المنتجات" value={`${(stats.totalProductRevenue + stats.totalExtraMarkup).toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color="blue" subValue="ثمن البيع (الأساسي + الزيادة)" />
-                <ReportCard title="مبيعات المنتجات (بالأساسي)" value={`${stats.totalProductRevenue.toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color="blue" subValue="أصل ثمن البيع قبل الزيادة" />
-                <ReportCard title="الربح الإضافي (الزيادة)" value={`${stats.totalExtraMarkup.toLocaleString('ar-EG')} ج.م`} icon={<TrendingUp size={24}/>} color="emerald" subValue="الفرق بين سعر البيع والأساسي" />
-                <ReportCard title="تحصيل الشحن" value={`${stats.totalShippingRevenue.toLocaleString('ar-EG')} ج.م`} icon={<Truck size={24}/>} color="blue" subValue="المبالغ المدفوعة للشحن" />
-            </div>
-
-            {/* 2. Fees Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <ReportCard title="إجمالي التأمين (ناجح)" value={`${stats.totalInsuranceFees.toLocaleString('ar-EG')} ج.م`} icon={<FileText size={24}/>} color="blue" subValue="رسوم التأمين للطلبات المحصلة" />
-                <ReportCard title="إجمالي المعاينة (ناجح)" value={`${stats.totalInspectionFees.toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color="blue" subValue="رسوم المعاينة للطلبات المحصلة" />
-                <ReportCard title="إجمالي الـ COD (ناجح)" value={`${stats.totalCodFees.toLocaleString('ar-EG')} ج.م`} icon={<DollarSign size={24}/>} color="blue" subValue="رسوم التحصيل للطلبات المحصلة" />
-            </div>
-
-            {/* 3. Profit & Loss Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <ReportCard title="إجمالي الأرباح" value={`${stats.totalProfit.toLocaleString('ar-EG')} ج.م`} icon={<ArrowUp size={24}/>} color="emerald" subValue="من الطلبات الناجحة" />
-                <ReportCard title="إجمالي الخسائر" value={`${stats.totalLoss.toLocaleString('ar-EG')} ج.م`} icon={<ArrowDown size={24}/>} color="red" subValue="من المرتجعات والفشل" />
-                <ReportCard title="إجمالي تكلفة البضاعة" value={`${stats.totalCogs.toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color="blue" subValue="للطلبات التي تم تحصيلها" />
-                <ReportCard title="إجمالي المصروفات" value={`${stats.totalExpenses.toLocaleString('ar-EG')} ج.م`} icon={<DollarSign size={24}/>} color="amber" subValue="إعلانات، مرتبات، إلخ." />
-            </div>
-
-            {/* 4. Final Net Banner */}
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-8 rounded-2xl text-white text-center shadow-lg">
-                <h3 className="text-lg font-bold opacity-80">صافي الربح النهائي</h3>
-                <p className="text-5xl font-black tracking-tighter mt-2">{stats.finalNet.toLocaleString('ar-EG')} ج.م</p>
-                <p className="text-xs opacity-70 mt-2">(الأرباح - الخسائر - المصروفات)</p>
-                <div className="mt-4 pt-4 border-t border-white/20 text-sm">
-                    نقطة التعادل: تحتاج إلى <span className="font-black underline">{Math.ceil(stats.totalExpenses / (stats.totalProfit / stats.collectedOrdersCount || 1))}</span> أوردر ناجح إضافي لتغطية المصروفات.
+                <div className="flex items-center gap-4">
+                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <button 
+                            onClick={() => setIsContinuous(false)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${!isContinuous ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            صفحات
+                        </button>
+                        <button 
+                            onClick={() => setIsContinuous(true)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${isContinuous ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            متصل
+                        </button>
+                    </div>
+                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <button 
+                            onClick={() => setOrientation('portrait')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${orientation === 'portrait' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            طولي
+                        </button>
+                        <button 
+                            onClick={() => setOrientation('landscape')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${orientation === 'landscape' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            عرضي
+                        </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={handleExportPDF} 
+                            disabled={isExporting}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 dark:shadow-none disabled:opacity-50"
+                        >
+                            {isExporting ? <Loader2 size={16} className="animate-spin"/> : <FileText size={16}/>}
+                            تصدير PDF
+                        </button>
+                        <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">
+                            <Printer size={16}/> طباعة
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            {/* 5. KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className={`p-6 rounded-2xl border-2 text-center ${stats.successRate >= 70 ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/10 dark:border-emerald-800' : 'bg-red-50 border-red-200 dark:bg-red-900/10 dark:border-red-800'}`}>
-                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">نسبة نجاح التوصيل</h4>
-                    <p className={`text-3xl font-black ${stats.successRate >= 70 ? 'text-emerald-600' : 'text-red-600'}`}>{stats.successRate.toFixed(1)}%</p>
-                    <p className="text-[10px] mt-1 text-slate-400">{stats.successRate < 70 ? 'تحتاج لتحسين الشحن/التأكيد' : 'أداء ممتاز'}</p>
+            {/* Stage 1: Revenues */}
+            <div className="bg-blue-50/30 dark:bg-blue-900/5 p-6 rounded-3xl border border-blue-100 dark:border-blue-800/50">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-black shadow-lg">1</div>
+                    <div>
+                        <h3 className="text-lg font-black text-blue-900 dark:text-blue-100">المرحلة الأولى: الإيرادات والتدفقات (ماذا دخل إلينا؟)</h3>
+                        <p className="text-xs text-blue-600/70 dark:text-blue-400/70">كل المبالغ التي تم تحصيلها من العملاء قبل أي خصومات.</p>
+                    </div>
                 </div>
-                <div className="p-6 rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-center">
-                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">نسبة الخسارة إلى الربح</h4>
-                    <p className="text-3xl font-black text-red-600">{stats.lossRatio.toFixed(1)}%</p>
-                    <p className="text-[10px] mt-1 text-slate-400">المرتجعات تلتهم هذه النسبة من أرباحك</p>
-                </div>
-                <div className="p-6 rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-center">
-                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">متوسط الربح للطلب</h4>
-                    <p className="text-3xl font-black text-blue-600">{stats.avgProfitPerOrder.toLocaleString()} ج.م</p>
-                    <p className="text-[10px] mt-1 text-slate-400">صافي الربح الفعلي لكل طلب</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <ReportCard title="إجمالي مبيعات المنتجات" value={`${(stats.totalProductRevenue + stats.totalExtraMarkup).toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color="blue" subValue="ثمن البيع (الأساسي + الزيادة)" tooltip="إجمالي المبالغ التي تم بيع المنتجات بها للعملاء (السعر الأساسي للمنتج + أي زيادة أضفتها على السعر)." />
+                    <ReportCard title="مبيعات المنتجات (بالأساسي)" value={`${stats.totalProductRevenue.toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color="blue" subValue="أصل ثمن البيع قبل الزيادة" tooltip="إجمالي السعر الأساسي للمنتجات المباعة، بدون حساب أي زيادة إضافية قمت بوضعها." />
+                    <ReportCard title="الربح الإضافي (الزيادة)" value={`${stats.totalExtraMarkup.toLocaleString('ar-EG')} ج.م`} icon={<TrendingUp size={24}/>} color="emerald" subValue="الفرق بين سعر البيع والأساسي" tooltip="إجمالي الأرباح الناتجة عن بيع المنتجات بسعر أعلى من سعرها الأساسي الموصى به." />
+                    <ReportCard title="تحصيل الشحن" value={`${stats.totalShippingRevenue.toLocaleString('ar-EG')} ج.م`} icon={<Truck size={24}/>} color="blue" subValue="المبالغ المدفوعة للشحن" tooltip="إجمالي رسوم الشحن التي دفعها العملاء عند استلام الطلبات." />
                 </div>
             </div>
 
-            {/* 6. Wallet & Inventory */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-2xl border border-emerald-200 dark:border-emerald-800">
-                    <h4 className="font-bold text-emerald-800 dark:text-emerald-400 mb-1 flex items-center gap-2"><WalletIcon size={18}/> النقدية المحققة</h4>
-                    <p className="text-2xl font-black text-emerald-600">{(stats.totalCogs + stats.finalNet).toLocaleString()} ج.م</p>
-                    <p className="text-[10px] text-emerald-500 mt-1">تكلفة البضاعة المباعة + صافي الربح النهائي</p>
+            <div className="flex justify-center py-2">
+                <ArrowDown className="text-slate-300 animate-bounce" size={24} />
+            </div>
+
+            {/* Stage 2: Direct Costs */}
+            <div className="bg-slate-50/50 dark:bg-slate-800/20 p-6 rounded-3xl border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-slate-700 text-white rounded-full flex items-center justify-center font-black shadow-lg">2</div>
+                    <div>
+                        <h3 className="text-lg font-black text-slate-800 dark:text-slate-200">المرحلة الثانية: التكاليف المباشرة (ماذا خرج فوراً؟)</h3>
+                        <p className="text-xs text-slate-500">تكلفة البضاعة ومصاريف الشحن الأساسية للطلبات الناجحة.</p>
+                    </div>
                 </div>
-                <div className="bg-blue-50 dark:bg-blue-900/10 p-6 rounded-2xl border border-blue-200 dark:border-blue-800">
-                    <h4 className="font-bold text-blue-800 dark:text-blue-400 mb-1 flex items-center gap-2"><Truck size={18}/> مستحقات الشحن</h4>
-                    <p className="text-2xl font-black text-blue-600">{stats.pendingCollection.toLocaleString()} ج.م</p>
-                    <p className="text-[10px] text-blue-400 mt-1">مبالغ تم توصيلها ولم تُحصل بعد</p>
-                </div>
-                <div className="bg-amber-50 dark:bg-amber-900/10 p-6 rounded-2xl border border-amber-200 dark:border-amber-800">
-                    <h4 className="font-bold text-amber-800 dark:text-amber-400 mb-1 flex items-center gap-2"><Package size={18}/> قيمة المخزون</h4>
-                    <p className="text-2xl font-black text-amber-600">{stats.inventoryValue.toLocaleString()} ج.م</p>
-                    <p className="text-[10px] text-amber-500 mt-1">قيمة البضاعة المتاحة في المخزن</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <ReportCard title="إجمالي تكلفة البضاعة" value={`${stats.totalCogs.toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color="blue" subValue="للطلبات التي تم تحصيلها" tooltip="إجمالي التكلفة الأصلية للمنتجات (سعر الجملة) للطلبات التي تم تسليمها بنجاح." />
+                    <ReportCard title="مصاريف شحن الذهاب" value={`${stats.totalShippingRevenue.toLocaleString('ar-EG')} ج.م`} icon={<Truck size={24}/>} color="red" subValue="المدفوعة لشركات الشحن" tooltip="إجمالي مصاريف الشحن التي تم دفعها لشركات الشحن مقابل توصيل الطلبات الناجحة." />
                 </div>
             </div>
 
-            {/* 7. Unified Financial Statement */}
+            <div className="flex justify-center py-2">
+                <ArrowDown className="text-slate-300 animate-bounce" size={24} />
+            </div>
+
+            {/* Stage 3: Fees */}
+            <div className="bg-amber-50/30 dark:bg-amber-900/5 p-6 rounded-3xl border border-amber-100 dark:border-amber-800/50">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-amber-600 text-white rounded-full flex items-center justify-center font-black shadow-lg">3</div>
+                    <div>
+                        <h3 className="text-lg font-black text-amber-900 dark:text-amber-100">المرحلة الثالثة: الرسوم والأعباء (ماذا استنزف الربح؟)</h3>
+                        <p className="text-xs text-amber-600/70 dark:text-amber-400/70">رسوم الخدمات المخصومة من كل طلب ناجح.</p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <ReportCard title="إجمالي التأمين (ناجح)" value={`${stats.totalInsuranceFees.toLocaleString('ar-EG')} ج.م`} icon={<FileText size={24}/>} color="blue" subValue="رسوم التأمين للطلبات المحصلة" tooltip="إجمالي رسوم التأمين التي تم خصمها على الطلبات التي تم تسليمها بنجاح." />
+                    <ReportCard title="إجمالي المعاينة (ناجح)" value={`${stats.totalInspectionFees.toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color="blue" subValue="رسوم المعاينة للطلبات المحصلة" tooltip="إجمالي رسوم المعاينة التي تم خصمها على الطلبات التي تم تسليمها بنجاح." />
+                    <ReportCard title="إجمالي الـ COD (ناجح)" value={`${stats.totalCodFees.toLocaleString('ar-EG')} ج.م`} icon={<DollarSign size={24}/>} color="blue" subValue="رسوم التحصيل للطلبات المحصلة" tooltip="إجمالي رسوم الدفع عند الاستلام (COD) التي تم خصمها على الطلبات التي تم تسليمها بنجاح." />
+                </div>
+            </div>
+
+            <div className="flex justify-center py-2">
+                <ArrowDown className="text-slate-300 animate-bounce" size={24} />
+            </div>
+
+            {/* Stage 4: Losses & Expenses */}
+            <div className="bg-red-50/30 dark:bg-red-900/5 p-6 rounded-3xl border border-red-100 dark:border-red-800/50">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-red-600 text-white rounded-full flex items-center justify-center font-black shadow-lg">4</div>
+                    <div>
+                        <h3 className="text-lg font-black text-red-900 dark:text-red-100">المرحلة الرابعة: الخسائر والمصروفات العامة (التحديات الإدارية)</h3>
+                        <p className="text-xs text-red-600/70 dark:text-red-400/70">تكلفة المرتجعات والمصروفات الإدارية الثابتة.</p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <ReportCard title="إجمالي خسائر المرتجعات" value={`${stats.totalLoss.toLocaleString('ar-EG')} ج.م`} icon={<ArrowDown size={24}/>} color="red" subValue="شحن مهدر (فشل/مرتجع)" tooltip="إجمالي الخسائر الناتجة عن مصاريف الشحن المهدرة للطلبات التي لم يتم تسليمها." />
+                    <ReportCard title="إجمالي المصروفات الإدارية" value={`${stats.totalExpenses.toLocaleString('ar-EG')} ج.م`} icon={<DollarSign size={24}/>} color="amber" subValue="إعلانات، مرتبات، إلخ." tooltip="إجمالي المصروفات الإدارية المسجلة في المحفظة (مثل الإعلانات، الرواتب، الإيجار)." />
+                </div>
+
+                {/* Final Net Banner */}
+                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-8 rounded-2xl text-white text-center shadow-xl relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
+                    <h3 className="text-lg font-bold opacity-80 relative z-10">صافي الربح النهائي</h3>
+                    <p className="text-6xl font-black tracking-tighter mt-2 relative z-10">{stats.finalNet.toLocaleString('ar-EG')} ج.م</p>
+                    <p className="text-xs opacity-70 mt-2 relative z-10">(إجمالي الأرباح - إجمالي الخسائر - إجمالي المصروفات والرسوم)</p>
+                    <div className="mt-6 pt-6 border-t border-white/20 text-sm relative z-10">
+                        نقطة التعادل: تحتاج إلى <span className="font-black underline text-yellow-300">{Math.ceil(stats.totalExpenses / (stats.totalProfit / stats.collectedOrdersCount || 1))}</span> أوردر ناجح إضافي لتغطية المصروفات الإدارية.
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex justify-center py-2">
+                <ArrowDown className="text-slate-300 animate-bounce" size={24} />
+            </div>
+
+            {/* Stage 5: Analysis */}
+            <div className="bg-emerald-50/30 dark:bg-emerald-900/5 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-800/50">
+                <div className="flex items-center gap-3 mb-8">
+                    <div className="w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center font-black shadow-lg">5</div>
+                    <div>
+                        <h3 className="text-lg font-black text-emerald-900 dark:text-emerald-100">المرحلة الخامسة: تحليل الأداء والنمو (كيف نتحسن؟)</h3>
+                        <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70">مؤشرات الأداء وتحليل البيانات لاتخاذ قرارات أفضل.</p>
+                    </div>
+                </div>
+
+                {/* KPIs */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div className={`p-6 rounded-2xl border-2 text-center relative group ${stats.successRate >= 70 ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/10 dark:border-emerald-800' : 'bg-red-50 border-red-200 dark:bg-red-900/10 dark:border-red-800'}`} title="نسبة الطلبات التي تم تسليمها بنجاح من إجمالي الطلبات.">
+                        <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex items-center justify-center gap-1">نسبة نجاح التوصيل <span className="text-slate-300 cursor-help">ⓘ</span></h4>
+                        <p className={`text-3xl font-black ${stats.successRate >= 70 ? 'text-emerald-600' : 'text-red-600'}`}>{stats.successRate.toFixed(1)}%</p>
+                        <p className="text-[10px] mt-1 text-slate-400">{stats.successRate < 70 ? 'تحتاج لتحسين الشحن/التأكيد' : 'أداء ممتاز'}</p>
+                    </div>
+                    <div className="p-6 rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-center relative group" title="نسبة الخسائر (المرتجعات) مقارنة بإجمالي الأرباح التشغيلية. كلما قلت النسبة كان أفضل.">
+                        <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex items-center justify-center gap-1">نسبة الخسارة إلى الربح <span className="text-slate-300 cursor-help">ⓘ</span></h4>
+                        <p className="text-3xl font-black text-red-600">{stats.lossRatio.toFixed(1)}%</p>
+                        <p className="text-[10px] mt-1 text-slate-400">المرتجعات تلتهم هذه النسبة من أرباحك</p>
+                    </div>
+                    <div className="p-6 rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-center relative group" title="متوسط الربح الصافي الذي تحققه من كل طلب (بما في ذلك الطلبات الفاشلة).">
+                        <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex items-center justify-center gap-1">متوسط الربح للطلب <span className="text-slate-300 cursor-help">ⓘ</span></h4>
+                        <p className="text-3xl font-black text-blue-600">{stats.avgProfitPerOrder.toLocaleString()} ج.م</p>
+                        <p className="text-[10px] mt-1 text-slate-400">صافي الربح الفعلي لكل طلب</p>
+                    </div>
+                </div>
+
+                {/* Wallet & Inventory */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div className="bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-2xl border border-emerald-200 dark:border-emerald-800">
+                        <h4 className="font-bold text-emerald-800 dark:text-emerald-400 mb-1 flex items-center gap-2"><WalletIcon size={18}/> النقدية المحققة</h4>
+                        <p className="text-2xl font-black text-emerald-600">{(stats.totalCogs + stats.finalNet).toLocaleString()} ج.م</p>
+                        <p className="text-[10px] text-emerald-500 mt-1">تكلفة البضاعة المباعة + صافي الربح النهائي</p>
+                    </div>
+                    <div className="bg-blue-50 dark:bg-blue-900/10 p-6 rounded-2xl border border-blue-200 dark:border-blue-800">
+                        <h4 className="font-bold text-blue-800 dark:text-blue-400 mb-1 flex items-center gap-2"><Truck size={18}/> مستحقات الشحن</h4>
+                        <p className="text-2xl font-black text-blue-600">{stats.pendingCollection.toLocaleString()} ج.م</p>
+                        <p className="text-[10px] text-blue-400 mt-1">مبالغ تم توصيلها ولم تُحصل بعد</p>
+                    </div>
+                    <div className="bg-amber-50 dark:bg-amber-900/10 p-6 rounded-2xl border border-amber-200 dark:border-amber-800">
+                        <h4 className="font-bold text-amber-800 dark:text-amber-400 mb-1 flex items-center gap-2"><Package size={18}/> قيمة المخزون</h4>
+                        <p className="text-2xl font-black text-amber-600">{stats.inventoryValue.toLocaleString()} ج.م</p>
+                        <p className="text-[10px] text-amber-500 mt-1">قيمة البضاعة المتاحة في المخزن</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* 6. Unified Financial Statement */}
             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                 <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                     <FileText className="text-blue-500"/> القائمة المالية الموحدة (Unified Financial Statement)
                 </h3>
+                
+                <div className="text-sm text-slate-600 dark:text-slate-400 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6 border-r-4 border-blue-500">
+                    <strong>شرح توضيحي:</strong> هذه القائمة توضح حركة الأموال بالتفصيل. تبدأ بـ <b>الإيرادات</b> (كل ما تم تحصيله)، ثم نخصم منها <b>تكلفة المبيعات</b> (ثمن البضاعة ومصاريف الشحن) لنصل إلى <b>الربح التشغيلي</b> (أرباحك الصافية من الطلبات الناجحة). أخيراً نخصم <b>الخسائر والمصروفات والرسوم</b> لنصل إلى <b>صافي الربح النهائي</b>.
+                </div>
+
                 <div className="overflow-x-auto">
                     <table className="w-full text-right border-collapse">
                         <tbody>
                             <tr className="bg-slate-100 dark:bg-slate-800 font-bold">
-                                <td className="p-3 border border-slate-200 dark:border-slate-700" colSpan={2}>1. التدفقات النقدية الداخلة (Total Inflow)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700" colSpan={2} title="إجمالي الأموال التي دخلت إلى النظام من الطلبات الناجحة.">1. الإيرادات (Revenues)</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">إجمالي مبيعات المنتجات (بالسعر الأساسي)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8" title="إجمالي قيمة المنتجات المباعة بالسعر الأساسي.">إجمالي مبيعات المنتجات (بالسعر الأساسي)</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700 text-emerald-600 font-bold">+{stats.totalProductRevenue.toLocaleString()} ج.م</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">(+) الزيادة في السعر (ربح إضافي)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8" title="إجمالي الأرباح الناتجة عن بيع المنتجات بسعر أعلى من سعرها الأساسي.">(+) الزيادة في السعر (ربح إضافي)</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700 text-emerald-600 font-bold">+{stats.totalExtraMarkup.toLocaleString()} ج.م</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">إجمالي تحصيل الشحن من العملاء</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8" title="إجمالي رسوم الشحن التي دفعها العملاء.">إجمالي تحصيل الشحن من العملاء</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700 text-emerald-600 font-bold">+{stats.totalShippingRevenue.toLocaleString()} ج.م</td>
                             </tr>
                             <tr className="bg-slate-50 dark:bg-slate-800/50 font-bold">
-                                <td className="p-3 border border-slate-200 dark:border-slate-700">(=) إجمالي التحصيل من العملاء</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700" title="مجموع الإيرادات بالكامل.">(=) إجمالي الإيرادات (Total Revenue)</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700">{(stats.totalProductRevenue + stats.totalExtraMarkup + stats.totalShippingRevenue).toLocaleString()} ج.م</td>
                             </tr>
 
                             <tr className="bg-slate-100 dark:bg-slate-800 font-bold">
-                                <td className="p-3 border border-slate-200 dark:border-slate-700" colSpan={2}>2. توزيع التحصيلات (Deductions & Dues)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700" colSpan={2} title="التكاليف المباشرة المرتبطة بالطلبات الناجحة.">2. تكلفة المبيعات (Cost of Goods Sold)</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">(-) إجمالي مستحقات الموردين (ثمن البضاعة)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8" title="إجمالي التكلفة الأصلية للمنتجات (سعر الجملة).">(-) إجمالي مستحقات الموردين (ثمن البضاعة)</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700 text-red-600 font-bold">-${stats.totalCogs.toLocaleString()} ج.م</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">(-) إجمالي مصاريف شحن الذهاب (لشركات الشحن)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8" title="مصاريف الشحن المدفوعة لشركات الشحن للطلبات الناجحة.">(-) إجمالي مصاريف شحن الذهاب (لشركات الشحن)</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700 text-red-600 font-bold">-${stats.totalShippingRevenue.toLocaleString()} ج.م</td>
-                            </tr>
-                            <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">(-) إجمالي رسوم التأمين والمعاينة والتحصيل</td>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 text-red-600 font-bold">-${(stats.totalInsuranceFees + stats.totalInspectionFees + stats.totalCodFees).toLocaleString(undefined, {maximumFractionDigits: 2})} ج.م</td>
                             </tr>
 
                             <tr className="bg-blue-50 dark:bg-blue-900/20 font-bold">
-                                <td className="p-3 border border-slate-200 dark:border-slate-700" colSpan={2}>3. تحليل أرباحك التشغيلية (Your Gross Earnings)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700" colSpan={2} title="الربح المتبقي بعد خصم تكلفة المبيعات من الإيرادات.">3. إجمالي الربح التشغيلي (Gross Profit)</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">(+) ربح العمولة (Commission Profit)</td>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 text-emerald-600 font-bold">+{(stats.totalCommissionProfit - stats.totalExtraMarkup).toLocaleString()} ج.م</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8 text-sm text-slate-500" title="الربح الأساسي من نظام العمولة.">تفصيل الربح: ربح العمولة</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 text-emerald-600 font-bold text-sm">+{(stats.totalCommissionProfit - stats.totalExtraMarkup).toLocaleString()} ج.م</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">(+) ربح الزيادة في السعر (Extra Markup)</td>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 text-emerald-600 font-bold">+{stats.totalExtraMarkup.toLocaleString()} ج.م</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8 text-sm text-slate-500" title="الربح الإضافي من بيع المنتجات بسعر أعلى من الأساسي.">تفصيل الربح: ربح الزيادة في السعر</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 text-emerald-600 font-bold text-sm">+{stats.totalExtraMarkup.toLocaleString()} ج.م</td>
+                            </tr>
+                            <tr>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8 text-sm text-slate-500" title="الربح من نظام المبيعات (النسبة المئوية).">تفصيل الربح: ربح المبيعات</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 text-emerald-600 font-bold text-sm">+{stats.totalPercentageProfit.toLocaleString()} ج.م</td>
                             </tr>
                             <tr className="bg-blue-100 dark:bg-blue-900/40 font-bold">
-                                <td className="p-3 border border-slate-200 dark:border-slate-700">(=) إجمالي أرباحك قبل الخصومات</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700" title="مجموع الأرباح التشغيلية.">(=) إجمالي الربح التشغيلي</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700 text-blue-700 dark:text-blue-300">{(stats.totalCommissionProfit + stats.totalPercentageProfit).toLocaleString()} ج.م</td>
                             </tr>
 
                             <tr className="bg-red-50 dark:bg-red-900/20 font-bold">
-                                <td className="p-3 border border-slate-200 dark:border-slate-700" colSpan={2}>4. الخصومات والأعباء (Losses & Expenses)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700" colSpan={2} title="الخسائر والمصروفات الإدارية.">4. الخسائر والمصروفات (Losses & Expenses)</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">(-) إجمالي رسوم التأمين والمعاينة والتحصيل (للطلبات الناجحة)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8" title="مجموع رسوم التأمين والمعاينة والدفع عند الاستلام المخصومة من الطلبات الناجحة.">(-) إجمالي رسوم التأمين والمعاينة والتحصيل (للطلبات الناجحة)</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700 text-red-600 font-bold">-${(stats.totalInsuranceFees + stats.totalInspectionFees + stats.totalCodFees).toLocaleString(undefined, {maximumFractionDigits: 2})} ج.م</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">(-) إجمالي خسائر المرتجعات والفشل</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8" title="إجمالي مصاريف الشحن المهدرة على الطلبات الفاشلة والمرتجعة.">(-) إجمالي خسائر المرتجعات والفشل</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700 text-red-600 font-bold">-${stats.totalLoss.toLocaleString()} ج.م</td>
                             </tr>
                             <tr>
-                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8">(-) إجمالي المصروفات الإدارية (إعلانات، رواتب...)</td>
+                                <td className="p-3 border border-slate-200 dark:border-slate-700 pr-8" title="إجمالي المصروفات الإدارية المسجلة في المحفظة.">(-) إجمالي المصروفات الإدارية (إعلانات، رواتب...)</td>
                                 <td className="p-3 border border-slate-200 dark:border-slate-700 text-red-600 font-bold">-${stats.totalExpenses.toLocaleString()} ج.م</td>
                             </tr>
 
                             <tr className="bg-indigo-600 text-white font-black text-lg">
-                                <td className="p-4 border border-indigo-700">(=) صافي الربح النهائي (Net Profit)</td>
+                                <td className="p-4 border border-indigo-700" title="الربح النهائي بعد خصم جميع التكاليف والخسائر والمصروفات.">(=) صافي الربح النهائي (Net Profit)</td>
                                 <td className="p-4 border border-indigo-700">{stats.finalNet.toLocaleString()} ج.م</td>
                             </tr>
                         </tbody>
@@ -657,7 +865,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                 </div>
             </div>
 
-            {/* 8. Charts & Tables */}
+            {/* 7. Charts & Tables */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
                     <h3 className="font-bold mb-6 text-slate-800 dark:text-white flex items-center gap-2"><MapPin className="text-blue-500"/> تحليل المناطق (الأكثر ربحية)</h3>
@@ -676,10 +884,10 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                         <table className="w-full text-xs text-right">
                             <thead>
                                 <tr className="text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                                    <th className="pb-2">المنطقة</th>
-                                    <th className="pb-2">النجاح</th>
-                                    <th className="pb-2">الإيرادات</th>
-                                    <th className="pb-2">الصافي</th>
+                                    <th className="pb-2" title="اسم المحافظة أو المنطقة.">المنطقة</th>
+                                    <th className="pb-2" title="نسبة الطلبات الناجحة في هذه المنطقة.">النجاح</th>
+                                    <th className="pb-2" title="إجمالي الإيرادات المحصلة من هذه المنطقة.">الإيرادات</th>
+                                    <th className="pb-2" title="صافي الربح بعد خصم الخسائر في هذه المنطقة.">الصافي</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -736,10 +944,10 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                         <table className="w-full text-sm text-right">
                             <thead>
                                 <tr className="text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                                    <th className="pb-2">الشركة</th>
-                                    <th className="pb-2">الطلبات</th>
-                                    <th className="pb-2">النجاح</th>
-                                    <th className="pb-2">الربح</th>
+                                    <th className="pb-2" title="اسم شركة الشحن.">الشركة</th>
+                                    <th className="pb-2" title="إجمالي عدد الطلبات المسندة للشركة.">الطلبات</th>
+                                    <th className="pb-2" title="نسبة الطلبات التي تم تسليمها بنجاح.">النجاح</th>
+                                    <th className="pb-2" title="صافي الربح المحقق من الطلبات المشحونة عبر هذه الشركة.">الربح</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -757,14 +965,17 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                 </div>
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
                     <h3 className="font-bold mb-4 text-slate-800 dark:text-white">تحليل ربحية المنتجات</h3>
+                    <div className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg mb-4 border-r-2 border-slate-300">
+                        يوضح هذا الجدول أداء كل منتج على حدة. الكمية المباعة (للطلبات الناجحة)، الكمية المرتجعة (للطلبات الفاشلة والمرتجعة)، وإجمالي الربح الصافي من هذا المنتج.
+                    </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-right">
                             <thead>
                                 <tr className="text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                                    <th className="pb-2">المنتج</th>
-                                    <th className="pb-2">المباع</th>
-                                    <th className="pb-2">المرتجع</th>
-                                    <th className="pb-2">الربح</th>
+                                    <th className="pb-2" title="اسم المنتج.">المنتج</th>
+                                    <th className="pb-2" title="إجمالي الكمية المباعة (في الطلبات الناجحة).">المباع</th>
+                                    <th className="pb-2" title="إجمالي الكمية المرتجعة (في الطلبات الفاشلة).">المرتجع</th>
+                                    <th className="pb-2" title="صافي الربح المحقق من هذا المنتج.">الربح</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -788,7 +999,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                 </div>
             </div>
 
-            {/* 9. Detailed Orders (Successful) */}
+            {/* 8. Detailed Orders (Successful) */}
             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                 <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                     <TrendingUp className="text-emerald-500"/> تفاصيل الأرباح (الطلبات الناجحة)
@@ -797,11 +1008,11 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                     <table className="w-full text-right text-xs border-collapse">
                         <thead>
                             <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
-                                <th className="p-2 border border-slate-100 dark:border-slate-800">رقم الطلب</th>
-                                <th className="p-2 border border-slate-100 dark:border-slate-800">العميل</th>
-                                <th className="p-2 border border-slate-100 dark:border-slate-800">المنتجات</th>
-                                <th className="p-2 border border-slate-100 dark:border-slate-800">سعر البيع</th>
-                                <th className="p-2 border border-slate-100 dark:border-slate-800">صافي الربح</th>
+                                <th className="p-2 border border-slate-100 dark:border-slate-800" title="رقم الطلب التعريفي.">رقم الطلب</th>
+                                <th className="p-2 border border-slate-100 dark:border-slate-800" title="اسم العميل.">العميل</th>
+                                <th className="p-2 border border-slate-100 dark:border-slate-800" title="المنتجات التي تم بيعها في هذا الطلب.">المنتجات</th>
+                                <th className="p-2 border border-slate-100 dark:border-slate-800" title="سعر البيع الإجمالي للطلب.">سعر البيع</th>
+                                <th className="p-2 border border-slate-100 dark:border-slate-800" title="صافي الربح المحقق من هذا الطلب بعد خصم التكاليف.">صافي الربح</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -843,6 +1054,73 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                                 </tr>
                             )}
                         </tbody>
+                        {orders.filter(o => o.status === 'تم_التحصيل').length > 0 && (
+                            <tfoot className="bg-slate-50 dark:bg-slate-800/50 font-black text-slate-900 dark:text-white">
+                                <tr>
+                                    <td colSpan={3} className="p-2 border border-slate-100 dark:border-slate-800 text-left">الإجمالي:</td>
+                                    <td className="p-2 border border-slate-100 dark:border-slate-800">{(stats.totalProductRevenue + stats.totalExtraMarkup).toLocaleString()} ج.م</td>
+                                    <td className="p-2 border border-slate-100 dark:border-slate-800 text-emerald-600">{stats.totalProfit.toLocaleString()} ج.م</td>
+                                </tr>
+                            </tfoot>
+                        )}
+                    </table>
+                </div>
+            </div>
+
+            {/* 9. Detailed Orders (Failed) */}
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                    <AlertTriangle className="text-red-500"/> تفاصيل الخسائر (الطلبات الفاشلة)
+                </h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs border-collapse">
+                        <thead>
+                            <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
+                                <th className="p-2 border border-slate-100 dark:border-slate-800">رقم الطلب</th>
+                                <th className="p-2 border border-slate-100 dark:border-slate-800">العميل</th>
+                                <th className="p-2 border border-slate-100 dark:border-slate-800">المنتجات</th>
+                                <th className="p-2 border border-slate-100 dark:border-slate-800">الحالة</th>
+                                <th className="p-2 border border-slate-100 dark:border-slate-800">الخسارة</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status)).length > 0 ? (
+                                orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status)).map(order => {
+                                    const { loss } = calculateOrderProfitLoss(order, settings);
+                                    return (
+                                        <tr key={order.id} className="border-b border-slate-50 dark:border-slate-800/50">
+                                            <td className="p-2 border border-slate-100 dark:border-slate-800 font-bold">{order.orderNumber}</td>
+                                            <td className="p-2 border border-slate-100 dark:border-slate-800">{order.customerName}</td>
+                                            <td className="p-2 border border-slate-100 dark:border-slate-800">
+                                                {order.items.map((item, idx) => (
+                                                    <div key={`${order.id}-${item.productId}-${idx}`} className="mb-1">
+                                                        {item.name} ({item.quantity})
+                                                    </div>
+                                                ))}
+                                            </td>
+                                            <td className="p-2 border border-slate-100 dark:border-slate-800">
+                                                <span className="px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 rounded-full text-[10px]">
+                                                    {order.status.replace(/_/g, ' ')}
+                                                </span>
+                                            </td>
+                                            <td className="p-2 border border-slate-100 dark:border-slate-800 font-bold text-red-600">-{loss.toLocaleString()} ج.م</td>
+                                        </tr>
+                                    );
+                                })
+                            ) : (
+                                <tr>
+                                    <td colSpan={5} className="p-4 text-center text-slate-400">لا توجد طلبات فاشلة حالياً</td>
+                                </tr>
+                            )}
+                        </tbody>
+                        {orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status)).length > 0 && (
+                            <tfoot className="bg-slate-50 dark:bg-slate-800/50 font-black text-slate-900 dark:text-white">
+                                <tr>
+                                    <td colSpan={4} className="p-2 border border-slate-100 dark:border-slate-800 text-left">الإجمالي:</td>
+                                    <td className="p-2 border border-slate-100 dark:border-slate-800 text-red-600">-{stats.totalLoss.toLocaleString()} ج.م</td>
+                                </tr>
+                            </tfoot>
+                        )}
                     </table>
                 </div>
             </div>
