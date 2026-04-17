@@ -310,20 +310,6 @@ export const AppComponent = () => {
 
 
     useEffect(() => {
-        if (!activeStoreId || !currentUser) return;
-
-        const syncInterval = setInterval(async () => {
-            try {
-                await fetch(`/api/sync/all/${activeStoreId}`, { method: 'POST' });
-            } catch (e) {
-                console.error("Background sync failed:", e);
-            }
-        }, 30000); // Fast sync every 30 seconds
-
-        return () => clearInterval(syncInterval);
-    }, [activeStoreId, currentUser]);
-
-    useEffect(() => {
         const applyTheme = () => {
             const themeToApply = theme === 'system' 
                 ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
@@ -764,7 +750,7 @@ export const AppComponent = () => {
                     }
                 }
             }
-        }, 30000); // Every 30 seconds (Auto-sync)
+        }, 120000); // Every 2 minutes
 
         return () => {
             console.log('[REALTIME] Removing subscriptions and polling.');
@@ -1065,14 +1051,7 @@ export const AppComponent = () => {
                 <Route path="order-success/:orderId" element={<OrderSuccessPage {...pageProps} />} />
                 <Route path="*" element={<CatchAllRedirect currentUser={currentUser} isEmployeeSession={isEmployeeSession} />} />
             </Routes>
-            {showCongratsModal && (
-                <CongratsModal 
-                    isOpen={showCongratsModal}
-                    onClose={() => setShowCongratsModal(false)}
-                    title="تهانينا!"
-                    message="تم تفعيل المتجر الخاص بك بنجاح. يمكنك الآن البدء في استقبال الطلبات وإدارة منتجاتك بسهولة."
-                />
-            )}
+            {showCongratsModal && <CongratsModal onClose={() => setShowCongratsModal(false)} />}
             <GlobalSaveIndicator status={saveStatus} message={saveMessage} />
         </>
     );

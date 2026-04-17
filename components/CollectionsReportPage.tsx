@@ -113,7 +113,7 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
 
   const handlePrintReport = () => {
     const storeName = activeStore?.name || 'متجري';
-    const html = generateCollectionsReportHTML(collectedOrders, settings, activeStore);
+    const html = generateCollectionsReportHTML(collectedOrders, settings, storeName);
     const win = window.open('', '_blank');
     if (win) {
         win.document.write(html);

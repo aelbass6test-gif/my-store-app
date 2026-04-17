@@ -27,6 +27,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "dist", "my-store-app-main/supabase"]
+  "include": ["**/*.ts", "**/*.tsx"]
 }

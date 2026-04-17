@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users, ExternalLink, Link as LinkIcon, MessageSquare } from 'lucide-react';
+import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users, ExternalLink, Link as LinkIcon } from 'lucide-react';
 import { Order, Settings, OrderStatus, Wallet, Transaction, PaymentStatus, PreparationStatus, OrderItem, Product, CustomerProfile, Store, Employee, User, AuditLog } from '../types';
-import { ORDER_STATUSES, EGYPT_GOVERNORATES, ORDER_STATUS_METADATA, generateEgyptShippingOptions } from '../constants';
+import { ORDER_STATUSES, EGYPT_GOVERNORATES, ORDER_STATUS_METADATA } from '../constants';
 import { motion, Variants } from 'framer-motion';
 import { generateInvoiceHTML } from '../utils/invoiceGenerator';
 import { generateShippingLabelHTML } from '../utils/shippingLabelGenerator';
@@ -175,18 +175,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
   const [showSummaryModal, setShowSummaryModal] = useState<Order | null>(null);
-  const [autoWhatsappData, setAutoWhatsappData] = useState<{order: Order, newStatus: string} | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-
-  useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => {
-        setNotification(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
 
   // Polling for real-time updates
   useEffect(() => {
@@ -202,46 +191,9 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     if (!onRefresh) return;
     setIsRefreshing(true);
     try {
-      if (activeStore?.id) {
-          const res = await fetch(`/api/sync/all/${activeStore.id}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' }
-          });
-          if (res.ok) {
-              const data = await res.json();
-              await onRefresh();
-              const totalSynced = (data.results || []).reduce((acc: number, r: any) => acc + (r.inserted || 0), 0);
-              const totalUpdated = (data.results || []).reduce((acc: number, r: any) => acc + (r.updated || 0), 0);
-              const errors = (data.results || []).filter((r: any) => r.error);
-              
-              if (totalSynced > 0 || totalUpdated > 0) {
-                  let message = '✅ تمت المزامنة بنجاح!';
-                  if (totalSynced > 0) message += `\n- تم استيراد ${totalSynced} طلب جديد.`;
-                  if (totalUpdated > 0) message += `\n- تم تحديث حالة ${totalUpdated} طلب.`;
-                  setNotification({ message, type: 'success' });
-              } else if (errors.length > 0) {
-                  setNotification({ 
-                    message: `⚠️ حدثت مشاكل أثناء المزامنة: ${errors[0].error}`, 
-                    type: 'error' 
-                  });
-              } else {
-                  setNotification({ 
-                    message: '✅ اكتمل الفحص: المتجر متزامن بالكامل ولا توجد طلبات جديدة حالياً.', 
-                    type: 'info' 
-                  });
-              }
-          } else {
-              setNotification({ message: '❌ فشل الاتصال بسيرفر المزامنة.', type: 'error' });
-          }
-      } else {
-          await onRefresh();
-          setNotification({ message: 'تم تحديث البيانات محلياً.', type: 'info' });
-      }
-    } catch (error) {
-       console.error('Refresh error:', error);
-       setNotification({ message: '❌ حدث خطأ غير متوقع أثناء المزامنة.', type: 'error' });
+      await onRefresh();
     } finally {
-      setTimeout(() => setIsRefreshing(false), 800);
+      setTimeout(() => setIsRefreshing(false), 600);
     }
   };
   
@@ -664,7 +616,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     return updatedOrderData;
   };
 
-  const updateOrderStatus = async (id: string, newStatus: OrderStatus) => {
+  const updateOrderStatus = (id: string, newStatus: OrderStatus) => {
     const orderToUpdate = orders.find((o) => o.id === id);
     if (!orderToUpdate) return;
 
@@ -673,36 +625,9 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         return;
     }
     
-    // 1. Update State
     const updatedOrderData = processFinancialsForStatusChange(orderToUpdate, newStatus);
     setOrders(prevOrders => prevOrders.map(o => o.id === id ? updatedOrderData : o));
     addAuditLog(id, 'تغيير الحالة', `تغيير حالة الطلب من ${orderToUpdate.status} إلى ${newStatus}`);
-
-    // Trigger WhatsApp notification prompt
-    if (orderToUpdate.customerPhone && orderToUpdate.status !== newStatus) {
-        setAutoWhatsappData({ order: updatedOrderData, newStatus });
-    }
-
-    // 2. Push to External Platform if Synced (Two-Way Sync)
-    if (orderToUpdate.platform === 'wuilt' || orderToUpdate.source === 'synced') {
-        try {
-            const res = await fetch(`/api/sync/platform/wuilt/${orderToUpdate.store_id}/push-status`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    orderId: id,
-                    newStatus: newStatus
-                })
-            });
-            const result = await res.json();
-            if (!res.ok) console.error("Failed to push status to Wuilt:", result);
-            else console.log("Wuilt Sync Push Triggered:", result);
-            // We consciously don't block the UI await or show an error toast here to keep it snappy,
-            // but it logs correctly for background synchronization.
-        } catch (e) {
-            console.error("Two-way sync fetch error:", e);
-        }
-    }
   };
 
   const handleSaveWaybill = (waybill: string) => {
@@ -887,10 +812,9 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   };
 
   const handleBulkDelete = () => {
-    const syncedCount = orders.filter(o => selectedOrders.includes(o.id) && o.source === 'synced').length;
     confirmAction({
         title: 'حذف حماعي',
-        message: `هل أنت متأكد من حذف ${selectedOrders.length} طلبات نهائياً؟ ${syncedCount > 0 ? `(يشمل ${syncedCount} طلب متزامن)` : ''}`,
+        message: `هل أنت متأكد من حذف ${selectedOrders.length} طلبات نهائياً؟`,
         type: 'danger',
         confirmText: 'حذف',
         onConfirm: () => {
@@ -907,27 +831,16 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         if(selectElement) selectElement.value = 'default';
         return;
     }
-
-    const eligibleOrders = orders.filter(o => selectedOrders.includes(o.id) && o.source !== 'synced');
-    const syncedCount = selectedOrders.length - eligibleOrders.length;
-
-    if (eligibleOrders.length === 0) {
-        alert("لا يمكن تعديل حالات الطلبات المتزامنة جماعياً. يتم تحديثها تلقائياً من المنصة المصدر.");
-        if(selectElement) selectElement.value = 'default';
-        return;
-    }
     
     confirmAction({
         title: 'تغيير الحالة جماعياً',
-        message: `هل أنت متأكد من تغيير حالة ${eligibleOrders.length} طلبات إلى "${newStatus.replace(/_/g, ' ')}"? ${syncedCount > 0 ? `(سيتم تجاهل ${syncedCount} طلب متزامن)` : ''}`,
+        message: `هل أنت متأكد من تغيير حالة ${selectedOrders.length} طلبات إلى "${newStatus.replace(/_/g, ' ')}"?`,
         type: 'warning',
         confirmText: 'تأكيد التغيير',
         onConfirm: () => {
             const allNewTransactions: Transaction[] = [];
             const updatedOrders = orders.map(o => {
                 if (selectedOrders.includes(o.id)) {
-                    if (o.source === 'synced') return o; // Double check
-
                     // Create a copy to avoid side effects during financial processing
                     let orderToUpdate = { ...o, status: newStatus as OrderStatus };
                     
@@ -1021,12 +934,13 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   };
 
   const handleExportOrders = () => {
-    const html = generateOrdersReportHTML(filteredOrders, settings, activeStore);
+    const html = generateOrdersReportHTML(filteredOrders, settings, activeStore?.name || 'متجري');
     setReportPreviewHtml(html);
   };
 
   const handleExportPDF = () => {
-    const html = generateOrdersReportHTML(filteredOrders, settings, activeStore);
+    const storeName = activeStore?.name || 'متجري';
+    const html = generateOrdersReportHTML(filteredOrders, settings, storeName);
     setReportPreviewHtml(html);
   };
 
@@ -1111,11 +1025,10 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
               <h1 className="text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1">إدارة الطلبات</h1>
               <button 
                 onClick={handleManualRefresh}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-primary hover:border-primary transition-all ${isRefreshing ? 'animate-spin text-primary border-primary/30' : ''}`}
-                title="مزامنة الطلبات من المتاجر الأخرى"
+                className={`p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-primary transition-all ${isRefreshing ? 'animate-spin text-primary border-primary/30' : ''}`}
+                title="تحديث البيانات"
               >
                 <RefreshCcw size={18} />
-                <span className="text-sm font-bold">مزامنة المتاجر</span>
               </button>
             </div>
             <div className="flex items-center gap-2">
@@ -1502,15 +1415,6 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       {showBulkDeleteConfirm && ( <ConfirmationModal title="حذف الطلبات المحددة؟" description={`هل أنت متأكد من حذف ${selectedOrders.length} طلبات؟ هذا الإجراء لا يمكن التراجع عنه.`} onConfirm={handleBulkDelete} onCancel={() => setShowBulkDeleteConfirm(false)} /> )}
       {orderForWaybill && orderForModal && ( <WaybillModal order={orderForModal} onClose={() => setOrderForWaybill(null)} onSave={handleSaveWaybill} /> )}
       
-      {autoWhatsappData && (
-        <AutoWhatsappModal 
-            order={autoWhatsappData.order} 
-            newStatus={autoWhatsappData.newStatus} 
-            onClose={() => setAutoWhatsappData(null)} 
-            settings={settings} 
-        />
-      )}
-
       {confirmation.isOpen && (
         <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] shadow-2xl p-8 text-center animate-in zoom-in duration-200 border border-slate-200 dark:border-slate-800">
@@ -1564,23 +1468,6 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
           }}
         />
       )}
-
-      {notification && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[1000] animate-in slide-in-from-bottom-5 duration-300">
-          <div className={`px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-3 backdrop-blur-md border ${
-            notification.type === 'success' ? 'bg-emerald-500/90 border-emerald-400 text-white' :
-            notification.type === 'error' ? 'bg-rose-500/90 border-rose-400 text-white' :
-            'bg-slate-800/90 border-slate-700 text-white'
-          }`}>
-            {notification.type === 'success' ? <CheckCircle size={20} /> : 
-             notification.type === 'error' ? <AlertCircle size={20} /> : <Info size={20} />}
-            <p className="text-sm font-bold whitespace-pre-line">{notification.message}</p>
-            <button onClick={() => setNotification(null)} className="ml-2 hover:opacity-70 transition-opacity">
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-      )}
     </motion.div>
   );
 };
@@ -1625,13 +1512,7 @@ const OrderCard = ({
   const StatusIcon = {
     PhoneForwarded, FileSearch, Package, Truck, CheckCircle, Coins, RefreshCcw, XCircle, Archive
   }[statusInfo.icon as string] || Package;
-  const safeProductPrice = Number(order.productPrice) || 0;
-  const safeShippingFee = Number(order.shippingFee) || 0;
-  const safeTax = Number(order.tax) || 0;
-  const safeDiscount = Number(order.discount) || 0;
-  const computedTotal = safeProductPrice + safeShippingFee + safeTax - safeDiscount;
-  const totalAmount = order.totalAmountOverride ?? computedTotal;
-  const displayTotal = order.source === 'synced' && order.totalPrice != null ? Number(order.totalPrice) : totalAmount;
+  const totalAmount = order.totalAmountOverride ?? (order.productPrice + order.shippingFee + (order.tax || 0) - (order.discount || 0));
 
   return (
     <motion.div 
@@ -1755,8 +1636,7 @@ const OrderCard = ({
             <select 
               value={order.status}
               onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
-              disabled={order.source === 'synced'}
-              className={`w-full appearance-none pr-3 pl-8 md:pr-4 md:pl-10 py-2 md:py-3 rounded-lg md:rounded-xl text-[10px] md:text-xs font-black text-white border-none cursor-pointer focus:ring-2 focus:ring-offset-2 transition-all shadow-md ${statusInfo.color} ${order.source === 'synced' ? 'opacity-70 cursor-not-allowed' : ''}`}
+              className={`w-full appearance-none pr-3 pl-8 md:pr-4 md:pl-10 py-2 md:py-3 rounded-lg md:rounded-xl text-[10px] md:text-xs font-black text-white border-none cursor-pointer focus:ring-2 focus:ring-offset-2 transition-all shadow-md ${statusInfo.color}`}
             >
               {ORDER_STATUSES.map(s => (
                 <option key={s} value={s} className="text-slate-900 bg-white">{ORDER_STATUS_METADATA[s]?.label || s}</option>
@@ -1768,10 +1648,9 @@ const OrderCard = ({
             <select 
               value={order.paymentStatus}
               onChange={(e) => onPaymentChange(e.target.value as PaymentStatus)}
-              disabled={order.source === 'synced'}
               className={`w-full appearance-none pr-4 pl-10 py-3 rounded-xl text-xs font-black border-none cursor-pointer focus:ring-2 focus:ring-offset-2 transition-all shadow-md ${
                 order.paymentStatus === 'مدفوع' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'
-              } ${order.source === 'synced' ? 'opacity-70 cursor-not-allowed' : ''}`}
+              }`}
             >
               {PAYMENT_STATUSES.map(s => (
                 <option key={s} value={s} className="text-slate-900 bg-white">{s}</option>
@@ -2025,7 +1904,7 @@ const OrderRow = ({
         </div>
       </td>
       <td className="p-6">
-        {order.source === 'synced' ? (
+        {order.source === 'synced' && order.status !== 'في_انتظار_المكالمة' ? (
           <div className="relative inline-block" title="يتم تحديث الحالة تلقائياً من المنصة الأساسية">
             <div className={`px-4 py-2 rounded-full text-xs font-black text-white ${statusInfo.color} opacity-90 shadow-sm cursor-not-allowed border border-white/20 flex items-center justify-center gap-2 min-w-[120px]`}>
                {ORDER_STATUS_METADATA[order.status]?.label || order.status}
@@ -2091,7 +1970,8 @@ const OrderRow = ({
                  </div>
                  )}
              </div>
-                                  <div className="space-y-1.5 mb-3">
+             
+             <div className="space-y-1.5 mb-3">
                  <div className="flex justify-between items-center text-xs">
                      <span className="text-slate-500">تكلفة المنتجات</span>
                      <span className="font-bold text-red-500">-{Number(order.productCost || 0).toLocaleString()}</span>
@@ -2126,18 +2006,18 @@ const OrderRow = ({
             <select 
               value={order.paymentStatus}
               onChange={(e) => onPaymentChange(e.target.value as PaymentStatus)}
-              disabled={order.source === 'synced'}
               className={`appearance-none pr-8 pl-3 py-1.5 rounded-lg text-[10px] font-black border-none cursor-pointer focus:ring-2 focus:ring-offset-1 transition-all shadow-sm ${
+                order.paymentStatus === 'تم الدفع' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 
                 order.paymentStatus === 'مدفوع' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 
-                order.paymentStatus === 'مدفوع جزئياً' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' :
+                order.paymentStatus === 'مرفوض' ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400' :
                 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
-              } ${order.source === 'synced' ? 'opacity-70 cursor-not-allowed' : ''}`}
+              }`}
             >
               {PAYMENT_STATUSES.map(s => (
                 <option key={s} value={s} className="text-slate-900 bg-white">{s}</option>
               ))}
             </select>
-            <ChevronDown size={12} className={`absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${order.paymentStatus === 'مدفوع' ? 'text-emerald-600 dark:text-emerald-500' : 'text-amber-600 dark:text-amber-500'}`} />
+            <ChevronDown size={12} className={`absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${order.paymentStatus === 'تم الدفع' || order.paymentStatus === 'مدفوع' ? 'text-emerald-600 dark:text-emerald-500' : 'text-amber-600 dark:text-amber-500'}`} />
           </div>
           
           <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 dark:text-slate-500">
@@ -3052,81 +2932,6 @@ const OrderPreConfirmationModal: React.FC<OrderPreConfirmationModalProps> = ({ o
                     </button>
                     <button onClick={onCancel} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">
                         رفض وتعديل
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const AutoWhatsappModal: React.FC<{
-    order: Order;
-    newStatus: string;
-    onClose: () => void;
-    settings: Settings;
-}> = ({ order, newStatus, onClose, settings }) => {
-    const defaultTemplate = settings.whatsappTemplates?.find((t) => t.id === 'confirm')?.text || 
-        'أهلاً [اسم العميل] 👋، تم تحديث حالة طلبك [اسم المنتج] إلى [حالة الطلب].';
-    
-    const [message, setMessage] = useState('');
-
-    useEffect(() => {
-        let msg = defaultTemplate;
-        msg = msg.replace(/\[اسم العميل\]/g, order.customerName || 'عميلنا العزيز');
-        msg = msg.replace(/\[اسم المتجر\]/g, 'متجرنا');
-        msg = msg.replace(/\[اسم المنتج\]/g, order.items.map(i => i.name).join(' و '));
-        msg = msg.replace(/\[حالة الطلب\]/g, newStatus.replace(/_/g, ' '));
-        setMessage(msg);
-    }, [order, newStatus, defaultTemplate, settings]);
-
-    const handleSend = () => {
-        const phone = order.customerPhone.replace(/[^0-9]/g, '');
-        const formattedPhone = phone.startsWith('20') ? phone : `20${phone.replace(/^0+/, '')}`;
-        const encodedMessage = encodeURIComponent(message);
-        window.open(`https://wa.me/${formattedPhone}?text=${encodedMessage}`, '_blank');
-        onClose();
-    };
-
-    return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl p-8 text-right animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800">
-                <div className="flex justify-between items-center mb-6">
-                    <div className="flex items-center gap-3 text-emerald-600 dark:text-emerald-400">
-                        <div className="p-3 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl border border-emerald-100 dark:border-emerald-500/20">
-                            <MessageSquare size={24}/>
-                        </div>
-                        <h3 className="text-xl font-black dark:text-white">إشعار تحديث الحالة</h3>
-                    </div>
-                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
-                        <X size={20} />
-                    </button>
-                </div>
-                
-                <p className="text-sm font-bold text-slate-600 dark:text-slate-300 mb-2">
-                    هل تود تنبيه العميل بتغير حالة الطلب إلى <span className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-lg">{newStatus.replace(/_/g, ' ')}</span>؟
-                </p>
-                <div className="mb-6">
-                    <label className="block text-xs font-bold text-slate-500 mb-2">نص رسالة الواتساب:</label>
-                    <textarea 
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all min-h-[120px] resize-none"
-                    />
-                </div>
-
-                <div className="flex gap-3">
-                    <button 
-                        onClick={handleSend}
-                        className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98] flex justify-center items-center gap-2"
-                    >
-                        إرسال عبر الواتساب
-                        <ExternalLink size={18} />
-                    </button>
-                    <button 
-                        onClick={onClose}
-                        className="py-3.5 px-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-50 dark:hover:bg-slate-700 transition-all whitespace-nowrap"
-                    >
-                        تخطي
                     </button>
                 </div>
             </div>
