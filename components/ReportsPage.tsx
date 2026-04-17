@@ -225,7 +225,7 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
         setIsExporting(true);
         try {
             const storeName = activeStore?.name || 'متجري';
-            const html = generateLossesReportHTML(failedOrders, settings, storeName, orientation, isContinuous);
+            const html = generateLossesReportHTML(failedOrders, settings, activeStore);
             
             const printWindow = window.open('', '_blank');
             if (printWindow) {
@@ -242,7 +242,7 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
 
     const handlePrint = () => {
         const storeName = activeStore?.name || 'متجري';
-        const html = generateLossesReportHTML(failedOrders, settings, storeName, orientation);
+        const html = generateLossesReportHTML(failedOrders, settings, activeStore);
         const win = window.open('', '_blank');
         if(win) {
             win.document.write(html);
@@ -560,7 +560,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
         setIsExporting(true);
         try {
             const storeName = activeStore?.name || 'متجري';
-            const html = generateComprehensiveFinancialReportHTML(orders, settings, wallet, storeName, orientation, isContinuous);
+            const html = generateComprehensiveFinancialReportHTML(orders, settings, activeStore);
             
             const printWindow = window.open('', '_blank');
             if (printWindow) {
@@ -577,7 +577,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
 
     const handlePrint = () => {
         const storeName = activeStore?.name || 'متجري';
-        const html = generateComprehensiveFinancialReportHTML(orders, settings, wallet, storeName, orientation);
+        const html = generateComprehensiveFinancialReportHTML(orders, settings, activeStore);
         const win = window.open('', '_blank');
         if (win) {
             win.document.write(html);

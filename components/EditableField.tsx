@@ -1,59 +1,67 @@
-import React, { useState, useEffect } from 'react';
-import { Check, X, Edit2 } from 'lucide-react';
+import React from 'react';
+import { Edit3, Check, X } from 'lucide-react';
 
 interface EditableFieldProps {
-  value: string;
-  onSave: (newValue: string) => void;
+  icon?: React.ReactNode;
+  label: string;
+  isEditing: boolean;
+  disabled?: boolean;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  editComponent: React.ReactNode;
+  displayComponent: React.ReactNode;
   className?: string;
-  type?: string;
 }
 
-const EditableField: React.FC<EditableFieldProps> = ({ value, onSave, className = '', type = 'text' }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [tempValue, setTempValue] = useState(value);
-
-  useEffect(() => {
-    setTempValue(value);
-  }, [value]);
-
-  const handleSave = () => {
-    onSave(tempValue);
-    setIsEditing(false);
-  };
-
-  const handleCancel = () => {
-    setTempValue(value);
-    setIsEditing(false);
-  };
-
-  if (isEditing) {
-    return (
-      <div className={`flex items-center gap-1 ${className}`}>
-        <input
-          type={type}
-          value={tempValue}
-          onChange={(e) => setTempValue(e.target.value)}
-          className="flex-1 p-1 text-sm bg-white dark:bg-slate-800 border-2 border-primary rounded-md outline-none"
-          autoFocus
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSave();
-            if (e.key === 'Escape') handleCancel();
-          }}
-        />
-        <button onClick={handleSave} className="p-1 text-emerald-500 hover:bg-emerald-50 rounded">
-          <Check size={16} />
-        </button>
-        <button onClick={handleCancel} className="p-1 text-red-500 hover:bg-red-50 rounded">
-          <X size={16} />
-        </button>
-      </div>
-    );
-  }
-
+const EditableField: React.FC<EditableFieldProps> = ({
+  icon,
+  label,
+  isEditing,
+  disabled = false,
+  onEdit,
+  onSave,
+  onCancel,
+  editComponent,
+  displayComponent,
+  className = ''
+}) => {
   return (
-    <div className={`group flex items-center gap-2 cursor-pointer ${className}`} onClick={() => setIsEditing(true)}>
-      <span>{value || '---'}</span>
-      <Edit2 size={12} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+    <div className={`space-y-1 ${className}`}>
+      <div className="flex justify-between items-center">
+        <label className="text-xs text-slate-500 flex items-center gap-1">
+          {icon} {label}
+        </label>
+        {!disabled && !isEditing && (
+          <button onClick={onEdit} className="text-xs font-bold text-blue-600 hover:underline">
+            تعديل
+          </button>
+        )}
+      </div>
+      
+      {isEditing ? (
+        <div className="space-y-2">
+          {editComponent}
+          <div className="flex gap-2">
+            <button 
+              onClick={onSave}
+              className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-bold flex items-center gap-1 hover:bg-emerald-200"
+            >
+              <Check size={14}/> حفظ
+            </button>
+            <button 
+              onClick={onCancel}
+              className="px-3 py-1 bg-slate-100 text-slate-500 rounded text-xs font-bold flex items-center gap-1 hover:bg-slate-200"
+            >
+              <X size={14}/> إلغاء
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+           {displayComponent}
+        </div>
+      )}
     </div>
   );
 };

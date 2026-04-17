@@ -227,6 +227,111 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  // Temporary Introspection
+  app.get("/api/introspect", async (req, res) => {
+    try {
+        const query = `
+          query IntrospectionQuery {
+            __schema {
+              mutationType { name }
+              types {
+                name
+                fields {
+                  name args { name type { name kind ofType { name kind } } }
+                }
+              }
+            }
+          }
+        `;
+        const response = await fetch('https://graphql.wuilt.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        });
+        const json = await response.json();
+        if (json.data && json.data.__schema && json.data.__schema.mutationType) {
+            const mutationTypeName = json.data.__schema.mutationType.name;
+            const mutationType = json.data.__schema.types.find((t: any) => t.name === mutationTypeName);
+            const orderMutations = mutationType.fields.filter((f: any) => f.name.toLowerCase().includes('order') || f.name.toLowerCase().includes('fulfill') || f.name.toLowerCase().includes('ship'));
+            res.json(orderMutations.map((m: any) => ({ name: m.name, args: m.args.map((a: any) => a.name) })));
+        } else {
+            res.json(json);
+        }
+    } catch (e: any) {
+        res.json({ error: e.message });
+    }
+  });
+
+  // Webhook Listener
+  app.post("/api/webhook/platform/:platform/:storeId", async (req, res) => {
+    const { platform, storeId } = req.params;
+    const payload = req.body;
+
+    console.log(`[WEBHOOK] Received from ${platform} for Store ID: ${storeId}`);
+
+    try {
+        // 1. Fetch Store Settings
+        const { data: storeRow, error: storeError } = await supabase
+            .from('stores_data')
+            .select('settings')
+            .eq('id', storeId)
+            .single();
+
+        if (storeError || !storeRow) {
+            console.error(`[WEBHOOK] Store ${storeId} not found`);
+            return res.status(404).json({ error: "Store not found" });
+        }
+
+        const settings = storeRow.settings || {};
+
+        // 2. Process Payload
+        if (platform === 'wuilt') {
+            const { event, payload: wuiltPayload } = payload;
+            
+            // Log everything for debugging
+            console.log(`[WEBHOOK] Received event: ${event}`, JSON.stringify(wuiltPayload));
+            
+            if ((event === "ORDER_PLACED" || event === "ORDER_UPDATED") && wuiltPayload?.order ) {
+                const orderData = wuiltPayload.order;
+                const mappedOrder = mapWuiltOrder(orderData, storeId, settings);
+                
+                if (mappedOrder) {
+                    // Check for existing order
+                    const { data: existing } = await supabase
+                        .from('orders')
+                        .select('id')
+                        .eq('id', mappedOrder.id)
+                        .single();
+
+                    if (!existing) {
+                        const { error: insertError } = await supabase.from('orders').insert([mappedOrder]);
+                        if (insertError) throw insertError;
+                        console.log(`[WEBHOOK] Order ${mappedOrder.id} inserted successfully`);
+                    } else {
+                        // Update existing order with new status/data
+                        const { error: updateError } = await supabase
+                            .from('orders')
+                            .update(mappedOrder)
+                            .eq('id', mappedOrder.id);
+                        if (updateError) throw updateError;
+                        console.log(`[WEBHOOK] Order ${mappedOrder.id} updated successfully`);
+                    }
+                }
+            } else {
+                console.log(`[WEBHOOK] Event ${event} was not processed (not ORDER_PLACED or ORDER_UPDATED)`);
+            }
+        } else {
+             console.log(`[WEBHOOK] Platform ${platform} not supported`);
+             return res.status(400).json({ error: "Platform not supported" });
+        }
+
+        return res.status(200).json({ message: "Webhook processed successfully" });
+    } catch (error: any) {
+        console.error("[WEBHOOK] Processing error:", error);
+        return res.status(500).json({ error: "Internal Server Error", details: error.message });
+    }
+  });
+
   // API Sync Preview Endpoint (Fetches data without saving)
   app.get("/api/sync/platform/:platform/:storeId/preview", async (req, res) => {
     const { platform, storeId } = req.params;
@@ -305,11 +410,292 @@ async function startServer() {
     }
   });
 
+  // API Push Order Status to External Platform
+  app.post("/api/sync/platform/:platform/:storeId/push-status", async (req, res) => {
+    const { platform, storeId } = req.params;
+    const { orderId, newStatus, trackingNumber, shippingCompany } = req.body || {};
+    
+    if (!supabase) return res.status(500).json({ error: "Supabase not initialized" });
+
+    try {
+        // 1. Fetch Store Config
+        const { data: storeRow, error: storeError } = await supabase.from('stores_data').select('settings').eq('id', storeId).single();
+        if (storeError || !storeRow) return res.status(404).json({ error: "Store not found" });
+
+        const config = storeRow.settings?.platformConfigs?.[platform];
+        if (!config || !config.apiKey) return res.status(400).json({ error: "API Key not configured" });
+
+        if (platform === 'wuilt') {
+            const rawStoreId = (config.shopId || config.shopUrl || '').trim();
+            const apiKey = (config.apiKey || '').trim();
+            let wuiltStoreId = rawStoreId;
+            if (rawStoreId.includes('/store/')) {
+                const parts = rawStoreId.split('/store/');
+                if (parts[1]) wuiltStoreId = parts[1].split('/')[0];
+            }
+
+            const authHeader = apiKey.toLowerCase().startsWith('bearer ') ? apiKey : `Bearer ${apiKey}`;
+
+            // Map our internal status back to Wuilt expected statuses
+            // Note: Since we don't have the exact Wuilt GraphQL mutation docs,
+            // this is a placeholder/mock of where the GraphQL Mutation goes.
+            // Typical eCommerce platforms use mutations like `orderFulfill` or `updateOrderStatus`.
+            
+            // let mappedWuiltStatus = 'PENDING';
+            // if (newStatus === 'تم_الشحن' || newStatus === 'تم_الارسال') mappedWuiltStatus = 'SHIPPED';
+            // else if (newStatus === 'تم_توصيلها') mappedWuiltStatus = 'DELIVERED';
+            // else if (newStatus === 'ملغي') mappedWuiltStatus = 'CANCELED';
+
+            const graphqlMutation = {
+                query: `
+                  # =========================================================================
+                  # TODO: REPLACE WITH EXACT WUILT MUTATION ONCE DOCUMENTATION IS PROVIDED
+                  # =========================================================================
+                  mutation UpdateWuiltOrder($storeId: ID!, $orderId: ID!, $status: String!) {
+                      # orderUpdate(input: { storeId: $storeId, id: $orderId, fulfillmentStatus: $status }) {
+                      #   order { id fulfillmentStatus }
+                      #   userErrors { message }
+                      # }
+                      __typename
+                  }
+                `,
+                variables: {
+                    storeId: wuiltStoreId,
+                    orderId: orderId.replace('wuilt-', ''), // Remove our prefix
+                    status: newStatus
+                }
+            };
+            
+            // Uncomment the fetch block once the correct mutation is available.
+            /*
+            const response = await fetch('https://graphql.wuilt.com', {
+                method: 'POST',
+                headers: {
+                    'Authorization': authHeader,
+                    'X-API-KEY': apiKey,
+                    'X-Wuilt-Store-Id': wuiltStoreId,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(graphqlMutation)
+            });
+
+            const result = await response.json();
+            if (!response.ok || result.errors) {
+                return res.status(response.status || 400).json({ error: result.errors?.[0]?.message || "API Error" });
+            }
+            */
+
+            console.log(`[SYNC-PUSH] Mocked push to Wuilt: Order ${orderId} -> ${newStatus}`);
+            return res.json({ success: true, message: "تم تسجيل التحديث. بانتظار تفعيل كود المزامنة الخاص بويلت." });
+        }
+
+        return res.status(400).json({ error: "Platform not supported for push" });
+    } catch (error: any) {
+        console.error("[SYNC-PUSH] Error:", error);
+        return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // API Sync All Connected Platforms for a Store
+  app.post("/api/sync/all/:storeId", async (req, res) => {
+      const { storeId } = req.params;
+      if (!supabase) return res.status(500).json({ error: "Supabase not initialized" });
+
+      try {
+          const { data: storeRow, error: storeError } = await supabase
+              .from('stores_data')
+              .select('*')
+              .eq('id', storeId)
+              .single();
+
+          if (storeError || !storeRow) return res.status(404).json({ error: "Store not found" });
+
+          const settings = storeRow.settings || {};
+          const connectedPlatforms = settings.connectedPlatforms || [];
+          const results: any[] = [];
+
+          for (const platformId of connectedPlatforms) {
+              const config = settings.platformConfigs?.[platformId];
+              if (config && config.isActive) {
+                  // Reuse the sync logic (we can refactor to a function but for now we call the internal logic or just respond we triggered it)
+                  // For background sync, we'll just fetch orders
+                  // Since we are in the same process, we can't easily "await fetch" our own endpoint without full URL
+                  // So we implement the logic here or call a helper
+                  // Minimal implementation for Wuilt:
+                  if (platformId === 'wuilt') {
+                     try {
+                        const wuiltOrders = await fetchWuiltOrders(config.apiKey, config.shopId);
+                        const { insertedCount, updatedCount } = await syncOrdersToSupabase(platformId, storeId, wuiltOrders, supabase);
+                        results.push({ platform: platformId, inserted: insertedCount, updated: updatedCount });
+                     } catch (err: any) {
+                        results.push({ platform: platformId, error: err.message });
+                     }
+                  }
+              }
+          }
+          return res.json({ success: true, results });
+      } catch (error: any) {
+          return res.status(500).json({ error: error.message });
+      }
+  });
+
+  // Helper function to fetch Wuilt orders
+  async function fetchWuiltOrders(apiKey: string, storeId: string) {
+      const query = `
+        query {
+          orders(first: 100, sort: { field: CREATED_AT, direction: DESC }) {
+            edges {
+              node {
+                id
+                orderNumber
+                status
+                shippingStatus
+                totalPrice
+                currency
+                createdAt
+                customer {
+                  firstName
+                  lastName
+                  email
+                  phone
+                }
+                shippingAddress {
+                  firstName
+                  lastName
+                  address1
+                  city
+                  province
+                  phone
+                }
+                lineItems {
+                  edges {
+                    node {
+                      title
+                      quantity
+                      variant {
+                        price
+                        sku
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await fetch("https://api.wuilt.com/graphql", {
+          method: "POST",
+          headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`,
+              "X-API-KEY": apiKey,
+              "X-Wuilt-Store-Id": storeId
+          },
+          body: JSON.stringify({ query })
+      });
+
+      const result = await response.json();
+      if (!response.ok || result.errors) {
+          throw new Error(result.errors?.[0]?.message || "Wuilt API Error");
+      }
+      return result.data.orders.edges.map((edge: any) => edge.node);
+  }
+
+  // Helper function to sync orders
+  async function syncOrdersToSupabase(platform: string, storeId: string, orders: any[], supabase: any) {
+      const { data: existingOrders, error: fetchError } = await supabase
+          .from('orders')
+          .select('id, platformOrderId, status, paymentStatus')
+          .eq('store_id', storeId)
+          .eq('platform', platform);
+
+      if (fetchError) throw fetchError;
+
+      const existingMap = new Map();
+      existingOrders?.forEach(o => {
+          existingMap.set(o.platformOrderId, o);
+      });
+
+      const newOrders: any[] = [];
+      const changedOrders: any[] = [];
+
+      for (const order of orders) {
+          const internalStatus = mapPlatformStatus(order.status, order.shippingStatus);
+          const internalPaymentStatus = order.status === 'PAID' ? 'مدفوع' : 'بانتظار الدفع';
+          
+          const existing = existingMap.get(order.id);
+          
+          if (!existing) {
+              const items = order.lineItems.edges.map((edge: any) => ({
+                  name: edge.node.title,
+                  quantity: edge.node.quantity,
+                  price: edge.node.variant?.price || 0
+              }));
+
+              newOrders.push({
+                  store_id: storeId,
+                  platform: platform,
+                  platformOrderId: order.id,
+                  orderNumber: String(order.orderNumber),
+                  customerName: `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim() || order.shippingAddress?.firstName || 'عميل خارجي',
+                  customerPhone: order.customer?.phone || order.shippingAddress?.phone || 'غير متوفر',
+                  customerAddress: order.shippingAddress?.address1 || 'غير متوفر',
+                  shippingArea: order.shippingAddress?.province || 'غير محدد',
+                  city: order.shippingAddress?.city || 'غير محدد',
+                  totalPrice: order.totalPrice,
+                  status: internalStatus,
+                  paymentStatus: internalPaymentStatus,
+                  date: order.createdAt,
+                  items: items,
+                  source: 'synced',
+                  productName: items.map((i: any) => i.name).join(', '),
+                  productPrice: order.totalPrice,
+                  shippingFee: 0,
+                  shippingCompany: 'غير محدد'
+              });
+          } else if (existing.status !== internalStatus || existing.paymentStatus !== internalPaymentStatus) {
+              changedOrders.push({
+                  id: existing.id,
+                  status: internalStatus,
+                  paymentStatus: internalPaymentStatus
+              });
+          }
+      }
+
+      let insertedCount = 0;
+      let updatedCount = 0;
+
+      if (newOrders.length > 0) {
+          const { error: insertError } = await supabase.from('orders').insert(newOrders);
+          if (insertError) throw insertError;
+          insertedCount = newOrders.length;
+      }
+
+      if (changedOrders.length > 0) {
+          // Perform updates. Supabase update is per row or bulk with conditions. 
+          // Since they have unique IDs, we can use upsert to update.
+          const { error: updateError } = await supabase.from('orders').upsert(changedOrders);
+          if (updateError) throw updateError;
+          updatedCount = changedOrders.length;
+      }
+
+      return { insertedCount, updatedCount };
+  }
+
+  function mapPlatformStatus(status: string, shippingStatus: string): string {
+      if (status === 'CANCELLED') return 'ملغي';
+      if (shippingStatus === 'DELIVERED') return 'تم_توصيلها';
+      if (shippingStatus === 'SHIPPED') return 'تم_الارسال';
+      return 'في_انتظار_المكالمة';
+  }
+
   // API Sync Endpoint
   app.post("/api/sync/platform/:platform/:storeId", async (req, res) => {
     const { platform, storeId } = req.params;
     const { type = 'orders' } = req.query; // 'orders' or 'products'
-    const { selectedIds } = req.body; // Optional array of IDs to sync
+    const selectedIds = req.body?.selectedIds; // Optional array of IDs to sync
     
     if (!supabase) return res.status(500).json({ error: "Supabase not initialized" });
 
