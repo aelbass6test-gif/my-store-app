@@ -5,8 +5,8 @@ import { CheckCircle2, ChevronLeft, Cable, HardDriveDownload, Search, Shapes, X,
 interface AppsPageProps {
   storeId: string;
   storeData: StoreData | null;
-  onUpdateStoreData: (data: StoreData) => void;
-  onRefresh?: () => void;
+  onUpdateSettings: (settings: any) => void;
+  onRefresh?: () => Promise<void>;
   hostUrl: string;
 }
 
@@ -74,7 +74,7 @@ const AVAILABLE_APPS = [
   }
 ];
 
-export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefresh, hostUrl }: AppsPageProps) {
+export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefresh, hostUrl }: AppsPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -112,7 +112,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
             }
         }
     };
-    onUpdateStoreData({ ...storeData, settings: updatedSettings as any });
+    onUpdateSettings(updatedSettings);
     setIsModalOpen(false);
     setConfig({});
   };
@@ -132,7 +132,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
           connectedPlatforms: currentPlatforms.filter(id => id !== appId),
           platformConfigs: newConfigs
       };
-      onUpdateStoreData({ ...storeData, settings: updatedSettings as any });
+      onUpdateSettings(updatedSettings);
   };
 
   const updateSyncTime = (appId: string, syncType: 'orders' | 'products') => {
@@ -150,7 +150,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
             }
         }
     };
-    onUpdateStoreData({ ...storeData, settings: updatedSettings as any });
+    onUpdateSettings(updatedSettings);
   };
 
   const handleSyncOrders = async (appId: string) => {
@@ -164,8 +164,8 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
         const data = await response.json();
 
         if (response.ok) {
+            if (onRefresh) await onRefresh();
             updateSyncTime(appId, 'orders');
-            if (onRefresh) onRefresh();
             alert(`نجحت المزامنة! تم استيراد ${data.inserted} طلب جديد.`);
         } else {
             alert(`خطأ في المزامنة: ${data.error}`);
@@ -193,8 +193,8 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
         const data = await response.json();
 
         if (response.ok) {
+            if (onRefresh) await onRefresh();
             updateSyncTime(appId, 'products');
-            if (onRefresh) onRefresh();
             alert(isSelective ? `تم استيراد ${data.inserted} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.inserted} منتج.`);
             if (isSelective) setShowSelectiveModal(false);
         } else {

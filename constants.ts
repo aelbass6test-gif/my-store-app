@@ -70,27 +70,35 @@ export const EGYPT_GOVERNORATES = [
 ];
 
 export const generateEgyptShippingOptions = (): ShippingOption[] => {
-  return EGYPT_GOVERNORATES.map((gov, index) => ({
-    id: `gov_${index + 1}`,
-    label: gov.name,
-    details: 'شحن محافظات',
-    price: 0, 
-    baseWeight: 1,
-    extraKgPrice: 0,
-    returnAfterPrice: 0,
-    returnWithoutPrice: 0,
-    exchangePrice: 0,
-    cities: gov.cities.map((city, cIndex) => ({
-      id: `city_${index + 1}_${cIndex + 1}`,
-      name: city,
-      shippingPrice: 0,
-      extraKgPrice: 0,
-      returnAfterPrice: 0,
-      returnWithoutPrice: 0,
-      exchangePrice: 0,
-      useParentFees: true
-    }))
-  }));
+  return EGYPT_GOVERNORATES.map((gov, index) => {
+    // Sensible defaults
+    let defaultPrice = 60;
+    if (["القاهرة", "الجيزة", "الإسكندرية"].includes(gov.name)) defaultPrice = 35;
+    else if (["القليوبية", "المنوفية", "الدقهلية", "الغربية", "الشرقية", "البحيرة", "دمياط", "كفر الشيخ"].includes(gov.name)) defaultPrice = 45;
+    else if (["بورسعيد", "الإسماعيلية", "السويس"].includes(gov.name)) defaultPrice = 50;
+
+    return {
+      id: `gov_${index + 1}`,
+      label: gov.name,
+      details: 'شحن محافظات',
+      price: defaultPrice, 
+      baseWeight: 1,
+      extraKgPrice: 10,
+      returnAfterPrice: 35,
+      returnWithoutPrice: 35,
+      exchangePrice: 35,
+      cities: gov.cities.map((city, cIndex) => ({
+        id: `city_${index + 1}_${cIndex + 1}`,
+        name: city,
+        shippingPrice: defaultPrice,
+        extraKgPrice: 10,
+        returnAfterPrice: 35,
+        returnWithoutPrice: 35,
+        exchangePrice: 35,
+        useParentFees: true
+      }))
+    };
+  });
 };
 
 export const DEFAULT_WHATSAPP_TEMPLATES = [

@@ -427,8 +427,13 @@ export interface AuditLog {
 
 export interface Order {
   id: string;
+  store_id?: string;
+  source?: 'manual' | 'synced' | 'saas';
+  platform?: string;
   orderNumber: string;
   waybillNumber?: string;
+  trackingUrl?: string;
+  platformOrderId?: string;
   date: string;
   shippingCompany: string;
   shippingArea: string;
@@ -441,25 +446,27 @@ export interface Order {
   notes?: string;
   items: OrderItem[];
   shippingFee: number;
+  tax?: number;
   status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  paymentMethod?: string;
   productName: string; 
   productPrice: number; 
   productCost: number; 
+  totalPrice?: number;
   weight: number; 
   discount: number;
   totalAmountOverride?: number;
   totalAmountOverrideReason?: string;
-  includeInspectionFee: boolean; 
-  isInsured: boolean; 
+  includeInspectionFee?: boolean; 
+  isInsured?: boolean; 
   inspectionFeeDeducted?: boolean;
   inspectionFeePaidByCustomer?: boolean;
   shippingAndInsuranceDeducted?: boolean;
   returnFeeDeducted?: boolean;
   collectionProcessed?: boolean;
-  paymentStatus: PaymentStatus;
   preparationStatus: PreparationStatus;
   classification?: string;
-  paymentMethod?: string;
   redeemedPoints?: number;
   pointsDiscount?: number;
   loyaltyPointsAwarded?: boolean;
