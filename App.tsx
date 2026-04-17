@@ -8,6 +8,8 @@ import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
 import { oneToolzProducts } from './src/data/one-toolz-products';
 
+import { triggerWebhooks } from './utils/webhook';
+
 // Page Components (will be loaded via router)
 import SignUpPage from './components/SignUpPage';
 import EmployeeLoginPage from './components/EmployeeLoginPage';
@@ -46,6 +48,7 @@ import ActivityLogsPage from './components/ActivityLogsPage';
 import SuppliersPage from './components/SuppliersPage';
 import PagesManager from './components/PagesManager';
 import PaymentSettingsPage from './components/PaymentSettingsPage';
+import DeveloperSettingsPage from './components/DeveloperSettingsPage';
 import TeamChatPage from './components/TeamChatPage';
 import WhatsAppPage from './components/WhatsAppPage';
 import WelcomeLoader from './components/WelcomeLoader';
@@ -58,6 +61,7 @@ import OrderTrackingPage from './components/OrderTrackingPage';
 import OtpVerificationPage from './components/OtpVerificationPage';
 import IosInstallPrompt from './components/IosInstallPrompt';
 import ComingSoonPage from './components/ComingSoonPage';
+import AppsPage from './components/AppsPage';
 
 interface EmployeeRegisterRequestData {
   fullName: string;
@@ -707,10 +711,39 @@ export const AppComponent = () => {
             }
         }, 5000); // Poll every 5 seconds
 
+        // Background Auto-Sync for Platforms (Wuilt, etc.)
+        const autoSyncInterval = setInterval(async () => {
+            if (activeStoreId && !isSavingRef.current && activeStore) {
+                const connectedPlatforms = allStoresData[activeStoreId]?.settings?.connectedPlatforms || [];
+                const platformConfigs = (allStoresData[activeStoreId]?.settings as any)?.platformConfigs || {};
+
+                for (const platformId of connectedPlatforms) {
+                    const config = platformConfigs[platformId];
+                    if (config?.isActive) {
+                        console.log(`[AUTO-SYNC] Triggering background sync for ${platformId}...`);
+                        try {
+                            const response = await fetch(`/api/sync/platform/${platformId}/${activeStoreId}?type=orders`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' }
+                            });
+                            if (response.ok) {
+                                console.log(`[AUTO-SYNC] Successfully synced orders for ${platformId}`);
+                                // We don't call refreshStoreData here because the Realtime listener for 'orders' table 
+                                // or the next 5s database poll will pick up the changes.
+                            }
+                        } catch (err) {
+                            console.error(`[AUTO-SYNC] Failed to sync ${platformId}:`, err);
+                        }
+                    }
+                }
+            }
+        }, 120000); // Every 2 minutes
+
         return () => {
             console.log('[REALTIME] Removing subscriptions and polling.');
             subscriptions.forEach(sub => supabase.removeChannel(sub));
             clearInterval(pollingInterval);
+            clearInterval(autoSyncInterval);
         };
     }, [activeStoreId]); 
 
@@ -750,13 +783,14 @@ export const AppComponent = () => {
     };
 
     const pageProps = {
-        users, setUsers, allStoresData, setAllStoresData, currentUser, activeStore,
+        users, setUsers, allStoresData, setAllStoresData, currentUser, activeStore, activeStoreId,
         orders: activeStoreId ? allStoresData[activeStoreId]?.orders || [] : [],
         products: activeStoreId ? allStoresData[activeStoreId]?.settings?.products || [] : [],
         settings: activeStoreId ? allStoresData[activeStoreId]?.settings || INITIAL_SETTINGS : INITIAL_SETTINGS,
         wallet: activeStoreId ? allStoresData[activeStoreId]?.wallet || { balance: 0, transactions: [] } : { balance: 0, transactions: [] },
         cart,
         forceSync,
+        onRefresh: () => activeStoreId && refreshStoreData(activeStoreId),
         customers: activeStoreId ? allStoresData[activeStoreId]?.customers || [] : [],
         setCustomers: (updater: any) => {
             if(activeStoreId) {
@@ -887,6 +921,7 @@ export const AppComponent = () => {
         
         pageProps.setOrders((prev: Order[]) => [newOrder, ...prev]);
         pageProps.setCart([]); // Clear cart
+        triggerWebhooks(newOrder, pageProps.settings);
         return newOrder.id;
     };
 
@@ -993,9 +1028,9 @@ export const AppComponent = () => {
                     <Route path="design-templates" element={<ComingSoonPage />} />
                     <Route path="domain" element={<ComingSoonPage />} />
                     <Route path="legal-pages" element={<ComingSoonPage />} />
-                    <Route path="apps" element={<ComingSoonPage />} />
+                    <Route path="apps" element={<AppsPage storeId={activeStoreId} storeData={allStoresData[activeStoreId] || null} onUpdateStoreData={(newStoreData) => setAllStoresData(prev => ({ ...prev, [activeStoreId]: newStoreData }))} onRefresh={() => activeStoreId && refreshStoreData(activeStoreId)} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
                     <Route path="settings/tax" element={<ComingSoonPage />} />
-                    <Route path="settings/developer" element={<ComingSoonPage />} />
+                    <Route path="settings/developer" element={<DeveloperSettingsPage settings={pageProps.settings} setSettings={pageProps.setSettings} activeStoreId={activeStoreId} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
                 </Route>
 
                 <Route path="store" element={<StorefrontPage {...pageProps} onAddToCart={handleAddToCart} onUpdateCartQuantity={handleUpdateCartQuantity} onRemoveFromCart={handleRemoveFromCart} />} />

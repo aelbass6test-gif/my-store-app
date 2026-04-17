@@ -837,8 +837,9 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         };
 
         let newStatus: OrderStatus | null = null;
-        if (action === 'تم التأكيد') newStatus = 'جاري_المراجعة';
-        else if (action === 'تم الإلغاء') newStatus = 'ملغي';
+        if (action === 'تم التأكيد') newStatus = 'قيد_التنفيذ';
+        else if (action === 'تم الإلغاء' || action === 'رقم خاطئ') newStatus = 'ملغي';
+        else if (['العميل لم يرد', 'مؤجل', 'يحتاج متابعة'].includes(action)) newStatus = 'جاري_المراجعة';
         
         if (newStatus && activeOrder) {
             logAudit(activeOrder.id, 'status', activeOrder.status, newStatus);

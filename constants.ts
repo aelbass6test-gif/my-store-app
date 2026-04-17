@@ -150,6 +150,7 @@ export const INITIAL_SETTINGS: Settings = {
   codThreshold: 2000,
   codFeeRate: 0.01,
   codTaxRate: 0.14,
+  connectedPlatforms: [],
   integration: {
     platform: 'none',
     apiKey: ''

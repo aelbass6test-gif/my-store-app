@@ -47,6 +47,8 @@ export interface ShippingOption {
 export interface PlatformIntegration {
   platform: 'none' | 'wuilt';
   apiKey: string;
+  shopId?: string;
+  shopUrl?: string;
 }
 
 export interface ShippingCarrierIntegration {
@@ -65,7 +67,7 @@ export interface ProductVariant {
   costPrice?: number;
   weight?: number;
   stock?: number;
-  stockQuantity: number;
+  stockQuantity: number | null;
   options: { [optionName: string]: string };
 }
 
@@ -81,7 +83,7 @@ export interface Product {
   images?: string[];
   inStock?: boolean;
   stock?: number;
-  stockQuantity: number;
+  stockQuantity: number | null;
   collectionId?: string; 
   hasVariants: boolean;
   options: string[];
@@ -314,8 +316,17 @@ export interface EmployeeDashboardSettings {
   showFollowUpReminders: boolean;
 }
 
+export interface WebhookIntegration {
+  id: string;
+  storeUrl: string;
+  webhookUrl: string;
+  secretKey: string;
+  isActive: boolean;
+}
+
 export interface Settings {
   enableGlobalFinancials: boolean; 
+  webhookIntegrations?: WebhookIntegration[];
   insuranceFeePercent: number;
   enableInsurance: boolean; 
   inspectionFee: number;
@@ -340,6 +351,17 @@ export interface Settings {
   enableDefaultPrice: boolean;
   enablePlatformIntegration: boolean;
   integration: PlatformIntegration;
+  customAppDomain?: string; // <-- New field for SaaS integration
+  platformConfigs?: Record<string, {
+    appId: string;
+    apiKey?: string;
+    apiSecret?: string;
+    shopUrl?: string;
+    shopId?: string;
+    lastSync?: string;
+    lastProductSync?: string;
+    isActive: boolean;
+  }>;
   employees: Employee[];
   customization: StoreCustomization;
   discountCodes: DiscountCode[];
@@ -353,6 +375,7 @@ export interface Settings {
   paymentMethods: PaymentMethod[];
   globalOptions: GlobalOption[]; 
   collections: Collection[];
+  connectedPlatforms: string[]; // <-- Added connected platforms (e.g., 'wuilt', 'shopify')
   whatsappTemplates?: WhatsAppTemplate[];
   callScripts?: CallScript[];
   employeeDashboardSettings?: EmployeeDashboardSettings;

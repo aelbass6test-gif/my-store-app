@@ -96,6 +96,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
             links: [
                 { to: '/design-templates', label: 'القوالب', icon: <LayoutGrid size={20} /> },
                 { to: '/customize-store', label: 'المظهر', icon: <Brush size={20} /> },
+                { to: '/apps', label: 'الربط والتطبيقات', icon: <AppWindow size={20} /> },
                 { to: '/pages', label: 'الصفحات', icon: <FileText size={20} /> },
                 { to: '/domain', label: 'النطاق', icon: <Globe size={20} /> },
             ]
@@ -108,7 +109,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
                 { to: '/standard-reports', label: 'مركز التقارير', icon: <FileText size={20} /> },
                 { to: '/activity-logs', label: 'سجل النشاط', icon: <History size={20} /> },
                 { to: '/legal-pages', label: 'الصفحات القانونية', icon: <Shield size={20} /> },
-                { to: '/apps', label: 'التطبيقات', icon: <AppWindow size={20} /> },
             ]
         },
         {

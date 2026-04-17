@@ -8,6 +8,7 @@ import { generateShippingLabelHTML } from '../utils/shippingLabelGenerator';
 import { generateShippingNote } from '../services/geminiService';
 import { calculateCodFee } from '../utils/financials';
 import { generateOrdersReportHTML } from '../utils/reportGenerator';
+import { triggerWebhooks } from '../utils/webhook';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -168,12 +169,33 @@ const WaybillModal: React.FC<{ order: Order; onClose: () => void; onSave: (waybi
 };
 
 
-const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, products, settings, currentUser, setWallet, addLoyaltyPointsForOrder, activeStore, customers, setCustomers }) => {
+const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ orders, setOrders, products, settings, currentUser, setWallet, addLoyaltyPointsForOrder, activeStore, customers, setCustomers, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
   const [showSummaryModal, setShowSummaryModal] = useState<Order | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Polling for real-time updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (onRefresh && document.visibilityState === 'visible') {
+        onRefresh();
+      }
+    }, 10000); // UI poll every 10 seconds for smoothness
+    return () => clearInterval(interval);
+  }, [onRefresh]);
+
+  const handleManualRefresh = async () => {
+    if (!onRefresh) return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 600);
+    }
+  };
   
   const [activeTab, setActiveTab] = useState('الجميع');
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
@@ -452,6 +474,8 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, products, se
     } else {
         setOrders(prevOrders => [orderWithId, ...prevOrders]);
     }
+
+    triggerWebhooks(orderWithId, settings);
 
     setShowAddModal(false);
     setOrderToConfirm(null);
@@ -868,7 +892,16 @@ const OrdersList: React.FC<OrdersListProps> = ({ orders, setOrders, products, se
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex items-center justify-between w-full lg:w-auto">
           <div>
-            <h1 className="text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1">إدارة الطلبات</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1">إدارة الطلبات</h1>
+              <button 
+                onClick={handleManualRefresh}
+                className={`p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-primary transition-all ${isRefreshing ? 'animate-spin text-primary border-primary/30' : ''}`}
+                title="تحديث البيانات"
+              >
+                <RefreshCcw size={18} />
+              </button>
+            </div>
             <div className="flex items-center gap-2">
               <p className="text-xs md:text-sm text-slate-500 font-medium">{filteredOrders.length} طلب</p>
               <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-1.5 py-0.5 rounded text-[10px] font-bold">المتجر: {activeStore?.id}</span>
@@ -1798,7 +1831,7 @@ const AssignmentModal: React.FC<{
 
 const LowStockAlert: React.FC<{ products: Product[] }> = ({ products }) => {
   if (!products) return null;
-  const lowStockProducts = products.filter(p => p.stockQuantity <= (p.stockThreshold || 5));
+  const lowStockProducts = products.filter(p => p.stockQuantity !== null && p.stockQuantity !== undefined && p.stockQuantity <= (p.stockThreshold || 5));
   
   if (lowStockProducts.length === 0) return null;
 

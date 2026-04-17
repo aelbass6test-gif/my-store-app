@@ -1,57 +1,41 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from "react";
 
 interface Props {
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 interface State {
   hasError: boolean;
-  error: Error | null;
+  error?: Error;
 }
 
 class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
-  }
+  public state: State = {
+    hasError: false
+  };
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    console.error("Uncaught error:", error, errorInfo);
   }
 
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
-          <div className="bg-white dark:bg-slate-900 p-8 rounded-[32px] shadow-2xl border border-slate-100 dark:border-slate-800 max-w-md w-full text-center space-y-6">
-            <div className="w-20 h-20 bg-red-50 dark:bg-red-500/10 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-10 h-10 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+            <div className="max-w-md w-full bg-white rounded-lg shadow p-6 border-t-4 border-red-500">
+                <h1 className="text-xl font-bold text-gray-900 mb-2">Something went wrong</h1>
+                <p className="text-red-500 mb-4">{this.state.error?.message}</p>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="w-full bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700 transition"
+                >
+                    Refresh application
+                </button>
             </div>
-            <h1 className="text-2xl font-black text-slate-800 dark:text-white">عذراً، حدث خطأ ما</h1>
-            <p className="text-slate-500 dark:text-slate-400">
-              نواجه مشكلة تقنية حالياً. يرجى محاولة إعادة تحميل الصفحة.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-indigo-500/20"
-            >
-              إعادة تحميل الصفحة
-            </button>
-            {process.env.NODE_ENV === 'development' && (
-              <pre className="mt-4 p-4 bg-slate-100 dark:bg-slate-800 rounded-xl text-left text-xs overflow-auto max-h-40 text-red-500">
-                {this.state.error?.toString()}
-              </pre>
-            )}
-          </div>
         </div>
       );
     }

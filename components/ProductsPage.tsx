@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Package, Plus, Trash2, Edit3, Save, XCircle, Search, AlertCircle, Barcode, DollarSign, Scale, Wallet, RefreshCw, ServerOff, Image as ImageIcon, CheckCircle, Clock, Download, Layers, Grid3x3, Wand2, FileText, Copy, ChevronsUpDown, Percent, Upload, FileUp, ListChecks, FileWarning, HandCoins } from 'lucide-react';
+import { Package, Plus, Trash2, Edit3, Save, XCircle, Search, AlertCircle, Barcode, DollarSign, Scale, Wallet, RefreshCw, ServerOff, Image as ImageIcon, CheckCircle, Clock, Download, Layers, Grid3x3, Wand2, FileText, Copy, ChevronsUpDown, Percent, Upload, FileUp, ListChecks, FileWarning, HandCoins, Info } from 'lucide-react';
 import { Settings, Product, ProductVariant } from '../types';
-import { fetchWuiltProducts } from '../services/platformService';
 import { motion, Variants } from 'framer-motion';
 import { generateProductDescription, generateSocialMediaPost } from '../services/geminiService';
 
@@ -25,9 +24,11 @@ const itemVariants: Variants = {
 interface ProductsPageProps {
   settings: Settings;
   setSettings: (updater: React.SetStateAction<Settings>) => void;
+  activeStoreId: string | null;
+  onRefresh?: () => void;
 }
 
-const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSettings }) => {
+const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSettings, activeStoreId, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -43,6 +44,12 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
   const [showPostModal, setShowPostModal] = useState(false);
   const [generatedPost, setGeneratedPost] = useState('');
   
+  // States for selective sync
+  const [showSelectiveSyncModal, setShowSelectiveSyncModal] = useState(false);
+  const [selectableProducts, setSelectableProducts] = useState<Product[]>([]);
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [isFetchingSelectable, setIsFetchingSelectable] = useState(false);
+
   // States for the new import modal
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importPreview, setImportPreview] = useState<{ products: Product[], errors: string[] } | null>(null);
@@ -64,9 +71,9 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
         return;
     }
 
-    let finalStock = productData.stockQuantity || 0;
+    let finalStock = productData.stockQuantity === undefined ? null : productData.stockQuantity;
     if (productData.hasVariants && productData.variants) {
-        finalStock = productData.variants.reduce((sum, v) => sum + v.stockQuantity, 0);
+        finalStock = productData.variants.reduce((sum, v) => sum + (v.stockQuantity || 0), 0);
     }
     
     const productToSave: Product = {
@@ -77,7 +84,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
         weight: productData.weight || 1,
         costPrice: productData.costPrice || 0,
         stockQuantity: finalStock,
-        inStock: finalStock > 0,
+        inStock: finalStock === null || finalStock > 0,
         collectionId: productData.collectionId || undefined,
         description: productData.description || '',
         images: productData.images || [],
@@ -138,27 +145,110 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     setIsGenerating(false);
   };
 
-   const handleSync = async () => {
-    if (!settings.integration || settings.integration.platform !== 'wuilt' || !settings.integration.apiKey) {
-      setSyncStatus({ type: 'error', message: 'بيانات الربط مع Wuilt غير مكتملة. يرجى التحقق من مفتاح API في الإعدادات.' });
+  const handleSync = async () => {
+    // Check either the new platformConfigs or the legacy integration settings
+    const wuiltConfig = settings.platformConfigs?.['wuilt'] || (settings.integration?.platform === 'wuilt' ? { ...settings.integration, isActive: true } : null);
+    
+    if (!wuiltConfig || !wuiltConfig.apiKey || wuiltConfig.isActive === false) {
+      setSyncStatus({ type: 'error', message: 'بيانات الربط مع Wuilt غير مكتملة أو غير مفعلة. يرجى التحقق من إعدادات الربط في صفحة التطبيقات.' });
       return;
     }
 
     setIsSyncing(true);
     setSyncStatus({ type: 'idle', message: null });
     try {
-      const productsFromWuilt = await fetchWuiltProducts(settings.integration.apiKey);
-      setSettings({ ...settings, products: productsFromWuilt });
+      if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
+      
+      const response = await fetch(`/api/sync/platform/wuilt/${activeStoreId}?type=products`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'فشلت المزامنة');
+      }
+
+      if (onRefresh) onRefresh();
       
       const now = new Date();
       setLastSync(now);
       localStorage.setItem('lastProductSync', now.toISOString());
 
-      setSyncStatus({ type: 'success', message: `تمت المزامنة بنجاح! تم تحديث ${productsFromWuilt.length} منتج.` });
+      setSyncStatus({ 
+        type: 'success', 
+        message: `تمت المزامنة بنجاح! تم معالجة ${result.processed} منتج (تم إضافة ${result.inserted} وتحديث ${result.updated}).` 
+      });
 
       setTimeout(() => {
         setSyncStatus(s => s.type === 'success' ? { ...s, type: 'idle' } : s);
       }, 5000);
+    } catch (error: any) {
+      setSyncStatus({ type: 'error', message: error.message });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleFetchSelectableProducts = async () => {
+    const wuiltConfig = settings.platformConfigs?.['wuilt'] || (settings.integration?.platform === 'wuilt' ? { ...settings.integration, isActive: true } : null);
+
+    if (!wuiltConfig || !wuiltConfig.apiKey || wuiltConfig.isActive === false) {
+      alert('يرجى ضبط وتفعيل إعدادات الربط مع Wuilt أولاً من صفحة التطبيقات.');
+      return;
+    }
+
+    setIsFetchingSelectable(true);
+    setShowSelectiveSyncModal(true);
+    try {
+      if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
+      const response = await fetch(`/api/sync/platform/wuilt/${activeStoreId}/preview?type=products`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'فشل جلب المنتجات');
+      setSelectableProducts(result.items || []);
+    } catch (error: any) {
+      alert(error.message);
+      setShowSelectiveSyncModal(false);
+    } finally {
+      setIsFetchingSelectable(false);
+    }
+  };
+
+  const handleImportSelected = async () => {
+    if (selectedProductIds.size === 0) {
+      alert('يرجى اختيار منتج واحد على الأقل.');
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncStatus({ type: 'idle', message: null });
+    setShowSelectiveSyncModal(false);
+
+    try {
+      if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
+      
+      const response = await fetch(`/api/sync/platform/wuilt/${activeStoreId}?type=products`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          selectedIds: Array.from(selectedProductIds).map(id => id.replace('wuilt-', '')) 
+        })
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'فشلت المزامنة');
+
+      if (onRefresh) onRefresh();
+      
+      setSyncStatus({ 
+        type: 'success', 
+        message: `تم استيراد ${result.processed} منتج بنجاح!` 
+      });
+
+      setSelectedProductIds(new Set());
     } catch (error: any) {
       setSyncStatus({ type: 'error', message: error.message });
     } finally {
@@ -355,6 +445,16 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
             <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
                 <Download size={16} /> تصدير
             </button>
+            {isPlatformConnected && (
+              <button
+                  onClick={handleFetchSelectableProducts}
+                  disabled={isSyncing || isFetchingSelectable}
+                  className="flex items-center gap-2 bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-lg hover:bg-indigo-600/20 transition-all font-bold border border-indigo-200 dark:border-indigo-800 disabled:opacity-50"
+              >
+                  <ListChecks size={16} className={isFetchingSelectable ? 'animate-spin' : ''} />
+                  {isFetchingSelectable ? 'جاري جلب القائمة...' : `اختيار منتجات للمزامنة`}
+              </button>
+            )}
             {isPlatformConnected ? (
             <button
                 onClick={handleSync}
@@ -443,7 +543,15 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="font-bold text-slate-800 dark:text-slate-200">{product.name}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-bold text-slate-800 dark:text-slate-200">{product.name}</div>
+                        {product.id.startsWith('wuilt-') && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-rose-50 text-rose-600 border border-rose-100 rounded-md font-bold flex items-center gap-1">
+                            <img src="https://wuilt.com/favicon.ico" className="w-2.5 h-2.5" referrerPolicy="no-referrer" />
+                            ويلت
+                          </span>
+                        )}
+                      </div>
                       {product.hasVariants && <div className="text-xs text-slate-400">{product.variants.length} متغيرات</div>}
                     </td>
                     <td className="px-6 py-4">
@@ -460,13 +568,15 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {product.stockQuantity > 0 ? (
+                      {product.stockQuantity === null || product.stockQuantity === undefined ? (
+                         <span className="px-2 py-1 text-xs font-bold text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/50 rounded-full border border-emerald-200 dark:border-emerald-800">متاح دائماً</span>
+                      ) : product.stockQuantity > 0 ? (
                          <div className="flex items-center gap-2">
-                             <span className="font-bold text-slate-700 dark:text-slate-300">{product.stockQuantity}</span>
-                             {product.stockQuantity < 5 && <span className="text-[10px] text-red-600 bg-red-100 px-2 py-0.5 rounded-full font-bold">منخفض</span>}
+                             <span className="font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 min-w-[32px] text-center">{product.stockQuantity}</span>
+                             {product.stockQuantity < 5 && <span className="text-[10px] text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full font-bold">منخفض</span>}
                          </div>
                       ) : (
-                         <span className="px-2 py-1 text-xs font-bold text-red-700 bg-red-100 dark:text-red-300 dark:bg-red-900/50 rounded-full">نفذ</span>
+                         <span className="px-2 py-1 text-xs font-bold text-red-700 bg-red-100 dark:text-red-300 dark:bg-red-900/50 rounded-full border border-red-200 dark:border-red-800">نفذ</span>
                       )}
                     </td>
                     <td className="px-6 py-4">
@@ -532,7 +642,9 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
 </div>
 <div>
   <p className="text-xs font-black text-slate-500 dark:text-slate-400">المخزون</p>
-  <p className={`font-black ${product.stockQuantity > 0 ? 'text-slate-900 dark:text-slate-100' : 'text-red-600'}`}>{product.stockQuantity}</p>
+  <p className={`font-black ${product.stockQuantity === null || product.stockQuantity === undefined ? 'text-emerald-600' : product.stockQuantity > 0 ? 'text-slate-900 dark:text-slate-100' : 'text-red-600'}`}>
+    {product.stockQuantity === null || product.stockQuantity === undefined ? 'متاح دائماً' : product.stockQuantity}
+  </p>
 </div>
 <div>
   <p className="text-xs font-black text-slate-500 dark:text-slate-400">SKU</p>
@@ -611,6 +723,18 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
                  <button onClick={() => { navigator.clipboard.writeText(generatedPost); alert('تم النسخ!'); }} className="mt-4 w-full flex items-center justify-center gap-2 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-bold"><Copy size={16}/> نسخ المنشور</button>
             </div>
         </div>
+      )}
+
+      {showSelectiveSyncModal && (
+        <SelectiveSyncModal 
+            isOpen={showSelectiveSyncModal}
+            onClose={() => setShowSelectiveSyncModal(false)}
+            products={selectableProducts}
+            selectedIds={selectedProductIds}
+            setSelectedIds={setSelectedProductIds}
+            onConfirm={handleImportSelected}
+            isSyncing={isSyncing}
+        />
       )}
     </motion.div>
   );
@@ -929,8 +1053,25 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, on
                                 )}
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <FormInput label="التكلفة (ج.م)" icon={<Wallet size={16}/>} type="number" value={productData.costPrice?.toFixed(2) || '0.00'} onChange={e => updateField('costPrice', Number(e.target.value))} disabled={profitMode !== 'manual'} readOnly={profitMode !== 'manual'} />
-                                    <FormInput label="الكمية" icon={<Package size={16}/>} type="number" value={productData.hasVariants ? productData.variants?.reduce((s,v)=>s+v.stockQuantity,0) : productData.stockQuantity || ''} onChange={e => updateField('stockQuantity', Number(e.target.value))} disabled={productData.hasVariants} />
+                                    <FormInput 
+                                        label="التكلفة (ج.م)" 
+                                        icon={<Wallet size={16}/>} 
+                                        type="number" 
+                                        value={productData.costPrice?.toFixed(2) || '0.00'} 
+                                        onChange={e => updateField('costPrice', Number(e.target.value))} 
+                                        disabled={profitMode !== 'manual'} 
+                                        readOnly={profitMode !== 'manual'} 
+                                    />
+                                    <FormInput 
+                                        label="الكمية" 
+                                        icon={<Package size={16}/>} 
+                                        tooltip="ترك خانة الكمية فارغة يعني أن المنتج متاح دائماً بدون تحديد كمية. بينما كتابة 0 تعني أن الكمية قد نفدت."
+                                        type="number" 
+                                        value={productData.hasVariants ? (productData.variants?.reduce((s,v)=>s+(v.stockQuantity || 0),0)) : (productData.stockQuantity === null || productData.stockQuantity === undefined ? '' : productData.stockQuantity)} 
+                                        onChange={e => updateField('stockQuantity', e.target.value === '' ? null : Number(e.target.value))} 
+                                        disabled={productData.hasVariants} 
+                                        placeholder="اتركه فارغاً للمتاح دائماً"
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -1044,7 +1185,7 @@ const VariantManager = ({ productData, setProductData, settings }: any) => {
                                 <div className="text-sm font-bold truncate">{Object.values(variant.options).join(' / ')}</div>
                                 <input type="text" value={variant.sku} onChange={e => updateVariant(variant.id, 'sku', e.target.value)} placeholder="SKU" className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 rounded"/>
                                 <input type="number" value={variant.price} onChange={e => updateVariant(variant.id, 'price', Number(e.target.value))} placeholder="السعر" className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 rounded"/>
-                                <input type="number" value={variant.stockQuantity} onChange={e => updateVariant(variant.id, 'stockQuantity', Number(e.target.value))} placeholder="الكمية" className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 rounded"/>
+                                <input type="number" value={variant.stockQuantity === null || variant.stockQuantity === undefined ? '' : variant.stockQuantity} onChange={e => updateVariant(variant.id, 'stockQuantity', e.target.value === '' ? null : Number(e.target.value))} placeholder="الكمية" className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 rounded"/>
                             </div>
                         ))}
                     </div>
@@ -1054,15 +1195,120 @@ const VariantManager = ({ productData, setProductData, settings }: any) => {
     );
 };
 
-const FormInput = ({ label, icon, as = 'input', actionButton, ...props }: any) => {
+const FormInput = ({ label, icon, as = 'input', actionButton, tooltip, ...props }: any) => {
     const Component = as;
     return (
         <div>
             <div className="flex justify-between items-center mb-1">
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-400 flex items-center gap-2">{icon} {label}</label>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-400 flex items-center gap-2">
+                    {icon} {label}
+                    {tooltip && (
+                        <div className="relative group">
+                            <Info size={14} className="text-slate-400 cursor-help" />
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-800 text-white text-[10px] rounded-lg shadow-xl z-50 text-center font-normal">
+                                {tooltip}
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-800"></div>
+                            </div>
+                        </div>
+                    )}
+                </label>
                 {actionButton}
             </div>
             <Component {...props} className={`block w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 dark:text-white transition-all disabled:bg-slate-200 dark:disabled:bg-slate-700/50 ${props.className || ''}`} />
         </div>
     );
+};
+
+interface SelectiveSyncModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  products: Product[];
+  selectedIds: Set<string>;
+  setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
+  onConfirm: () => void;
+  isSyncing: boolean;
+}
+
+const SelectiveSyncModal: React.FC<SelectiveSyncModalProps> = ({ 
+  isOpen, onClose, products, selectedIds, setSelectedIds, onConfirm, isSyncing 
+}) => {
+  if (!isOpen) return null;
+
+  const toggleProduct = (id: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedIds(newSet);
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === products.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(products.map(p => p.id)));
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800 flex flex-col max-h-[85vh]">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h3 className="text-xl font-bold dark:text-white flex items-center gap-2"><ListChecks size={20} className="text-indigo-500" /> اختيار منتجات للمزامنة</h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><XCircle size={24} className="text-slate-400 dark:text-slate-600" /></button>
+        </div>
+        
+        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-b dark:border-slate-800 flex justify-between items-center px-6">
+          <button onClick={toggleAll} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">
+            {selectedIds.size === products.length ? 'إلغاء تحديد الكل' : 'تحديد الكل'}
+          </button>
+          <span className="text-sm font-bold text-slate-500">{selectedIds.size} من {products.length} تم اختيارهم</span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-2 text-right" dir="rtl">
+          {products.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+               <Package size={48} className="mb-4 opacity-20"/>
+               <p className="font-bold">لا توجد منتجات متاحة للمزامنة</p>
+            </div>
+          ) : (
+            products.map(product => (
+              <div 
+                key={product.id} 
+                onClick={() => toggleProduct(product.id)}
+                className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${selectedIds.has(product.id) ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700'}`}
+              >
+                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${selectedIds.has(product.id) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 dark:border-slate-600'}`}>
+                  {selectedIds.has(product.id) && <CheckCircle size={14} />}
+                </div>
+                {product.thumbnail ? (
+                  <img src={product.thumbnail} alt={product.name} referrerPolicy="no-referrer" className="w-10 h-10 rounded-lg object-cover" />
+                ) : (
+                  <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"><ImageIcon size={20}/></div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm dark:text-white truncate">{product.name}</p>
+                  <p className="text-xs text-slate-500">{product.sku}</p>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-indigo-600 dark:text-indigo-400 text-sm">{product.price.toLocaleString()} ج.م</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t dark:border-slate-800 flex justify-end gap-3 px-6 pb-6">
+          <button onClick={onClose} className="px-6 py-2.5 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-300 rounded-xl font-bold border border-slate-200 dark:border-slate-600">إلغاء</button>
+          <button 
+            onClick={onConfirm} 
+            disabled={selectedIds.size === 0 || isSyncing}
+            className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:bg-slate-400 flex items-center gap-2"
+          >
+            {isSyncing ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />}
+            {isSyncing ? 'جاري الاستيراد...' : `استيراد المختار (${selectedIds.size})`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Settings, PlatformIntegration, Store } from '../types';
-import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X } from 'lucide-react';
+import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe } from 'lucide-react';
 import { clearStoreData } from '../services/databaseService';
 
 interface SettingsPageProps {
@@ -37,6 +37,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
       {onManualSave && (
           <DatabaseManagementCard onSync={onManualSave} />
       )}
+      <DomainSettingsCard settings={settings} setSettings={setSettings} />
       <CommunicationSettingsCard settings={settings} setSettings={setSettings} />
       <EmployeeDashboardSettingsCard settings={settings} setSettings={setSettings} />
       <PlatformIntegrationCard 
@@ -303,68 +304,79 @@ interface PlatformIntegrationCardProps {
   onToggle: () => void;
 }
 
-const PlatformIntegrationCard: React.FC<PlatformIntegrationCardProps> = ({ integration, onSave, isEnabled, onToggle }) => {
-  const WUILT_API_KEY = 'sb_publishable_JHQQcYIfxthKXwLR_46OKQ_H574o9FD';
+const DomainSettingsCard: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
+    return (
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center gap-3 text-blue-600 dark:text-blue-400 mb-6 border-b border-slate-200 dark:border-slate-800 pb-6">
+                <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg"><Link size={24}/></div>
+                <div>
+                    <h2 className="text-xl font-black dark:text-white">إعدادات النطاق (SaaS Domain)</h2>
+                    <p className="text-xs text-slate-500">تحديد الرابط الأساسي لمتجرك لاستخدامه في الـ Webhooks والروابط الخارجية.</p>
+                </div>
+            </div>
+            
+            <div className="space-y-4">
+                <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block mr-1">رابط النظام الأساسي (App Domain)</label>
+                    <div className="relative">
+                        <input 
+                            type="text" 
+                            placeholder="https://your-saas-domain.com"
+                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white font-mono"
+                            value={settings.customAppDomain || ''}
+                            onChange={(e) => setSettings(prev => ({ ...prev, customAppDomain: e.target.value }))}
+                            dir="ltr"
+                        />
+                        <div className="absolute left-4 top-3 text-slate-400">
+                           <Globe size={18} />
+                        </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                        اترك هذا الحقل فارغاً لاستخدام الرابط الحالي للتطبيق تلقائياً. 
+                        أدخل رابطاً ثابتاً إذا كنت تستخدم التطبيق كمنصة (SaaS) على نطاق خاص بك لضمان صحة روابط الـ Webhook.
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+};
 
-  const handlePlatformChange = (platform: 'wuilt' | 'none') => {
-    let newIntegration: PlatformIntegration;
-    if (platform === 'wuilt') {
-        newIntegration = {
-            platform: 'wuilt',
-            apiKey: WUILT_API_KEY
-        };
-    } else {
-        newIntegration = {
-            platform: 'none',
-            apiKey: ''
-        };
-    }
-    onSave(newIntegration);
-  };
-
-
+const PlatformIntegrationCard: React.FC<PlatformIntegrationCardProps> = ({ integration, isEnabled }) => {
   return (
     <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
       <div className="flex items-center justify-between mb-6 pb-6 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400">
           <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg"><Link2 size={24}/></div>
           <div>
-            <h2 className="text-xl font-black dark:text-white">ربط المنصات</h2>
-            <p className="text-xs text-slate-500">مزامنة المنتجات والطلبات من منصات التجارة الإلكترونية.</p>
+            <h2 className="text-xl font-black dark:text-white">تطبيقات الربط والمزامنة</h2>
+            <p className="text-xs text-slate-500">إدارة ربط متجرك مع Wuilt و Shopify والمنصات الأخرى.</p>
           </div>
         </div>
-        <ToggleButton active={isEnabled} onToggle={onToggle} variant="blue" />
+        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${isEnabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-100 text-slate-500'}`}>
+           {isEnabled ? 'متصل' : 'غير متصل'}
+        </div>
       </div>
 
-      <div className={`space-y-6 transition-all duration-300 ${!isEnabled ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-400 mb-2">اختر المنصة</label>
-            <select 
-              value={integration.platform} 
-              onChange={(e) => { e.stopPropagation(); handlePlatformChange(e.target.value as 'wuilt' | 'none'); }}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="none">بدون ربط</option>
-              <option value="wuilt">Wuilt</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-400 mb-2">مفتاح الربط (API Key)</label>
-            <input 
-              type="text" 
-              readOnly
-              placeholder="يتم ملؤه تلقائياً عند اختيار المنصة" 
-              value={integration.apiKey}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-mono disabled:bg-slate-100 dark:disabled:bg-slate-800"
-            />
-             {integration.platform === 'wuilt' && (
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 flex items-center gap-1">
-                    <CheckCircle2 size={12} /> تم الاتصال بلوحة تحكم Wuilt بنجاح.
-                </p>
-            )}
-          </div>
+      <div className="flex flex-col md:flex-row items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 gap-6">
+        <div className="flex items-center gap-4">
+           {integration.platform === 'wuilt' && (
+              <img src="https://wuilt.com/assets/images/logo/wuilt-logo-blue.svg" alt="Wuilt" className="w-12 h-12 p-2 bg-white rounded-xl border border-slate-100" />
+           )}
+           <div>
+              <p className="font-bold text-slate-900 dark:text-white">
+                {integration.platform === 'none' ? 'لم يتم ربط أي منصة بعد' : `متصل بـ ${integration.platform === 'wuilt' ? 'ويلت (Wuilt)' : integration.platform}`}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">تستخدم هذه الإعدادات لمزامنة الطلبات والمنتجات تلقائياً.</p>
+           </div>
         </div>
+        
+        <Link 
+          to="/apps" 
+          className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95"
+        >
+          <AppWindow size={18} />
+          فتح مركز التحكم
+        </Link>
       </div>
     </div>
   );
