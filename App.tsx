@@ -6,7 +6,7 @@ import * as db from './services/databaseService';
 import { supabase } from './services/supabaseClient';
 import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
-import { oneToolzProducts } from './src/data/one-toolz-products';
+import { oneToolzProducts } from './data/one-toolz-products';
 
 import { triggerWebhooks } from './utils/webhook';
 
