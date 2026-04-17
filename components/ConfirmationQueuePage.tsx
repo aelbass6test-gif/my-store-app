@@ -818,7 +818,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         if (!activeOrder || !currentUser || activeOrder.source === 'synced') return;
         
         if ((action === 'تم الإلغاء' || action === 'مؤجل') && !cancellationReason && !actionNotes) {
-             alert('يرجى اختيار سبب الإلغاء/التأجيل أو كتابة ملاحظة.');
+             setNotification('⚠️ يرجى اختيار سبب الإلغاء/التأجيل أو كتابة ملاحظة.');
              return;
         }
 
@@ -1300,15 +1300,20 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                     <div className="flex gap-2">
                                         <button 
                                             onClick={() => {
-                                                if (window.confirm(`هل أنت متأكد من تأكيد ${selectedOrderIds.length} طلب؟`)) {
+                                                const eligible = orders.filter(o => selectedOrderIds.includes(o.id) && o.source !== 'synced');
+                                                if (eligible.length === 0) {
+                                                    setNotification("لا يمكن تعديل حالات الطلبات المتزامنة جماعياً.");
+                                                    return;
+                                                }
+                                                if (window.confirm(`هل أنت متأكد من مراجعة ${eligible.length} طلب؟`)) {
                                                     const now = new Date().toISOString();
                                                     setOrders(current => current.map(o => {
-                                                        if (selectedOrderIds.includes(o.id)) {
+                                                        if (selectedOrderIds.includes(o.id) && o.source !== 'synced') {
                                                             const newLog: AuditLog = {
                                                                 id: Math.random().toString(36).substr(2, 9),
                                                                 timestamp: now,
                                                                 userId: currentUser?.phone || 'unknown',
-                                                                userName: currentUser?.name || 'مستخدم غير معروف',
+                                                                userName: currentUser?.fullName || 'مستخدم غير معروف',
                                                                 field: 'status',
                                                                 oldValue: o.status,
                                                                 newValue: 'جاري_المراجعة'
@@ -1326,19 +1331,24 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             }}
                                             className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
                                         >
-                                            تأكيد الكل
+                                            مراجعة الكل
                                         </button>
                                         <button 
                                             onClick={() => {
-                                                if (window.confirm(`هل أنت متأكد من إلغاء ${selectedOrderIds.length} طلب؟`)) {
+                                                const eligible = orders.filter(o => selectedOrderIds.includes(o.id) && o.source !== 'synced');
+                                                if (eligible.length === 0) {
+                                                    setNotification("لا يمكن تعديل حالات الطلبات المتزامنة جماعياً.");
+                                                    return;
+                                                }
+                                                if (window.confirm(`هل أنت متأكد من إلغاء ${eligible.length} طلب؟`)) {
                                                     const now = new Date().toISOString();
                                                     setOrders(current => current.map(o => {
-                                                        if (selectedOrderIds.includes(o.id)) {
+                                                        if (selectedOrderIds.includes(o.id) && o.source !== 'synced') {
                                                             const newLog: AuditLog = {
                                                                 id: Math.random().toString(36).substr(2, 9),
                                                                 timestamp: now,
                                                                 userId: currentUser?.phone || 'unknown',
-                                                                userName: currentUser?.name || 'مستخدم غير معروف',
+                                                                userName: currentUser?.fullName || 'مستخدم غير معروف',
                                                                 field: 'status',
                                                                 oldValue: o.status,
                                                                 newValue: 'ملغي'
@@ -1723,7 +1733,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                             <button 
                                                                 onClick={() => {
                                                                     navigator.clipboard.writeText(`${activeOrder.customerAddress}, ${activeOrder.city || ''}, ${activeOrder.shippingArea}`);
-                                                                    alert('تم نسخ العنوان');
+                                                                    setNotification('تم نسخ العنوان ✅');
                                                                 }}
                                                                 className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"
                                                             >
@@ -1844,8 +1854,9 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             <div className="flex items-center gap-3">
                                                 <span className="font-bold text-slate-800 dark:text-white">{inspectionFeeValue.toLocaleString()} ج.م</span>
                                                 <button
-                                                    onClick={() => updateActiveOrderField('includeInspectionFee', !activeOrder.includeInspectionFee)}
-                                                    className={`px-3 py-1 text-xs font-bold rounded-full transition-colors ${activeOrder.includeInspectionFee ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50'}`}
+                                                    onClick={() => !isReadOnly && updateActiveOrderField('includeInspectionFee', !activeOrder.includeInspectionFee)}
+                                                    disabled={isReadOnly}
+                                                    className={`px-3 py-1 text-xs font-bold rounded-full transition-colors ${activeOrder.includeInspectionFee ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50'} ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                 >
                                                     {activeOrder.includeInspectionFee ? 'إلغاء' : 'تفعيل'}
                                                 </button>
@@ -1903,10 +1914,16 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                     <h4 className="font-bold text-slate-600 dark:text-slate-400 text-sm">انطباع العميل</h4>
                                     <div className="flex flex-wrap gap-2">
                                         {SENTIMENT_OPTIONS.map(opt => (
-                                            <button
+                                            <button 
                                                 key={opt.value}
-                                                onClick={() => setSentiment(opt.value as any)}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${sentiment === opt.value ? opt.color + ' ring-2 ring-offset-2 ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'}`}
+                                                disabled={isReadOnly}
+                                                onClick={() => {
+                                                    if (!isReadOnly) {
+                                                        setSentiment(opt.value as any);
+                                                        setNotification(`تم تسجيل انطباع العميل: ${opt.label}`);
+                                                    }
+                                                }}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${sentiment === opt.value ? opt.color + ' ring-2 ring-offset-2 ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'} ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 {opt.label}
                                             </button>
@@ -2136,7 +2153,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                     <button 
                                         onClick={() => {
                                             navigator.clipboard.writeText(script.text);
-                                            alert('تم نسخ النص بنجاح');
+                                            setNotification('تم نسخ النص بنجاح ✅');
                                         }}
                                         className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"
                                     >

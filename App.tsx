@@ -318,7 +318,7 @@ export const AppComponent = () => {
             } catch (e) {
                 console.error("Background sync failed:", e);
             }
-        }, 60000); // 1 minute
+        }, 30000); // Fast sync every 30 seconds
 
         return () => clearInterval(syncInterval);
     }, [activeStoreId, currentUser]);
@@ -764,7 +764,7 @@ export const AppComponent = () => {
                     }
                 }
             }
-        }, 120000); // Every 2 minutes
+        }, 30000); // Every 30 seconds (Auto-sync)
 
         return () => {
             console.log('[REALTIME] Removing subscriptions and polling.');

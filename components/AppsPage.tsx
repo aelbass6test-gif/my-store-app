@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StoreData, Product } from '../types';
-import { CheckCircle2, ChevronLeft, Cable, HardDriveDownload, Search, Shapes, X, RefreshCw, ListChecks, CheckCircle, Package, ImageIcon, Save, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, Cable, HardDriveDownload, Search, Shapes, X, RefreshCw, ListChecks, CheckCircle, Package, ImageIcon, Save, XCircle, Info, AlertCircle } from 'lucide-react';
 
 interface AppsPageProps {
   storeId: string;
@@ -89,6 +89,18 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [isFetchingSelectable, setIsFetchingSelectable] = useState(false);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  React.useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
   const connectedPlatforms = storeData?.settings?.connectedPlatforms || [];
   const platformConfigs: Record<string, PlatformConfig> = (storeData?.settings as any)?.platformConfigs || {};
 
@@ -166,13 +178,18 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
         if (response.ok) {
             if (onRefresh) await onRefresh();
             updateSyncTime(appId, 'orders');
-            alert(`نجحت المزامنة! تم استيراد ${data.inserted} طلب جديد.`);
+            const msg = data.inserted > 0 
+                ? `✅ نجحت المزامنة! تم استيراد ${data.inserted} طلب جديد وتحديث ${data.updated} طلب.` 
+                : data.updated > 0 
+                    ? `✅ نجحت المزامنة! تم تحديث بيانات ${data.updated} طلب.`
+                    : `ℹ️ لا توجد طلبات جديدة حالياً، المتجر متزامن بالكامل.`;
+            setNotification({ message: msg, type: data.inserted > 0 || data.updated > 0 ? 'success' : 'info' });
         } else {
-            alert(`خطأ في المزامنة: ${data.error}`);
+            setNotification({ message: `❌ خطأ في المزامنة: ${data.error}`, type: 'error' });
         }
     } catch (error) {
         console.error('Sync error:', error);
-        alert('حدث خطأ أثناء محاولة الاتصال بالسيرفر للمزامنة.');
+        setNotification({ message: '❌ تعذر الاتصال بالسيرفر للمزامنة. يرجى المحاولة لاحقاً.', type: 'error' });
     } finally {
         setSyncing(null);
     }
@@ -195,14 +212,19 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
         if (response.ok) {
             if (onRefresh) await onRefresh();
             updateSyncTime(appId, 'products');
-            alert(isSelective ? `تم استيراد ${data.inserted} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.inserted} منتج.`);
+            const msg = isSelective 
+                ? `✅ تم استيراد ${data.inserted} منتج بنجاح!` 
+                : data.inserted > 0 || data.updated > 0
+                    ? `✅ نجحت المزامنة! تم استيراد ${data.inserted} منتج جديد وتحديث ${data.updated} منتج.`
+                    : `ℹ️ نجحت المزامنة! المنتجات موجودة بالفعل ومحدثة.`;
+            setNotification({ message: msg, type: 'success' });
             if (isSelective) setShowSelectiveModal(false);
         } else {
-            alert(`خطأ في مزامنة المنتجات: ${data.error}`);
+            setNotification({ message: `❌ خطأ في مزامنة المنتجات: ${data.error}`, type: 'error' });
         }
     } catch (error) {
         console.error('Product sync error:', error);
-        alert('حدث خطأ أثناء محاولة التزامن للمنتجات.');
+        setNotification({ message: '❌ حدث خطأ أثناء محاولة التزامن للمنتجات.', type: 'error' });
     } finally {
         setSyncingProducts(null);
         setSyncing(null);
@@ -218,10 +240,10 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
              setSelectableProducts(data.items || []);
              setShowSelectiveModal(true);
          } else {
-             alert(`فشل جلب المنتجات: ${data.error}`);
+             setNotification({ message: `❌ فشل جلب المنتجات: ${data.error}`, type: 'error' });
          }
      } catch (error) {
-         alert('حدث خطأ أثناء محاولة الاتصال بالسيرفر.');
+         setNotification({ message: '❌ حدث خطأ أثناء محاولة الاتصال بالسيرفر.', type: 'error' });
      } finally {
          setIsFetchingSelectable(false);
      }
@@ -322,7 +344,7 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
                                 {syncing === app.id ? 'جاري...' : 'مزامنة الطلبات'}
                             </button>
                             <button 
-                                onClick={() => app.supportedFeatures?.includes('products') ? handleFetchSelectable(app.id) : alert('هذه الميزة غير متوفرة لهذه المنصة حالياً.')}
+                                onClick={() => app.supportedFeatures?.includes('products') ? handleFetchSelectable(app.id) : setNotification({ message: 'هذه الميزة غير متوفرة لهذه المنصة حالياً.', type: 'info' })}
                                 disabled={syncing === app.id + '-products' || isFetchingSelectable}
                                 className={`py-2 text-[11px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${syncing === app.id + '-products' ? 'bg-indigo-100 text-indigo-400' : 'bg-slate-900 text-white dark:bg-slate-700 hover:bg-black dark:hover:bg-slate-600'}`}
                              >
@@ -358,6 +380,23 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
             );
          })}
       </div>
+
+      {notification && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[1000] animate-in slide-in-from-bottom-5 duration-300">
+          <div className={`px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-3 backdrop-blur-md border ${
+            notification.type === 'success' ? 'bg-emerald-500/90 border-emerald-400 text-white' :
+            notification.type === 'error' ? 'bg-rose-500/90 border-rose-400 text-white' :
+            'bg-slate-800/90 border-slate-700 text-white'
+          }`}>
+            {notification.type === 'success' ? <CheckCircle2 size={20} /> : 
+             notification.type === 'error' ? <AlertCircle size={20} /> : <Info size={20} />}
+            <p className="text-sm font-bold whitespace-pre-line">{notification.message}</p>
+            <button onClick={() => setNotification(null)} className="ml-2 hover:opacity-70 transition-opacity">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && selectedApp && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">

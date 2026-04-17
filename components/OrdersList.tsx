@@ -177,6 +177,16 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   const [showSummaryModal, setShowSummaryModal] = useState<Order | null>(null);
   const [autoWhatsappData, setAutoWhatsappData] = useState<{order: Order, newStatus: string} | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
   // Polling for real-time updates
   useEffect(() => {
@@ -202,21 +212,36 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
               await onRefresh();
               const totalSynced = (data.results || []).reduce((acc: number, r: any) => acc + (r.inserted || 0), 0);
               const totalUpdated = (data.results || []).reduce((acc: number, r: any) => acc + (r.updated || 0), 0);
+              const errors = (data.results || []).filter((r: any) => r.error);
               
               if (totalSynced > 0 || totalUpdated > 0) {
-                  let message = 'تمت المزامنة بنجاح!';
+                  let message = '✅ تمت المزامنة بنجاح!';
                   if (totalSynced > 0) message += `\n- تم استيراد ${totalSynced} طلب جديد.`;
                   if (totalUpdated > 0) message += `\n- تم تحديث حالة ${totalUpdated} طلب.`;
-                  alert(message);
+                  setNotification({ message, type: 'success' });
+              } else if (errors.length > 0) {
+                  setNotification({ 
+                    message: `⚠️ حدثت مشاكل أثناء المزامنة: ${errors[0].error}`, 
+                    type: 'error' 
+                  });
               } else {
-                  alert('لا توجد طلبات جديدة أو تحديثات حالياً.');
+                  setNotification({ 
+                    message: '✅ اكتمل الفحص: المتجر متزامن بالكامل ولا توجد طلبات جديدة حالياً.', 
+                    type: 'info' 
+                  });
               }
+          } else {
+              setNotification({ message: '❌ فشل الاتصال بسيرفر المزامنة.', type: 'error' });
           }
       } else {
           await onRefresh();
+          setNotification({ message: 'تم تحديث البيانات محلياً.', type: 'info' });
       }
+    } catch (error) {
+       console.error('Refresh error:', error);
+       setNotification({ message: '❌ حدث خطأ غير متوقع أثناء المزامنة.', type: 'error' });
     } finally {
-      setTimeout(() => setIsRefreshing(false), 600);
+      setTimeout(() => setIsRefreshing(false), 800);
     }
   };
   
@@ -862,9 +887,10 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   };
 
   const handleBulkDelete = () => {
+    const syncedCount = orders.filter(o => selectedOrders.includes(o.id) && o.source === 'synced').length;
     confirmAction({
         title: 'حذف حماعي',
-        message: `هل أنت متأكد من حذف ${selectedOrders.length} طلبات نهائياً؟`,
+        message: `هل أنت متأكد من حذف ${selectedOrders.length} طلبات نهائياً؟ ${syncedCount > 0 ? `(يشمل ${syncedCount} طلب متزامن)` : ''}`,
         type: 'danger',
         confirmText: 'حذف',
         onConfirm: () => {
@@ -881,16 +907,27 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         if(selectElement) selectElement.value = 'default';
         return;
     }
+
+    const eligibleOrders = orders.filter(o => selectedOrders.includes(o.id) && o.source !== 'synced');
+    const syncedCount = selectedOrders.length - eligibleOrders.length;
+
+    if (eligibleOrders.length === 0) {
+        alert("لا يمكن تعديل حالات الطلبات المتزامنة جماعياً. يتم تحديثها تلقائياً من المنصة المصدر.");
+        if(selectElement) selectElement.value = 'default';
+        return;
+    }
     
     confirmAction({
         title: 'تغيير الحالة جماعياً',
-        message: `هل أنت متأكد من تغيير حالة ${selectedOrders.length} طلبات إلى "${newStatus.replace(/_/g, ' ')}"?`,
+        message: `هل أنت متأكد من تغيير حالة ${eligibleOrders.length} طلبات إلى "${newStatus.replace(/_/g, ' ')}"? ${syncedCount > 0 ? `(سيتم تجاهل ${syncedCount} طلب متزامن)` : ''}`,
         type: 'warning',
         confirmText: 'تأكيد التغيير',
         onConfirm: () => {
             const allNewTransactions: Transaction[] = [];
             const updatedOrders = orders.map(o => {
                 if (selectedOrders.includes(o.id)) {
+                    if (o.source === 'synced') return o; // Double check
+
                     // Create a copy to avoid side effects during financial processing
                     let orderToUpdate = { ...o, status: newStatus as OrderStatus };
                     
@@ -1526,6 +1563,23 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
             setShowAssignment(null);
           }}
         />
+      )}
+
+      {notification && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[1000] animate-in slide-in-from-bottom-5 duration-300">
+          <div className={`px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-3 backdrop-blur-md border ${
+            notification.type === 'success' ? 'bg-emerald-500/90 border-emerald-400 text-white' :
+            notification.type === 'error' ? 'bg-rose-500/90 border-rose-400 text-white' :
+            'bg-slate-800/90 border-slate-700 text-white'
+          }`}>
+            {notification.type === 'success' ? <CheckCircle size={20} /> : 
+             notification.type === 'error' ? <AlertCircle size={20} /> : <Info size={20} />}
+            <p className="text-sm font-bold whitespace-pre-line">{notification.message}</p>
+            <button onClick={() => setNotification(null)} className="ml-2 hover:opacity-70 transition-opacity">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
       )}
     </motion.div>
   );
