@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
       },
-      plugins: [react(), tailwindcss(), viteSingleFile()],
+      plugins: [react(), tailwindcss()],
       define: {
         // Define process.env as an empty object first to prevent "process is not defined"
         'process.env': {},

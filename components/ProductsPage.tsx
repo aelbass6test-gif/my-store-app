@@ -166,10 +166,12 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
         }
       });
 
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'فشلت المزامنة');
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
       }
 
       if (onRefresh) onRefresh();
@@ -206,7 +208,13 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     try {
       if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
       const response = await fetch(`/api/sync/platform/wuilt/${activeStoreId}/preview?type=products`);
-      const result = await response.json();
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
+      }
       if (!response.ok) throw new Error(result.error || 'فشل جلب المنتجات');
       setSelectableProducts(result.items || []);
     } catch (error: any) {
@@ -238,7 +246,13 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
         })
       });
 
-      const result = await response.json();
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
+      }
       if (!response.ok) throw new Error(result.error || 'فشلت المزامنة');
 
       if (onRefresh) onRefresh();

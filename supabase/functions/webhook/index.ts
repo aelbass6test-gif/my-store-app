@@ -93,28 +93,6 @@ Deno.serve(async (req) => {
           const existingOrder = storeJson.orders.find((o: any) => o.id === id || o.platformOrderId === orderData._id);
           
           if (!existingOrder) {
-            let mappedStatus = "قيد_التنفيذ";
-            const wf = orderData.fulfillmentStatus;
-            const shipmentStatus = orderData.shipmentDetails?.shippingStatus || orderData.shippingStatus;
-            
-            if (orderData.isArchived) mappedStatus = "مؤرشف";
-            else if (orderData.isCanceled || wf === 'CANCELED') mappedStatus = "ملغي";
-            else if (shipmentStatus) {
-                const ss = shipmentStatus.toUpperCase();
-                if (ss === 'DELIVERED') mappedStatus = "تم_توصيلها";
-                else if (ss === 'RETURNED' || ss === 'RTS') mappedStatus = "مرتجع";
-                else if (ss === 'FAILURE' || ss === 'FAILED') mappedStatus = "فشل_التوصيل";
-                else if (ss === 'IN_TRANSIT') mappedStatus = "قيد_الشحن";
-                else if (ss === 'SHIPPED') mappedStatus = "تم_الارسال";
-                else if (ss === 'READY_FOR_PICKUP') mappedStatus = "قيد_التنفيذ";
-                else if (ss === 'CREATED' || ss === 'PENDING') mappedStatus = "في_انتظار_المكالمة";
-                else mappedStatus = "في_انتظار_المكالمة";
-            }
-            else if (wf === 'FULFILLED') mappedStatus = "قيد_التنفيذ";
-            else if (wf === 'PARTIALLY_FULFILLED') mappedStatus = "قيد_التنفيذ";
-            else if (orderData.shipmentDetails?.airWayBill) mappedStatus = "قيد_التنفيذ";
-            else if (wf === 'UNFULFILLED' || wf === 'PENDING') mappedStatus = "في_انتظار_المكالمة";
-
             newOrder = {
               id,
               orderNumber: `W-${orderData.orderSerial || Date.now()}`,
@@ -132,32 +110,24 @@ Deno.serve(async (req) => {
                 productId: item.productId || item._id,
                 name: item.title || "منتج",
                 quantity: item.quantity || 1,
-                price: item.price?.amount ?? item.price ?? 0,
-                cost: item.variantSnapshot?.cost?.amount ?? item.variantSnapshot?.cost ?? item.productSnapshot?.cost?.amount ?? item.productSnapshot?.cost ?? 0,
+                price: item.price?.amount || 0,
+                cost: item.variantSnapshot?.cost || 0,
                 weight: 0,
               })),
-              shippingFee: orderData.receipt?.shipping?.amount ?? orderData.receipt?.shipping ?? 
-                           orderData.shipmentDetails?.shippingFee?.amount ?? orderData.shipmentDetails?.shippingFee ??
-                           orderData.packagingDetails?.shippingCostDetails?.baseCost ??
-                           orderData.shippingRateCost?.amount ?? orderData.shippingRateCost ?? 0,
-              status: mappedStatus,
+              shippingFee: orderData.shippingRateCost?.amount || 0,
+              status: "جديد",
               productName: (orderData.items && orderData.items[0]) ? orderData.items[0].title : "طلب عبر ويلت",
-              productPrice: orderData.receipt?.subtotal?.amount ?? orderData.subtotal?.amount ?? orderData.subtotal ?? 0,
-              productCost: (orderData.items || []).reduce((total: number, item: any) => {
-                  const itemCost = item.variantSnapshot?.cost?.amount ?? item.variantSnapshot?.cost ?? item.productSnapshot?.cost?.amount ?? item.productSnapshot?.cost ?? 0;
-                  return total + (itemCost * (item.quantity || 1));
-              }, 0),
+              productPrice: orderData.subtotal?.amount || 0,
+              productCost: 0,
               weight: orderData.packagingDetails?.weight || 0,
-              discount: orderData.receipt?.discount?.amount ?? orderData.discount ?? 0,
-              tax: orderData.receipt?.tax?.amount ?? orderData.tax ?? 0,
-              includeInspectionFee: orderData.packagingDetails?.isOpenShipment ?? orderData.shipmentDetails?.allowOpen ?? storeJson.settings?.enableInspection ?? true,
-              isInsured: ((orderData.packagingDetails?.shippingCostDetails?.insurancePercentage || 0) > 0) || orderData.packagingDetails?.isInsured || storeJson.settings?.enableInsurance || true,
-              paymentStatus: (orderData.paymentStatus === "PAID" || orderData.paymentIntent?.status === 'succeeded') ? "تم الدفع" : "معلق",
+              discount: orderData.receipt?.discount?.amount || 0,
+              includeInspectionFee: false,
+              isInsured: false,
+              paymentStatus: orderData.paymentStatus === "PAID" ? "تم الدفع" : "معلق",
               preparationStatus: "قيد التجهيز",
               platform: "wuilt",
               platformOrderId: orderData._id,
-              paymentMethod: (orderData.paymentMethod === "CASH_ON_DELIVERY" || orderData.paymentMethod === "cod") ? "الدفع عند الاستلام" : (orderData.paymentMethod === 'CREDIT_CARD' || orderData.paymentMethod === 'card') ? "بطاقة إئتمانية" : (orderData.paymentMethod || orderData.paymentIntent?.paymentProvider || "غير محدد"),
-              totalPrice: orderData.receipt?.total?.amount ?? orderData.totalPrice?.amount ?? orderData.totalPrice ?? 0
+              paymentMethod: orderData.paymentMethod === "CASH_ON_DELIVERY" ? "الدفع عند الاستلام" : orderData.paymentMethod,
             };
           } else {
              console.log(`Order ${id} already exists`);

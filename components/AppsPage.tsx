@@ -5,8 +5,8 @@ import { CheckCircle2, ChevronLeft, Cable, HardDriveDownload, Search, Shapes, X,
 interface AppsPageProps {
   storeId: string;
   storeData: StoreData | null;
-  onUpdateSettings: (settings: any) => void;
-  onRefresh?: () => Promise<void>;
+  onUpdateStoreData: (data: StoreData) => void;
+  onRefresh?: () => void;
   hostUrl: string;
 }
 
@@ -74,7 +74,7 @@ const AVAILABLE_APPS = [
   }
 ];
 
-export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefresh, hostUrl }: AppsPageProps) {
+export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefresh, hostUrl }: AppsPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -82,12 +82,20 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
   const [config, setConfig] = useState<Partial<PlatformConfig>>({});
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncingProducts, setSyncingProducts] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{success: boolean, message: string} | null>(null);
 
   // Selective Sync State
   const [showSelectiveModal, setShowSelectiveModal] = useState(false);
   const [selectableProducts, setSelectableProducts] = useState<Product[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [isFetchingSelectable, setIsFetchingSelectable] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const showLocalNotification = (type: 'success' | 'error', text: string) => {
+      setNotification({ type, text });
+      setTimeout(() => setNotification(null), 3000);
+  };
 
   const connectedPlatforms = storeData?.settings?.connectedPlatforms || [];
   const platformConfigs: Record<string, PlatformConfig> = (storeData?.settings as any)?.platformConfigs || {};
@@ -112,14 +120,17 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
             }
         }
     };
-    onUpdateSettings(updatedSettings);
+    onUpdateStoreData({ ...storeData, settings: updatedSettings as any });
     setIsModalOpen(false);
     setConfig({});
   };
 
   const handleUninstallApp = (appId: string) => {
-      if (!storeData) return;
-      if (!window.confirm('هل أنت متأكد من رغبتك في إيقاف الربط؟ سيؤدي هذا إلى تعطيل التحديثات اللحظية للسلة والطلبات.')) return;
+      console.log('Attempting to uninstall app:', appId);
+      if (!storeData) {
+          console.error('No store data available during uninstall');
+          return;
+      }
 
       const currentPlatforms = storeData.settings.connectedPlatforms || [];
       const currentConfigs = (storeData.settings as any).platformConfigs || {};
@@ -130,9 +141,14 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
       const updatedSettings = {
           ...storeData.settings,
           connectedPlatforms: currentPlatforms.filter(id => id !== appId),
-          platformConfigs: newConfigs
+          platformConfigs: newConfigs,
+          // If we are disconnecting the main integration, we should also clear the legacy integration field
+          integration: storeData.settings.integration?.platform === appId ? null : storeData.settings.integration
       };
-      onUpdateSettings(updatedSettings);
+      
+      console.log('Updating store settings for uninstall:', updatedSettings);
+      onUpdateStoreData({ ...storeData, settings: updatedSettings as any });
+      showLocalNotification('success', 'تم إيقاف الربط بنجاح.');
   };
 
   const updateSyncTime = (appId: string, syncType: 'orders' | 'products') => {
@@ -150,7 +166,7 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
             }
         }
     };
-    onUpdateSettings(updatedSettings);
+    onUpdateStoreData({ ...storeData, settings: updatedSettings as any });
   };
 
   const handleSyncOrders = async (appId: string) => {
@@ -161,14 +177,20 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
             headers: { 'Content-Type': 'application/json' }
         });
 
-        const data = await response.json();
+        const responseText = await response.text();
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (e) {
+            throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
+        }
 
         if (response.ok) {
-            if (onRefresh) await onRefresh();
             updateSyncTime(appId, 'orders');
-            alert(`نجحت المزامنة! تم استيراد ${data.inserted} طلب جديد.`);
+            if (onRefresh) onRefresh();
+            showLocalNotification('success', `نجحت المزامنة! تم استيراد ${data.inserted} طلب جديد.`);
         } else {
-            alert(`خطأ في المزامنة: ${data.error}`);
+            showLocalNotification('error', `خطأ في المزامنة: ${data.error}`);
         }
     } catch (error) {
         console.error('Sync error:', error);
@@ -190,19 +212,25 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
             body: selectedIds ? JSON.stringify({ selectedIds }) : undefined
         });
 
-        const data = await response.json();
+        const responseText = await response.text();
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (e) {
+            throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
+        }
 
         if (response.ok) {
-            if (onRefresh) await onRefresh();
             updateSyncTime(appId, 'products');
-            alert(isSelective ? `تم استيراد ${data.inserted} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.inserted} منتج.`);
+            if (onRefresh) onRefresh();
+            showLocalNotification('success', isSelective ? `تم استيراد ${data.inserted} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.inserted} منتج.`);
             if (isSelective) setShowSelectiveModal(false);
         } else {
-            alert(`خطأ في مزامنة المنتجات: ${data.error}`);
+            showLocalNotification('error', `خطأ في مزامنة المنتجات: ${data.error}`);
         }
     } catch (error) {
         console.error('Product sync error:', error);
-        alert('حدث خطأ أثناء محاولة التزامن للمنتجات.');
+        showLocalNotification('error', 'حدث خطأ أثناء محاولة التزامن للمنتجات.');
     } finally {
         setSyncingProducts(null);
         setSyncing(null);
@@ -213,7 +241,13 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
      setIsFetchingSelectable(true);
      try {
          const response = await fetch(`/api/sync/platform/${appId}/${storeId}/preview?type=products`);
-         const data = await response.json();
+         const responseText = await response.text();
+         let data;
+         try {
+             data = JSON.parse(responseText);
+         } catch (e) {
+             throw new Error(`Invalid JSON response: ${responseText.substring(0, 50)}...`);
+         }
          if (response.ok) {
              setSelectableProducts(data.items || []);
              setShowSelectiveModal(true);
@@ -230,7 +264,39 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
   const openSettings = (app) => {
       setSelectedApp(app);
       setConfig(platformConfigs[app.id] || {});
+      setTestResult(null);
       setIsModalOpen(true);
+  };
+
+  const handleTestConnection = async () => {
+    if (!config.apiKey || !selectedApp) {
+        setTestResult({ success: false, message: 'يرجى إدخال مفتاح الـ API أولاً.' });
+        return;
+    }
+    
+    setIsTesting(true);
+    setTestResult(null);
+    
+    try {
+        const response = await fetch(`/api/sync/platform/${selectedApp.id}/${storeId}/preview?type=products&apiKey=${config.apiKey}&shopId=${config.shopId || ''}`);
+        const responseText = await response.text();
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (e) {
+            throw new Error(`Invalid JSON response: ${responseText.substring(0, 50)}...`);
+        }
+
+        if (response.ok && data.items) {
+            setTestResult({ success: true, message: 'تم الاتصال بنجاح! تم العثور على المنتجات.' });
+        } else {
+            setTestResult({ success: false, message: `فشل الاتصال: ${data.error || 'خطأ غير معروف'}` });
+        }
+    } catch (error: any) {
+        setTestResult({ success: false, message: `خطأ في الاتصال: ${error.message}` });
+    } finally {
+        setIsTesting(false);
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -247,6 +313,13 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
 
   return (
     <div className="space-y-6">
+      {/* Notifications Area */}
+      {notification && (
+          <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 rounded-xl shadow-2xl animate-in slide-in-from-bottom-5 duration-300 font-bold flex items-center gap-3 ${notification.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+              {notification.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+              {notification.text}
+          </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">مركز التحكم والربط (Integrations)</h2>
@@ -417,11 +490,31 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
                                 type="password"
                                 placeholder="أدخل مفتاح الربط هنا"
                                 value={config.apiKey || ''}
-                                onChange={(e) => setConfig({...config, apiKey: e.target.value})}
+                                onChange={(e) => {
+                                 setConfig({...config, apiKey: e.target.value});
+                                 if (setTestResult) setTestResult(null);
+                               }}
                                 className="w-full px-4 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                                 dir="ltr"
                               />
                            </div>
+                           
+                           <button 
+                             onClick={handleTestConnection}
+                             disabled={isTesting}
+                             type="button"
+                             className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${isTesting ? 'bg-slate-100 text-slate-400' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'}`}
+                           >
+                             {isTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Cable className="w-4 h-4" />}
+                             {isTesting ? 'جاري فحص الاتصال...' : 'اختبار الاتصال بالمتجر'}
+                           </button>
+
+                           {testResult && (
+                             <div className={`p-3 rounded-xl text-[11px] font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2 ${testResult.success ? 'bg-green-50 text-green-700 border border-green-100 dark:bg-green-900/20 dark:text-green-400 dark:border-green-900/30' : 'bg-red-50 text-red-700 border border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900/30'}`}>
+                               {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                               {testResult.message}
+                             </div>
+                           )}
                         </div>
                      </div>
 

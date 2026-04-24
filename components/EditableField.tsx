@@ -1,69 +1,62 @@
 import React from 'react';
-import { Edit3, Check, X } from 'lucide-react';
+import { Save, X, Edit3 } from 'lucide-react';
 
 interface EditableFieldProps {
-  icon?: React.ReactNode;
-  label: string;
-  isEditing: boolean;
-  disabled?: boolean;
-  onEdit: () => void;
-  onSave: () => void;
-  onCancel: () => void;
-  editComponent: React.ReactNode;
-  displayComponent: React.ReactNode;
-  className?: string;
+    icon: React.ReactNode;
+    label: string;
+    isEditing: boolean;
+    onEdit?: () => void;
+    onSave: () => void;
+    onCancel?: () => void;
+    editComponent: React.ReactNode;
+    displayComponent: React.ReactNode;
+    disabled?: boolean;
 }
 
 const EditableField: React.FC<EditableFieldProps> = ({
-  icon,
-  label,
-  isEditing,
-  disabled = false,
-  onEdit,
-  onSave,
-  onCancel,
-  editComponent,
-  displayComponent,
-  className = ''
+    icon,
+    label,
+    isEditing,
+    onEdit,
+    onSave,
+    onCancel,
+    editComponent,
+    displayComponent,
+    disabled = false
 }) => {
-  return (
-    <div className={`space-y-1 ${className}`}>
-      <div className="flex justify-between items-center">
-        <label className="text-xs text-slate-500 flex items-center gap-1">
-          {icon} {label}
-        </label>
-        {!disabled && !isEditing && (
-          <button onClick={onEdit} className="text-xs font-bold text-blue-600 hover:underline">
-            تعديل
-          </button>
-        )}
-      </div>
-      
-      {isEditing ? (
-        <div className="space-y-2">
-          {editComponent}
-          <div className="flex gap-2">
-            <button 
-              onClick={onSave}
-              className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-bold flex items-center gap-1 hover:bg-emerald-200"
-            >
-              <Check size={14}/> حفظ
-            </button>
-            <button 
-              onClick={onCancel}
-              className="px-3 py-1 bg-slate-100 text-slate-500 rounded text-xs font-bold flex items-center gap-1 hover:bg-slate-200"
-            >
-              <X size={14}/> إلغاء
-            </button>
-          </div>
+    return (
+        <div className="space-y-1">
+            <label className="text-xs text-slate-500 flex items-center gap-1">
+                {icon} {label}
+            </label>
+            {isEditing ? (
+                <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                        {editComponent}
+                    </div>
+                    <button onClick={onSave} className="p-2 bg-emerald-100 text-emerald-600 rounded-md shrink-0">
+                        <Save size={16} />
+                    </button>
+                    {onCancel && (
+                        <button type="button" onClick={onCancel} className="p-2 bg-slate-100 text-slate-600 rounded-md shrink-0">
+                            <X size={16} />
+                        </button>
+                    )}
+                </div>
+            ) : (
+                <div className="flex items-start justify-between">
+                    <div className="flex-1 pl-4">
+                        {displayComponent}
+                    </div>
+                    {onEdit && !disabled && (
+                        <button onClick={onEdit} className="p-1 text-slate-400 hover:text-blue-500 shrink-0">
+                            <Edit3 size={14} />
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
-      ) : (
-        <div className="flex items-center gap-2">
-           {displayComponent}
-        </div>
-      )}
-    </div>
-  );
+    );
 };
 
 export default EditableField;

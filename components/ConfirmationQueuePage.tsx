@@ -308,9 +308,6 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         
         const isStoreOwner = currentUser?.stores?.some(s => s.id === activeStore?.id);
         
-        // Read only if from synced source (per user request)
-        if (activeOrder.source === 'synced' || activeOrder.platform === 'wuilt') return true;
-        
         // Read only if cancelled or returned
         if (activeOrder.status === 'ملغي' || activeOrder.status === 'مرتجع' || activeOrder.status === 'مرتجع_جزئي' || activeOrder.status === 'فشل_التوصيل') return true;
         // Read only if assigned to someone else and not me
@@ -815,7 +812,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     };
 
     const handleActionSubmit = (action: string) => {
-        if (!activeOrder || !currentUser || activeOrder.source === 'synced') return;
+        if (!activeOrder || !currentUser) return;
         
         if ((action === 'تم الإلغاء' || action === 'مؤجل') && !cancellationReason && !actionNotes) {
              alert('يرجى اختيار سبب الإلغاء/التأجيل أو كتابة ملاحظة.');
@@ -1421,11 +1418,9 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             <div className="flex justify-between items-start">
                                                 <h4 className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
                                                     {order.customerName}
-                                                    {(order.lockedBy && order.lockedBy !== currentUser?.phone) || order.source === 'synced' ? (
-                                                        <span title={order.source === 'synced' ? "طلب متزامن - للقراءة فقط" : "يتم إدارته من قِبل موظف آخر"}>
-                                                            <Lock size={12} className={order.source === 'synced' ? "text-indigo-500" : "text-red-500"} />
-                                                        </span>
-                                                    ) : null}
+                                                    {order.lockedBy && order.lockedBy !== currentUser?.phone && (
+                                                        <Lock size={12} className="text-red-500" />
+                                                    )}
                                                     {order.status === 'في_انتظار_المكالمة' && (
                                                         <span className="bg-red-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
                                                             جديد

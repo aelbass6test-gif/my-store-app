@@ -6,7 +6,7 @@ import * as db from './services/databaseService';
 import { supabase } from './services/supabaseClient';
 import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
-import { oneToolzProducts } from './data/one-toolz-products';
+import { oneToolzProducts } from './src/data/one-toolz-products';
 
 import { triggerWebhooks } from './utils/webhook';
 
@@ -62,6 +62,7 @@ import OtpVerificationPage from './components/OtpVerificationPage';
 import IosInstallPrompt from './components/IosInstallPrompt';
 import ComingSoonPage from './components/ComingSoonPage';
 import AppsPage from './components/AppsPage';
+import { DomainSettingsPage } from './src/components/DomainSettingsPage';
 
 interface EmployeeRegisterRequestData {
   fullName: string;
@@ -223,8 +224,33 @@ export const AppComponent = () => {
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
     const [saveMessage, setSaveMessage] = useState('');
     
+    const [activeStorefront, setActiveStorefront] = useState<Store | null>(null);
+    const [storefrontData, setStorefrontData] = useState<StoreData | null>(null);
     const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const refreshDebounceTimers = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
+
+    useEffect(() => {
+        const detectStorefront = async () => {
+            const hostname = window.location.hostname;
+            // TODO: تحديث النطاق الرئيسي هنا
+            if (hostname !== 'app.platform.com' && hostname !== 'localhost') {
+                const { data: store, error } = await supabase
+                    .from('stores_data')
+                    .select('*')
+                    .or(`customDomain.eq.${hostname},subdomain.eq.${hostname}`)
+                    .single();
+
+                if (store) {
+                    setActiveStorefront(store);
+                    const data = await db.getStoreData(store.id) as StoreData | null;
+                    if (data) {
+                        setStorefrontData(data);
+                    }
+                }
+            }
+        };
+        detectStorefront();
+    }, []);
     const isRefreshing = useRef(false);
     
     // 2FA State
@@ -308,20 +334,6 @@ export const AppComponent = () => {
         };
     }, [users, allStoresData, activeStore, activeStoreId, isInitialLoad]);
 
-
-    useEffect(() => {
-        if (!activeStoreId || !currentUser) return;
-
-        const syncInterval = setInterval(async () => {
-            try {
-                await fetch(`/api/sync/all/${activeStoreId}`, { method: 'POST' });
-            } catch (e) {
-                console.error("Background sync failed:", e);
-            }
-        }, 60000); // 1 minute
-
-        return () => clearInterval(syncInterval);
-    }, [activeStoreId, currentUser]);
 
     useEffect(() => {
         const applyTheme = () => {
@@ -634,44 +646,38 @@ export const AppComponent = () => {
         completeLogin(userToImpersonate, null); 
     };
 
-    const refreshStoreData = (storeId: string): Promise<void> => {
+    const refreshStoreData = (storeId: string) => {
         if (isSavingRef.current) {
             console.log(`[REALTIME] Ignoring refresh to prevent flicker during active save.`);
-            return Promise.resolve();
+            return;
         }
 
         if (!storeId || storeId !== activeStoreId) {
             if (storeId !== activeStoreId) console.log(`[REALTIME] Ignoring refresh for non-active store: ${storeId}`);
-            return Promise.resolve();
+            return;
         }
 
         if (refreshDebounceTimers.current[storeId]) {
             clearTimeout(refreshDebounceTimers.current[storeId]!);
         }
 
-        return new Promise((resolve) => {
-            refreshDebounceTimers.current[storeId] = setTimeout(async () => {
-                console.log(`[REALTIME] Debounced refresh executing for store: ${storeId}`);
-                const storeData = await db.getStoreData(storeId) as StoreData | null;
-                if (storeData) {
-                    const sanitizedStoreData = sanitizeData(storeData);
+        refreshDebounceTimers.current[storeId] = setTimeout(async () => {
+            console.log(`[REALTIME] Debounced refresh executing for store: ${storeId}`);
+            const storeData = await db.getStoreData(storeId) as StoreData | null;
+            if (storeData) {
+                const sanitizedStoreData = sanitizeData(storeData);
+                
+                setAllStoresData(prev => {
+                    const isIdentical = JSON.stringify(prev[storeId]) === JSON.stringify(sanitizedStoreData);
+                    if (isIdentical) return prev;
                     
-                    setAllStoresData(prev => {
-                        const isIdentical = JSON.stringify(prev[storeId]) === JSON.stringify(sanitizedStoreData);
-                        if (isIdentical) {
-                            resolve();
-                            return prev;
-                        }
-                        
-                        isRefreshing.current = true;
-                        return { ...prev, [storeId]: sanitizedStoreData };
-                    });
-                    console.log(`[REALTIME] Store ${storeId} data updated via debounce.`);
-                }
-                refreshDebounceTimers.current[storeId] = null;
-                resolve();
-            }, 500);
-        });
+                    isRefreshing.current = true;
+                    return { ...prev, [storeId]: sanitizedStoreData };
+                });
+                console.log(`[REALTIME] Store ${storeId} data updated via debounce.`);
+            }
+            refreshDebounceTimers.current[storeId] = null;
+        }, 500);
     };
 
     const refreshGlobalData = () => {
@@ -741,26 +747,19 @@ export const AppComponent = () => {
                     const config = platformConfigs[platformId];
                     if (config?.isActive) {
                         console.log(`[AUTO-SYNC] Triggering background sync for ${platformId}...`);
-                        try {
-                            // Set refreshing flag early to block auto-saves during the sync window
-                            isRefreshing.current = true;
-                            
-                            const response = await fetch(`/api/sync/platform/${platformId}/${activeStoreId}?type=orders`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' }
-                            });
-                            
-                            if (response.ok) {
+                            try {
+                                const response = await fetch(`/api/sync/platform/${platformId}/${activeStoreId}?type=orders`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' }
+                                });
+                                const responseText = await response.text();
+                                if (!response.ok) {
+                                    throw new Error(`Failed to sync orders (Status: ${response.status}): ${responseText.substring(0, 200)}`);
+                                }
                                 console.log(`[AUTO-SYNC] Successfully synced orders for ${platformId}`);
-                                // Immediately refresh to pick up the new data and avoid stale state save-backs
-                                await refreshStoreData(activeStoreId);
-                            } else {
-                                isRefreshing.current = false;
+                            } catch (err) {
+                                console.error(`[AUTO-SYNC] Failed to sync ${platformId}:`, err);
                             }
-                        } catch (err) {
-                            console.error(`[AUTO-SYNC] Failed to sync ${platformId}:`, err);
-                            isRefreshing.current = false;
-                        }
                     }
                 }
             }
@@ -817,7 +816,7 @@ export const AppComponent = () => {
         wallet: activeStoreId ? allStoresData[activeStoreId]?.wallet || { balance: 0, transactions: [] } : { balance: 0, transactions: [] },
         cart,
         forceSync,
-        onRefresh: async () => { if (activeStoreId) await refreshStoreData(activeStoreId); },
+        onRefresh: () => activeStoreId && refreshStoreData(activeStoreId),
         customers: activeStoreId ? allStoresData[activeStoreId]?.customers || [] : [],
         setCustomers: (updater: any) => {
             if(activeStoreId) {
@@ -972,8 +971,19 @@ export const AppComponent = () => {
 
     return (
         <>
-            <Routes>
-                <Route path="/owner-login" element={<SignUpPage onPasswordSuccess={(user) => completeLogin(user, null)} users={users} setUsers={setUsers} />} />
+            {activeStorefront && storefrontData ? (
+                <StorefrontPage 
+                    activeStore={activeStorefront} 
+                    settings={storefrontData.settings}
+                    setSettings={(updater) => setStorefrontData(prev => prev ? {...prev, settings: typeof updater === 'function' ? (updater as any)(prev.settings) : updater} : null)}
+                    cart={storefrontData.cart || []}
+                    onAddToCart={(product) => {}}
+                    onUpdateCartQuantity={(id, q) => {}}
+                    onRemoveFromCart={(id) => {}}
+                />
+            ) : (
+                <Routes>
+                    <Route path="/owner-login" element={<SignUpPage onPasswordSuccess={(user) => completeLogin(user, null)} users={users} setUsers={setUsers} />} />
                 <Route path="/employee-login" element={<EmployeeLoginPage allStoresData={allStoresData} users={users} onLoginAttempt={handleEmployeeLogin} onRegisterRequest={handleEmployeeRegisterRequest} />} />
                 <Route path="/track-order" element={<OrderTrackingPage orders={pageProps.orders} />} />
                 
@@ -1020,7 +1030,7 @@ export const AppComponent = () => {
                 }>
                     <Route index element={<Dashboard {...pageProps} />} />
                     <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} forceSync={pageProps.forceSync} />} />
-                    <Route path="orders" element={<OrdersList {...pageProps} currentUser={currentUser} addLoyaltyPointsForOrder={() => {}} />} />
+                    <Route path="orders" element={<OrdersList {...pageProps} currentUser={currentUser} addLoyaltyPointsForOrder={() => {}} onRefresh={() => activeStoreId && refreshStoreData(activeStoreId)} />} />
                     <Route path="products" element={<ProductsPage {...pageProps} />} />
                     <Route path="customers" element={<CustomersPage orders={pageProps.orders} loyaltyData={{}} updateCustomerLoyaltyPoints={() => {}} />} />
                     <Route path="wallet" element={<WalletPage {...pageProps} />} />
@@ -1053,9 +1063,9 @@ export const AppComponent = () => {
                     <Route path="product-attributes" element={<ComingSoonPage />} />
                     <Route path="withdrawals" element={<ComingSoonPage />} />
                     <Route path="design-templates" element={<ComingSoonPage />} />
-                    <Route path="domain" element={<ComingSoonPage />} />
+                    <Route path="domain" element={<DomainSettingsPage activeStoreId={activeStoreId} storeData={allStoresData[activeStoreId] || null} onUpdateStoreData={(newStoreData) => setAllStoresData(prev => ({ ...prev, [activeStoreId]: newStoreData }))} />} />
                     <Route path="legal-pages" element={<ComingSoonPage />} />
-                    <Route path="apps" element={<AppsPage storeId={activeStoreId} storeData={allStoresData[activeStoreId] || null} onUpdateSettings={pageProps.setSettings} onRefresh={pageProps.onRefresh} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
+                    <Route path="apps" element={<AppsPage storeId={activeStoreId} storeData={allStoresData[activeStoreId] || null} onUpdateStoreData={(newStoreData) => setAllStoresData(prev => ({ ...prev, [activeStoreId]: newStoreData }))} onRefresh={() => activeStoreId && refreshStoreData(activeStoreId)} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
                     <Route path="settings/tax" element={<ComingSoonPage />} />
                     <Route path="settings/developer" element={<DeveloperSettingsPage settings={pageProps.settings} setSettings={pageProps.setSettings} activeStoreId={activeStoreId} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
                 </Route>
@@ -1065,14 +1075,8 @@ export const AppComponent = () => {
                 <Route path="order-success/:orderId" element={<OrderSuccessPage {...pageProps} />} />
                 <Route path="*" element={<CatchAllRedirect currentUser={currentUser} isEmployeeSession={isEmployeeSession} />} />
             </Routes>
-            {showCongratsModal && (
-                <CongratsModal 
-                    isOpen={showCongratsModal}
-                    onClose={() => setShowCongratsModal(false)}
-                    title="تهانينا!"
-                    message="تم تفعيل المتجر الخاص بك بنجاح. يمكنك الآن البدء في استقبال الطلبات وإدارة منتجاتك بسهولة."
-                />
             )}
+            {showCongratsModal && <CongratsModal onClose={() => setShowCongratsModal(false)} />}
             <GlobalSaveIndicator status={saveStatus} message={saveMessage} />
         </>
     );

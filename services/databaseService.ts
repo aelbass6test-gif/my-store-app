@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient';
+import { supabase } from './supabaseClient.js';
 import { Store, StoreData, User, Product, Order, Transaction, Supplier, SupplyOrder, Review, AbandonedCart, ActivityLog, Employee, DiscountCode, Collection, CustomPage, PaymentMethod, CustomerProfile, GlobalOption, ShippingCarrierIntegration } from '../types';
 import { INITIAL_SETTINGS } from '../constants';
 
@@ -6,6 +6,7 @@ const LOCAL_STORAGE_PREFIX = 'wuilt_backup_';
 
 // --- Local Storage Helpers (Backup) ---
 const getLocal = (key: string) => {
+    if (typeof window === 'undefined') return null;
     try {
         const item = localStorage.getItem(LOCAL_STORAGE_PREFIX + key);
         return item ? JSON.parse(item) : null;
@@ -16,6 +17,7 @@ const getLocal = (key: string) => {
 };
 
 const saveLocal = (key: string, data: any) => {
+    if (typeof window === 'undefined') return;
     try {
         if (key !== 'global' && data && data.settings) {
             // It's a store data object. Let's make it lighter for backup to avoid quota errors.
@@ -352,12 +354,10 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         
         // --- Handle Deletions by Syncing ---
         const syncAndDelete = async (tableName: string, stateItems: any[], dbIdColumn = 'id', stateIdColumn = 'id') => {
-            let query = supabase
+            const { data: dbItems, error: fetchError } = await supabase
                 .from(tableName)
-                .select(`${dbIdColumn}${tableName === 'orders' ? ', details' : ''}`)
+                .select(dbIdColumn)
                 .eq('store_id', store.id);
-            
-            const { data: dbItems, error: fetchError } = await query;
 
             if (fetchError) {
                 console.error(`Sync Fetch Error on table '${tableName}'. Deletion sync skipped. Error: ${fetchError.message}`);
@@ -367,16 +367,7 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             const dbIds = new Set(dbItems.map((item: any) => item[dbIdColumn]));
             const stateIds = new Set(stateItems.map(item => item[stateIdColumn]));
             
-            // If it's the orders table, filter out synced ones that are NOT in state
-            const idsToDelete = [...dbItems]
-                .filter((item: any) => {
-                    if (tableName === 'orders') {
-                        // We previously protected synced orders here, but it caused issues with intentional deletions.
-                        // Now we allow any item missing from state to be deleted.
-                    }
-                    return !stateIds.has(item[dbIdColumn]);
-                })
-                .map((item: any) => item[dbIdColumn]);
+            const idsToDelete = [...dbIds].filter(id => !stateIds.has(id));
 
             if (idsToDelete.length > 0) {
                 const { error: deleteError } = await supabase
@@ -387,6 +378,7 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
 
                 if (deleteError) {
                     console.error(`Sync Delete Error on table '${tableName}'. Some items may not have been deleted. Error: ${deleteError.message}`);
+                    // Don't throw
                 }
             }
         };
@@ -584,7 +576,6 @@ export const clearStoreData = async (storeId: string, targets: string[]): Promis
     }
 };
 
-// FIX: Implement migrateAllLegacyDataToRelational to resolve export error.
 export const migrateAllLegacyDataToRelational = async (users: User[]): Promise<{ success: boolean, summary: string, error?: string }> => {
     let summaryLog: string[] = [];
     try {
@@ -623,4 +614,19 @@ export const migrateAllLegacyDataToRelational = async (users: User[]): Promise<{
         summaryLog.push(`\n** MIGRATION FAILED **: ${err.message}`);
         return { success: false, summary: summaryLog.join('\n'), error: err.message };
     }
+};
+
+// Re-adding databaseService object to avoid breaking imports
+export const databaseService = {
+  getStoreData,
+  saveStoreData,
+  getGlobalData,
+  saveGlobalData,
+  clearStoreData,
+  migrateAllLegacyDataToRelational,
+  upsertCustomer: async (data: any) => { return await supabase.from('customers').upsert(data); },
+  upsertOrder: async (data: any, status: string) => { return await supabase.from('orders').upsert({ ...data, status }); },
+  upsertProduct: async (data: any) => { return await supabase.from('products').upsert(data); },
+  deleteProduct: async (productId: string) => { return await supabase.from('products').delete().eq('id', productId); },
+  upsertShipment: async (data: any) => { return await supabase.from('shipments').upsert(data); },
 };
