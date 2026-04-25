@@ -666,6 +666,8 @@ export const AppComponent = () => {
         refreshDebounceTimers.current[storeId] = setTimeout(async () => {
             console.log(`[REALTIME] Debounced refresh executing for store: ${storeId}`);
             try {
+                // LOCK state during refresh to prevent accidental writes back to DB
+                isRefreshing.current = true;
                 const storeData = await db.getStoreData(storeId) as StoreData | null;
                 if (storeData) {
                     const sanitizedStoreData = sanitizeData(storeData);
@@ -683,7 +685,7 @@ export const AppComponent = () => {
                 console.error(`[REALTIME] Refresh failed for store ${storeId}. Skipping update to prevent data corruption.`, err);
             }
             refreshDebounceTimers.current[storeId] = null;
-        }, 1000);
+        }, 300);
     };
 
     const refreshGlobalData = () => {
