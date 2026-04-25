@@ -4,6 +4,8 @@ import { Settings, Product, ProductVariant } from '../types';
 import { motion, Variants } from 'framer-motion';
 import { generateProductDescription, generateSocialMediaPost } from '../services/geminiService';
 import { apiCall } from '../services/apiService';
+import { browserSyncPlatform, fetchWuiltProducts } from '../services/platformService';
+import { supabase } from '../services/supabaseClient';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -160,6 +162,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     try {
       if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
       
+      console.log('[ProductsPage] Attempting server sync...');
       const response = await apiCall(`/api/sync/platform/wuilt/${activeStoreId}?type=products`, {
         method: 'POST',
         headers: {
@@ -167,32 +170,42 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
         }
       });
 
-      const responseText = await response.text();
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (e) {
-        throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
+      if (response.ok) {
+          const result = await response.json();
+          if (onRefresh) onRefresh();
+          const now = new Date();
+          setLastSync(now);
+          localStorage.setItem('lastProductSync', now.toISOString());
+          setSyncStatus({ 
+            type: 'success', 
+            message: `تمت المزامنة بنجاح! تم معالجة ${result.processed || result.count} منتج.` 
+          });
+          return;
       }
 
+      console.warn(`[ProductsPage] Server sync failed (Status: ${response.status}). Falling back to Browser Sync...`);
+      const result = await browserSyncPlatform('wuilt', activeStoreId, 'products');
       if (onRefresh) onRefresh();
-      
       const now = new Date();
       setLastSync(now);
       localStorage.setItem('lastProductSync', now.toISOString());
+      setSyncStatus({ type: 'success', message: `تمت المزامنة (محلياً) بنجاح! تم معالجة ${result.count} منتج.` });
 
-      setSyncStatus({ 
-        type: 'success', 
-        message: `تمت المزامنة بنجاح! تم معالجة ${result.processed} منتج (تم إضافة ${result.inserted} وتحديث ${result.updated}).` 
-      });
-
+    } catch (error: any) {
+        console.warn('[ProductsPage] Server sync error, trying direct browser sync...', error.message);
+        try {
+            const result = await browserSyncPlatform('wuilt', activeStoreId!, 'products');
+            if (onRefresh) onRefresh();
+            setLastSync(new Date());
+            setSyncStatus({ type: 'success', message: `تمت المزامنة (محلياً) بنجاح! تم معالجة ${result.count} منتج.` });
+        } catch (innerError: any) {
+            setSyncStatus({ type: 'error', message: innerError.message });
+        }
+    } finally {
+      setIsSyncing(false);
       setTimeout(() => {
         setSyncStatus(s => s.type === 'success' ? { ...s, type: 'idle' } : s);
       }, 5000);
-    } catch (error: any) {
-      setSyncStatus({ type: 'error', message: error.message });
-    } finally {
-      setIsSyncing(false);
     }
   };
 
@@ -208,19 +221,39 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     setShowSelectiveSyncModal(true);
     try {
       if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
+      
+      console.log('[ProductsPage] Attempting server preview...');
       const response = await apiCall(`/api/sync/platform/wuilt/${activeStoreId}/preview?type=products`);
-      const responseText = await response.text();
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (e) {
-        throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
+      
+      if (response.ok) {
+          const result = await response.json();
+          setSelectableProducts(result.items || []);
+          return;
       }
-      if (!response.ok) throw new Error(result.error || 'فشل جلب المنتجات');
-      setSelectableProducts(result.items || []);
+
+      console.warn(`[ProductsPage] Server preview failed (Status: ${response.status}). Falling back to direct fetch...`);
+      const { data: config } = await supabase.from('platform_configs').select('apiKey, shopId').eq('store_id', activeStoreId).eq('platform_id', 'wuilt').single();
+      if (config?.apiKey) {
+          const products = await fetchWuiltProducts(config.apiKey, config.shopId);
+          setSelectableProducts(products);
+          return;
+      }
+      throw new Error(`تعذر جلب البيانات من السيرفر (Status: ${response.status})`);
     } catch (error: any) {
-      alert(error.message);
-      setShowSelectiveSyncModal(false);
+        console.warn('[ProductsPage] Server preview error, trying direct fetch...', error.message);
+        try {
+            const { data: config } = await supabase.from('platform_configs').select('apiKey, shopId').eq('store_id', activeStoreId).eq('platform_id', 'wuilt').single();
+            if (config?.apiKey) {
+                const products = await fetchWuiltProducts(config.apiKey, config.shopId);
+                setSelectableProducts(products);
+                return;
+            }
+            alert(error.message);
+            setShowSelectiveSyncModal(false);
+        } catch (innerError: any) {
+            alert(innerError.message);
+            setShowSelectiveSyncModal(false);
+        }
     } finally {
       setIsFetchingSelectable(false);
     }
@@ -239,35 +272,40 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     try {
       if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
       
+      console.log('[ProductsPage] Attempting server selective sync...');
+      const selectedIds = Array.from(selectedProductIds).map(id => id.replace('wuilt-', ''));
       const response = await apiCall(`/api/sync/platform/wuilt/${activeStoreId}?type=products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          selectedIds: Array.from(selectedProductIds).map(id => id.replace('wuilt-', '')) 
-        })
+        body: JSON.stringify({ selectedIds })
       });
 
-      const responseText = await response.text();
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (e) {
-        throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
+      if (response.ok) {
+          const result = await response.json();
+          if (onRefresh) onRefresh();
+          setSyncStatus({ type: 'success', message: `تم استيراد ${result.processed || result.count} منتج بنجاح!` });
+          return;
       }
-      if (!response.ok) throw new Error(result.error || 'فشلت المزامنة');
 
+      console.warn(`[ProductsPage] Server selective sync failed. Falling back to Browser Sync...`);
+      const result = await browserSyncPlatform('wuilt', activeStoreId, 'products', selectedIds);
       if (onRefresh) onRefresh();
-      
-      setSyncStatus({ 
-        type: 'success', 
-        message: `تم استيراد ${result.processed} منتج بنجاح!` 
-      });
+      setSyncStatus({ type: 'success', message: `تم استيراد ${result.count} منتج (محلياً) بنجاح!` });
 
-      setSelectedProductIds(new Set());
     } catch (error: any) {
-      setSyncStatus({ type: 'error', message: error.message });
+        console.warn('[ProductsPage] Server selective sync failed, trying direct browser sync...', error.message);
+        try {
+            const selectedIds = Array.from(selectedProductIds).map(id => id.replace('wuilt-', ''));
+            const result = await browserSyncPlatform('wuilt', activeStoreId!, 'products', selectedIds);
+            if (onRefresh) onRefresh();
+            setSyncStatus({ type: 'success', message: `تم استيراد ${result.count} منتج (محلياً) بنجاح!` });
+        } catch (innerError: any) {
+            setSyncStatus({ type: 'error', message: innerError.message });
+        }
     } finally {
       setIsSyncing(false);
+      setSelectedProductIds(new Set());
+      setTimeout(() => setSyncStatus(s => s.type === 'success' ? { ...s, type: 'idle' } : s), 5000);
     }
   };
 
