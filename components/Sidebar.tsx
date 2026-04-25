@@ -97,6 +97,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
                 { to: '/design-templates', label: 'القوالب', icon: <LayoutGrid size={20} /> },
                 { to: '/customize-store', label: 'المظهر', icon: <Brush size={20} /> },
                 { to: '/apps', label: 'الربط والتطبيقات', icon: <AppWindow size={20} /> },
+                { to: '/webhook-logs', label: 'سجل الـ Webhooks', icon: <Code size={20} /> },
                 { to: '/pages', label: 'الصفحات', icon: <FileText size={20} /> },
                 { to: '/domain', label: 'النطاق', icon: <Globe size={20} /> },
             ]

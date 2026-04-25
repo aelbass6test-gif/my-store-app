@@ -3,6 +3,7 @@ import { Package, Plus, Trash2, Edit3, Save, XCircle, Search, AlertCircle, Barco
 import { Settings, Product, ProductVariant } from '../types';
 import { motion, Variants } from 'framer-motion';
 import { generateProductDescription, generateSocialMediaPost } from '../services/geminiService';
+import { apiCall } from '../services/apiService';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -159,7 +160,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     try {
       if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
       
-      const response = await fetch(`/api/sync/platform/wuilt/${activeStoreId}?type=products`, {
+      const response = await apiCall(`/api/sync/platform/wuilt/${activeStoreId}?type=products`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -207,7 +208,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     setShowSelectiveSyncModal(true);
     try {
       if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
-      const response = await fetch(`/api/sync/platform/wuilt/${activeStoreId}/preview?type=products`);
+      const response = await apiCall(`/api/sync/platform/wuilt/${activeStoreId}/preview?type=products`);
       const responseText = await response.text();
       let result;
       try {
@@ -238,7 +239,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     try {
       if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
       
-      const response = await fetch(`/api/sync/platform/wuilt/${activeStoreId}?type=products`, {
+      const response = await apiCall(`/api/sync/platform/wuilt/${activeStoreId}?type=products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

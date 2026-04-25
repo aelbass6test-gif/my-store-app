@@ -45,11 +45,20 @@ const QUERIES = {
         orders(storeId: $storeId, filter: $filter) {
           nodes {
             id
+            refCode
             createdAt
             status
             paymentStatus
             fulfillmentStatus
             shippingStatus
+            totalPrice { amount }
+            subtotal { amount }
+            paidAmount { amount }
+            shippingRateCost { amount }
+            discounts {
+              amount { amount }
+              type
+            }
             customer {
               name
               phone
@@ -58,6 +67,7 @@ const QUERIES = {
             shippingAddress {
               addressLine1
               addressLine2
+              phone
             }
             items {
               ... on SimpleItem {
@@ -75,13 +85,10 @@ const QUERIES = {
                 }
               }
             }
-            subtotal {
-              amount
+            packagingDetails {
+              weight
             }
-            shippingRate {
-              cost { amount }
-              name
-            }
+            notes
           }
         }
       }
@@ -236,22 +243,27 @@ const normalizeWuiltOrders = (data: any): Order[] => {
         const customer = node.customer;
         const shippingAddress = node.shippingAddress;
         
-        const items: OrderItem[] = node.items.map((item: any) => ({
-            productId: item.product?.id ? `wuilt-${item.product.id}` : 'unknown',
-            name: item.title,
-            quantity: item.quantity,
-            price: item.price?.amount || 0,
-            cost: 0,
-            weight: 0,
-            thumbnail: item.product?.images?.[0]?.src,
-            variantDescription: ''
-        }));
+        const items: OrderItem[] = (node.items || []).map((item: any) => {
+            return {
+                productId: item.product?.id ? `wuilt-${item.product.id}` : 'unknown',
+                name: item.title,
+                quantity: item.quantity,
+                price: item.price?.amount || 0,
+                cost: 0,
+                weight: 0,
+                thumbnail: item.product?.images?.[0]?.src,
+                variantDescription: ''
+            };
+        });
 
-        const address = [shippingAddress?.addressLine1, shippingAddress?.addressLine2]
-            .filter(Boolean)
-            .join(', ');
+        const addressParts = [
+            shippingAddress?.addressLine1,
+            shippingAddress?.addressLine2
+        ].filter(p => p && p.trim() !== '');
+        
+        const fullAddress = addressParts.join(', ');
 
-        // Map Payment Status
+        const finalWeight = node.packagingDetails?.weight || 0;
         let paymentStatus: PaymentStatus = 'بانتظار الدفع';
         if (node.paymentStatus === 'PAID') paymentStatus = 'مدفوع';
         else if (node.paymentStatus === 'PARTIALLY_PAID') paymentStatus = 'مدفوع جزئياً';
@@ -261,30 +273,63 @@ const normalizeWuiltOrders = (data: any): Order[] => {
         let preparationStatus: PreparationStatus = 'بانتظار التجهيز';
         if (node.fulfillmentStatus === 'FULFILLED') preparationStatus = 'جاهز';
 
+        // Map Order Status
+        let status: OrderStatus = 'جاري_المراجعة';
+        if (node.status === 'CANCELLED') status = 'ملغي';
+        else if (node.status === 'ARCHIVED') status = 'مؤرشف';
+
+        // Real Order Number: Use refCode if available, otherwise short version of ID
+        const orderNumber = node.refCode || node.id.split('_').pop()?.substring(0, 8).toUpperCase() || node.id;
+
+        const subtotal = node.subtotal?.amount || 0;
+        const totalAmount = node.totalPrice?.amount || subtotal;
+        const shippingFee = node.shippingRateCost?.amount || 0;
+        
+        const statusMap: Record<string, string> = {
+            'SUCCESSFUL': 'مؤكد',
+            'PENDING': 'معلق',
+            'CANCELLED': 'ملغي',
+            'REFUNDED': 'مرتجع',
+            'SHIPPED': 'تم الشحن',
+            'DELIVERED': 'تم التوصيل',
+            'NEW': 'جديد'
+        };
+
+        const displayStatus = statusMap[node.status] || node.status || 'جديد';
+        const shipStatus = statusMap[node.shippingStatus || ''] || node.shippingStatus || '';
+
         return {
             id: `wuilt-${node.id}`,
-            orderNumber: node.id,
+            orderNumber: orderNumber,
             date: node.createdAt,
-            shippingCompany: node.shippingRate?.name || 'Wuilt',
+            shippingCompany: 'Wuilt',
             shippingArea: '',
+            city: '',
             customerName: customer?.name || 'عميل مجهول',
-            customerPhone: customer?.phone || '',
-            customerAddress: address || '',
-            notes: customer?.email ? `البريد الإلكتروني: ${customer.email}` : '',
+            customerPhone: customer?.phone || shippingAddress?.phone || '',
+            customerAddress: fullAddress || '',
+            governorate: '',
+            notes: (node.notes || '') + (customer?.email ? `\nالبريد الإلكتروني: ${customer.email}` : ''),
             items: items,
-            shippingFee: node.shippingRate?.cost?.amount || 0,
-            status: 'جاري_المراجعة', // Default status for new synced orders
-            sourcePlatform: 'Wuilt',
-            sourceStatus: `${node.status || 'NEW'} / ${node.shippingStatus || 'PENDING'}`,
+            shippingFee: shippingFee,
+            totalAmount: totalAmount,
             productName: items.map(i => i.name).join(', '),
-            productPrice: node.subtotal?.amount || 0,
+            productPrice: subtotal,
             productCost: 0,
-            weight: 0,
-            discount: 0,
-            paymentStatus,
-            preparationStatus,
+            weight: finalWeight,
+            discount: node.discounts?.reduce((acc: number, d: any) => acc + (d.amount?.amount || 0), 0) || 0,
+            status: status,
+            paymentStatus: paymentStatus,
+            preparationStatus: preparationStatus,
             includeInspectionFee: false,
-            isInsured: false
+            inspectionFee: 0,
+            isInsured: false,
+            insuranceFee: 0,
+            isTaxed: false,
+            taxAmount: Math.max(0, totalAmount - (subtotal + shippingFee)),
+            sourcePlatform: 'wuilt',
+            sourceStatus: `${displayStatus} / ${shipStatus}`.trim().replace(/\/$/, ''),
+            classification: displayStatus
         };
     });
 };

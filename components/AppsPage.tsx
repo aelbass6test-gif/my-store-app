@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StoreData, Product } from '../types';
 import { CheckCircle2, ChevronLeft, Cable, HardDriveDownload, Search, Shapes, X, RefreshCw, ListChecks, CheckCircle, Package, ImageIcon, Save, XCircle } from 'lucide-react';
+import { apiCall } from '../services/apiService';
 
 interface AppsPageProps {
   storeId: string;
@@ -172,7 +173,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
   const handleSyncOrders = async (appId: string) => {
     setSyncing(appId);
     try {
-        const response = await fetch(`/api/sync/platform/${appId}/${storeId}?type=orders`, {
+        const response = await apiCall(`/api/sync/platform/${appId}/${storeId}?type=orders`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -206,7 +207,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
     else setSyncing(appId + '-products');
 
     try {
-        const response = await fetch(`/api/sync/platform/${appId}/${storeId}?type=products`, {
+        const response = await apiCall(`/api/sync/platform/${appId}/${storeId}?type=products`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: selectedIds ? JSON.stringify({ selectedIds }) : undefined
@@ -240,7 +241,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
   const handleFetchSelectable = async (appId: string) => {
      setIsFetchingSelectable(true);
      try {
-         const response = await fetch(`/api/sync/platform/${appId}/${storeId}/preview?type=products`);
+         const response = await apiCall(`/api/sync/platform/${appId}/${storeId}/preview?type=products`);
          const responseText = await response.text();
          let data;
          try {
@@ -278,7 +279,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
     setTestResult(null);
     
     try {
-        const response = await fetch(`/api/sync/platform/${selectedApp.id}/${storeId}/preview?type=products&apiKey=${config.apiKey}&shopId=${config.shopId || ''}`);
+        const response = await apiCall(`/api/sync/platform/${selectedApp.id}/${storeId}/preview?type=products&apiKey=${config.apiKey}&shopId=${config.shopId || ''}`);
         const responseText = await response.text();
         let data;
         try {

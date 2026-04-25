@@ -9,6 +9,7 @@ import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicato
 import { oneToolzProducts } from './src/data/one-toolz-products';
 
 import { triggerWebhooks } from './utils/webhook';
+import { apiCall } from './services/apiService';
 
 // Page Components (will be loaded via router)
 import SignUpPage from './components/SignUpPage';
@@ -51,6 +52,7 @@ import PaymentSettingsPage from './components/PaymentSettingsPage';
 import DeveloperSettingsPage from './components/DeveloperSettingsPage';
 import TeamChatPage from './components/TeamChatPage';
 import WhatsAppPage from './components/WhatsAppPage';
+import WebhookLogsPage from './components/WebhookLogsPage';
 import WelcomeLoader from './components/WelcomeLoader';
 import GlobalLoader from './components/GlobalLoader';
 import EmployeesPage from './components/EmployeesPage';
@@ -748,7 +750,7 @@ export const AppComponent = () => {
                     if (config?.isActive) {
                         console.log(`[AUTO-SYNC] Triggering background sync for ${platformId}...`);
                             try {
-                                const response = await fetch(`/api/sync/platform/${platformId}/${activeStoreId}?type=orders`, {
+                                const response = await apiCall(`/api/sync/platform/${platformId}/${activeStoreId}?type=orders`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' }
                                 });
@@ -1051,6 +1053,7 @@ export const AppComponent = () => {
                     <Route path="standard-reports" element={<ReportsPage {...pageProps} />} />
                     <Route path="collections-report" element={<CollectionsReportPage {...pageProps} />} />
                     <Route path="activity-logs" element={<ActivityLogsPage logs={pageProps.settings.activityLogs || []} />} />
+                    <Route path="webhook-logs" element={<WebhookLogsPage activeStoreId={activeStoreId} />} />
                     <Route path="suppliers" element={<SuppliersPage {...pageProps} />} />
                     <Route path="pages" element={<PagesManager {...pageProps} />} />
                     <Route path="settings/payment" element={<PaymentSettingsPage {...pageProps} />} />

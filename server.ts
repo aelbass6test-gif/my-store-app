@@ -1,6 +1,7 @@
 import express from 'express';
 import axios from 'axios';
 import path from 'path';
+import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import { supabase } from './services/supabaseClient.js';
 import { databaseService } from './services/databaseService.js';
@@ -11,7 +12,13 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.use(cors());
   app.use(express.json());
+
+  // Health check
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
+  });
 
 // ... (rest of the file)
   // Webhook endpoint for Wuilt
@@ -61,23 +68,65 @@ async function startServer() {
   // Platform Webhooks
   app.post('/api/webhook/platform/:platform/:storeId', async (req, res) => {
     const { platform, storeId } = req.params;
-    const body = req.body;
+    const payload = req.body;
     
-    console.log(`Received ${platform} webhook for store ${storeId}:`, body.event || 'unnamed event');
+    console.log(`Received ${platform} webhook for store ${storeId}:`, payload.event || 'incoming');
 
     try {
-      if (platform === 'wuilt') {
-        const storeData = await databaseService.getStoreData(storeId) as StoreData | null;
-        if (!storeData) throw new Error('Store not found');
+      // 1. Log receipt
+      const { data: logEntry, error: logError } = await supabase.from('webhook_logs').insert({
+        store_id: storeId,
+        platform: platform,
+        payload: payload,
+        status: 'received'
+      }).select().single();
 
-        // Note: Full logic for webhook payload processing can be expanded here.
-        // For now, we acknowledge the receipt.
-        res.status(200).json({ status: 'received' });
-      } else {
-        res.status(404).json({ error: 'Unsupported platform' });
+      // 2. Validate payload (platform specific)
+      // For now we trust, but in production signature verification should be here
+
+      // 3. Process
+      let resultMessage = 'Acknowledged';
+      if (platform === 'wuilt') {
+        const eventType = payload.event_type || payload.event;
+        const data = payload.data || payload;
+
+        if (eventType?.includes('order')) {
+            // Transform and save order
+            const orderId = data.id || `wuilt-ord-${Date.now()}`;
+            const orderData = {
+                id: orderId,
+                store_id: storeId,
+                order_number: data.order_number || data.id,
+                customer_name: data.customer?.name || data.shipping_address?.first_name || 'Generic Customer',
+                status: data.status || 'new',
+                total_price: data.total || data.total_price || 0,
+                date: new Date().toISOString(),
+                details: data,
+                updated_at: new Date().toISOString()
+            };
+            await supabase.from('orders').upsert(orderData);
+            resultMessage = 'Order processed';
+        }
       }
+
+      // 4. Update log to processed
+      if (logEntry) {
+          await supabase.from('webhook_logs').update({ status: 'processed' }).eq('id', logEntry.id);
+      }
+
+      res.status(200).json({ status: 'success', message: resultMessage });
     } catch (error: any) {
       console.error('Webhook Error:', error);
+      
+      // Log error
+      await supabase.from('webhook_logs').insert({
+        store_id: storeId,
+        platform: platform,
+        payload: payload,
+        status: 'error',
+        error_details: error.message
+      });
+
       res.status(500).json({ error: error.message });
     }
   });
@@ -88,15 +137,22 @@ async function startServer() {
     const { type } = req.query; // 'products' or 'orders'
     const { selectedIds } = req.body;
 
+    console.log(`[SYNC] Request: ${platform}, store: ${storeId}, type: ${type}`);
+
     try {
+      // Set headers to prevent Cloudflare from caching or blocking if possible
+      res.setHeader('Cache-Control', 'no-cache');
+      
       const storeData = await databaseService.getStoreData(storeId) as StoreData | null;
-      if (!storeData) throw new Error('Store not found');
+      if (!storeData) {
+        return res.status(404).json({ error: 'Store not found' });
+      }
 
       const config = storeData.settings.platformConfigs?.[platform] || 
                      (storeData.settings.integration?.platform === platform ? storeData.settings.integration : null);
 
       if (!config || !config.apiKey) {
-        return res.status(400).json({ error: `Platform ${platform} not configured for store ${storeId}` });
+        return res.status(400).json({ error: `Platform ${platform} config missing for store ${storeId}` });
       }
 
       let syncResult;
@@ -133,7 +189,6 @@ async function startServer() {
             lastUpdated: Date.now()
           };
           
-          // Get store info to save
           const { data: storeInfo } = await supabase.from('stores_data').select('name').eq('id', storeId).single();
           await databaseService.saveStoreData({ id: storeId, name: storeInfo?.name || 'Store' } as any, updatedStoreData);
           
@@ -163,10 +218,11 @@ async function startServer() {
         }
       }
 
+      console.log(`[SYNC] Success for ${storeId}`);
       res.json(syncResult || { message: 'Sync completed' });
     } catch (error: any) {
-      console.error('Sync Error:', error);
-      res.status(500).json({ error: error.message });
+      console.error('[SYNC] Error:', error);
+      res.status(500).json({ error: error.message || 'Verification failed' });
     }
   });
 

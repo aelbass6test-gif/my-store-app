@@ -406,8 +406,14 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             if (payload && payload.length > 0) {
                 const uniquePayload = Array.from(new Map(payload.map(item => [String(item.id || `${item.store_id}_${item.phone}`), item])).values());
                 if (uniquePayload.length === 0) return;
-                const { error } = await supabase.from(table).upsert(uniquePayload, { onConflict });
-                if (error) throw new Error(`${table} save failed: ${error.message} - ${JSON.stringify(error.details)}`);
+                
+                try {
+                    const { error } = await supabase.from(table).upsert(uniquePayload, { onConflict });
+                    if (error) throw new Error(`${table} save failed: ${error.message} - ${JSON.stringify(error.details)}`);
+                } catch (e: any) {
+                    console.error(`VERBOSE ERROR saving to table ${table}:`, e);
+                    throw e;
+                }
             }
         };
 

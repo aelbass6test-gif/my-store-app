@@ -437,6 +437,11 @@ export interface Order {
   customerPhone2?: string;
   customerAddress: string;
   city?: string;
+  totalAmount?: number;
+  taxAmount?: number;
+  insuranceFee?: number;
+  inspectionFee?: number;
+  isTaxed?: boolean;
   governorate?: string;
   notes?: string;
   items: OrderItem[];

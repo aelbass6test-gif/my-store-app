@@ -2055,7 +2055,17 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
         return useCustom ? (compFees?.inspectionFee || 0) : (settings.enableInspection ? settings.inspectionFee : 0);
     }, [orderData.includeInspectionFee, orderData.shippingCompany, settings]);
 
-    const totalBeforeCredit = useMemo(() => subtotal + (orderData.shippingFee || 0) - (orderData.discount || 0) + inspectionFee, [subtotal, orderData.shippingFee, orderData.discount, inspectionFee]);
+    const insuranceFee = useMemo(() => {
+        if (!orderData.isInsured) return 0;
+        const compFees = settings.companySpecificFees?.[orderData.shippingCompany!];
+        const useCustom = compFees?.useCustomFees ?? false;
+        const rate = useCustom ? (compFees?.insuranceFeePercent || 0) : (settings.insuranceFeePercent || 0);
+        return ((subtotal + (orderData.shippingFee || 0)) * rate) / 100;
+    }, [orderData.isInsured, orderData.shippingCompany, settings, subtotal, orderData.shippingFee]);
+
+    const extraFees = (orderData as any).taxAmount || 0;
+
+    const totalBeforeCredit = useMemo(() => subtotal + (orderData.shippingFee || 0) - (orderData.discount || 0) + inspectionFee + insuranceFee + extraFees, [subtotal, orderData.shippingFee, orderData.discount, inspectionFee, insuranceFee, extraFees]);
     const finalAmount = totalBeforeCredit - creditAmount;
 
     const handleFieldChange = (field: keyof NewOrderState, value: any) => setOrderData((prev: any) => ({ ...prev, [field]: value }));

@@ -359,12 +359,12 @@ const PlatformIntegrationCard: React.FC<PlatformIntegrationCardProps> = ({ integ
 
       <div className="flex flex-col md:flex-row items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 gap-6">
         <div className="flex items-center gap-4">
-           {integration.platform === 'wuilt' && (
+           {integration?.platform === 'wuilt' && (
               <img src="https://wuilt.com/assets/images/logo/wuilt-logo-blue.svg" alt="Wuilt" className="w-12 h-12 p-2 bg-white rounded-xl border border-slate-100" />
            )}
            <div>
               <p className="font-bold text-slate-900 dark:text-white">
-                {integration.platform === 'none' ? 'لم يتم ربط أي منصة بعد' : `متصل بـ ${integration.platform === 'wuilt' ? 'ويلت (Wuilt)' : integration.platform}`}
+                {integration?.platform === 'none' || !integration ? 'لم يتم ربط أي منصة بعد' : `متصل بـ ${integration.platform === 'wuilt' ? 'ويلت (Wuilt)' : integration.platform}`}
               </p>
               <p className="text-xs text-slate-500 mt-1">تستخدم هذه الإعدادات لمزامنة الطلبات والمنتجات تلقائياً.</p>
            </div>
