@@ -65,7 +65,7 @@ async function startServer() {
     }
   });
 
-  // Platform Webhooks
+  // Platform Webhooks - Generic
   app.post('/api/webhook/platform/:platform/:storeId', async (req, res) => {
     const { platform, storeId } = req.params;
     const payload = req.body;
@@ -81,26 +81,22 @@ async function startServer() {
         status: 'received'
       }).select().single();
 
-      // 2. Validate payload (platform specific)
-      // For now we trust, but in production signature verification should be here
-
-      // 3. Process
+      // 2. Process
       let resultMessage = 'Acknowledged';
       if (platform === 'wuilt') {
         const eventType = payload.event_type || payload.event;
-        const data = payload.data || payload;
+        const data = payload.order || payload.data || payload;
 
-        if (eventType?.includes('order')) {
-            // Transform and save order
-            const orderId = data.id || `wuilt-ord-${Date.now()}`;
+        if (eventType === 'ORDER_PLACED' || eventType === 'ORDER_UPDATED' || eventType?.includes('order')) {
+            const orderId = `wuilt-${data.id || Date.now()}`;
             const orderData = {
                 id: orderId,
                 store_id: storeId,
-                order_number: data.order_number || data.id,
-                customer_name: data.customer?.name || data.shipping_address?.first_name || 'Generic Customer',
-                status: data.status || 'new',
-                total_price: data.total || data.total_price || 0,
-                date: new Date().toISOString(),
+                order_number: `W-${data.orderSerial || data.id}`,
+                customer_name: data.customer?.name || 'عميل ويلت',
+                status: 'في_انتظار_المكالمة',
+                total_price: data.receipt?.total?.amount || 0,
+                date: data.createdAt || new Date().toISOString(),
                 details: data,
                 updated_at: new Date().toISOString()
             };
@@ -117,16 +113,55 @@ async function startServer() {
       res.status(200).json({ status: 'success', message: resultMessage });
     } catch (error: any) {
       console.error('Webhook Error:', error);
-      
-      // Log error
-      await supabase.from('webhook_logs').insert({
-        store_id: storeId,
-        platform: platform,
-        payload: payload,
-        status: 'error',
-        error_details: error.message
-      });
+      res.status(500).json({ error: error.message });
+    }
+  });
 
+  // Specific path for /api/webhook/wuilt (used by apiCall in dev)
+  app.post('/api/webhook/wuilt', async (req, res) => {
+    const { storeId } = req.query;
+    const payload = req.body;
+    
+    if (!storeId) return res.status(400).json({ error: 'Missing storeId' });
+
+    console.log(`Received local wuilt webhook for store ${storeId}`);
+
+    try {
+      // 1. Log receipt
+      const { data: logEntry, error: logError } = await supabase.from('webhook_logs').insert({
+        store_id: storeId,
+        platform: 'wuilt',
+        payload: payload,
+        status: 'received'
+      }).select().single();
+
+      // 2. Process Order
+      const eventType = payload.event_type || payload.event;
+      const data = payload.order || payload.data || payload;
+
+      if (eventType === 'ORDER_PLACED' || eventType === 'ORDER_UPDATED' || eventType?.includes('order')) {
+          const orderId = `wuilt-${data.id || Date.now()}`;
+          const orderData = {
+              id: orderId,
+              store_id: storeId,
+              order_number: `W-${data.orderSerial || data.id}`,
+              customer_name: data.customer?.name || 'عميل ويلت',
+              status: 'في_انتظار_المكالمة',
+              total_price: data.receipt?.total?.amount || 0,
+              date: data.createdAt || new Date().toISOString(),
+              details: data,
+              updated_at: new Date().toISOString()
+          };
+          await supabase.from('orders').upsert(orderData);
+      }
+
+      if (logEntry) {
+          await supabase.from('webhook_logs').update({ status: 'processed' }).eq('id', logEntry.id);
+      }
+
+      res.status(200).json({ status: 'success' });
+    } catch (error: any) {
+      console.error('Local Webhook Error:', error);
       res.status(500).json({ error: error.message });
     }
   });

@@ -52,7 +52,7 @@ import PaymentSettingsPage from './components/PaymentSettingsPage';
 import DeveloperSettingsPage from './components/DeveloperSettingsPage';
 import TeamChatPage from './components/TeamChatPage';
 import WhatsAppPage from './components/WhatsAppPage';
-import WebhookLogsPage from './components/WebhookLogsPage';
+import { WebhookLogsPage } from './components/WebhookLogsManagement';
 import WelcomeLoader from './components/WelcomeLoader';
 import GlobalLoader from './components/GlobalLoader';
 import EmployeesPage from './components/EmployeesPage';
