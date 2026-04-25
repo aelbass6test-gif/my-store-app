@@ -384,8 +384,8 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         };
 
         // Execute all sync operations sequentially to prevent fetch limits hitting AI Studio proxy
-        await syncAndDelete('products', products);
-        await syncAndDelete('orders', orders);
+        // await syncAndDelete('products', products); // REMOVED: Managed by explicit delete
+        // await syncAndDelete('orders', orders); // REMOVED: Managed by explicit delete
         await syncAndDelete('transactions', wallet.transactions);
         await syncAndDelete('suppliers', suppliers);
         await syncAndDelete('supply_orders', supplyOrders);
@@ -634,5 +634,6 @@ export const databaseService = {
   upsertOrder: async (data: any, status: string) => { return await supabase.from('orders').upsert({ ...data, status }); },
   upsertProduct: async (data: any) => { return await supabase.from('products').upsert(data); },
   deleteProduct: async (productId: string) => { return await supabase.from('products').delete().eq('id', productId); },
+  deleteOrder: async (orderId: string) => { return await supabase.from('orders').delete().eq('id', orderId); },
   upsertShipment: async (data: any) => { return await supabase.from('shipments').upsert(data); },
 };
