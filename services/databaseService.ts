@@ -166,21 +166,28 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
 
         // --- Reconstruct Data Types ---
 
+        // Mapping products with extra safety for details
         let products: Product[] = (productsRes.data || []).map((p: any) => ({
             id: p.id,
-            name: p.name,
-            sku: p.sku,
-            price: p.price,
+            name: p.name || 'منتج بدون اسم',
+            sku: p.sku || `SKU-${p.id}`,
+            price: Number(p.price) || 0,
             stockQuantity: p.stock_quantity,
-            ...p.details
+            ...(p.details || {})
         }));
-        
-        // If no products are found in the database, seed them from the initial settings.
-        // This acts as a one-time migration for existing stores.
-        if (products.length === 0 && INITIAL_SETTINGS.products.length > 0) {
-            console.log(`No products found in DB for store ${storeId}. Seeding from initial settings.`);
-            products = INITIAL_SETTINGS.products;
+
+        console.log(`[databaseService] Fetched ${products.length} products from relational table for store ${storeId}`);
+
+        // Fallback: If relational table is empty but legacy settings had products, use legacy
+        const legacyProducts = (storeRes.data.settings?.products || []);
+        if (products.length === 0 && legacyProducts.length > 0) {
+            console.log(`[databaseService] Relational products table is empty, falling back to ${legacyProducts.length} legacy products from settings.`);
+            products = legacyProducts;
         }
+        
+        // REMOVED: Incomplete seeding logic that was causing data to "disappear" 
+        // when DB returned empty results. Seeding should only happen on store creation.
+
 
         const orders: Order[] = (ordersRes.data || []).map((o: any) => ({
             id: o.id,
@@ -370,17 +377,27 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         const { 
             products = [], suppliers = [], supplyOrders = [], reviews = [], abandonedCarts = [], activityLogs = [],
             employees = [], discountCodes = [], collections = [], customPages = [], paymentMethods = [],
-            globalOptions = [], shippingIntegrations = [],
-            ...cleanSettings 
+            globalOptions = [], shippingIntegrations = []
         } = data.settings;
         
         const { orders = [], wallet = { balance: 0, transactions: [] }, customers = [] } = data;
         
         // DEBUG LOGGING: Track data volume
-        console.log(`[SAVE] Attempting to save store ${store.id}: ${orders.length} orders, ${products.length} products, ${wallet.transactions.length} transactions`);
+        console.log(`[databaseService] [SAVE] Store ${store.id}: ${orders.length} orders, ${products.length} products found in state`);
         
         // Anti-Wipe Guard: If for some reason state is completely empty but DB has data, skip syncAndDelete to prevent accidental wipe
         const isDataSuspiciouslyEmpty = orders.length === 0 && products.length === 0 && wallet.transactions.length === 0;
+        
+        if (isDataSuspiciouslyEmpty) {
+            const { count: dbOrdersCount } = await supabase.from('orders').select('*', { count: 'exact', head: true }).eq('store_id', store.id);
+            if ((dbOrdersCount || 0) > 0) {
+                console.warn(`[databaseService] [SAVE] Anti-Wipe Guard triggered: Local state is empty but DB has ${dbOrdersCount} orders. Aborting relational sync to protect data.`);
+                // We still save to stores_data settings as a low-risk operation, but skip the table syncs
+            }
+        }
+
+        // Keep all data in settings as a redundant backup (no more cleanSettings removal)
+        const settingsToSave = data.settings;
 
         // --- Handle Deletions by Syncing ---
         const syncAndDelete = async (tableName: string, stateItems: any[], dbIdColumn = 'id', stateIdColumn = 'id') => {
@@ -502,7 +519,7 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         
         const { error: storeError } = await supabase
             .from('stores_data')
-            .update({ settings: cleanSettings, name: store.name })
+            .update({ settings: settingsToSave, name: store.name })
             .eq('id', store.id);
         if (storeError) throw storeError;
 
