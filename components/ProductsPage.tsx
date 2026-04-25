@@ -61,9 +61,12 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
 
   const isPlatformConnected = settings.integration?.platform !== 'none';
 
+  console.log(`[ProductsPage] Rendering with ${settings.products.length} products. Active store: ${activeStoreId}`);
+
   const filteredProducts = settings.products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+    p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleSaveProduct = (e: React.FormEvent) => {
