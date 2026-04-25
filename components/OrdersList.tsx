@@ -9,6 +9,7 @@ import { generateShippingNote } from '../services/geminiService';
 import { calculateCodFee } from '../utils/financials';
 import { generateOrdersReportHTML } from '../utils/reportGenerator';
 import { triggerWebhooks } from '../utils/webhook';
+import { databaseService } from '../services/databaseService';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -482,7 +483,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     setShowSummaryModal(orderWithId);
   };
   
-  const handleDeleteOrder = () => {
+  const handleDeleteOrder = async () => {
     if (!orderToDelete) {
         console.error("handleDeleteOrder called with no order to delete.");
         return;
@@ -490,12 +491,22 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     
     const orderIdToDelete = orderToDelete.id;
     const orderNumberToDelete = orderToDelete.orderNumber;
-    
-    // 1. Remove Order from the main orders list
-    setOrders(prevOrders => prevOrders.filter(o => o.id !== orderIdToDelete));
-    
-    // 2. Remove associated transactions from Wallet
-    setWallet(prevWallet => {
+
+    try {
+        // Explicitly delete from database
+        const { error } = await databaseService.deleteOrder(orderIdToDelete);
+        if (error) {
+            console.error("Failed to delete order from database:", error);
+            alert("فشل حذف الطلب من قاعدة البيانات.");
+            return;
+        }
+
+        // 1. Remove Order from the main orders list
+        setOrders(prevOrders => prevOrders.filter(o => o.id !== orderIdToDelete));
+        
+        // 2. Remove associated transactions from Wallet
+        setWallet(prevWallet => {
+            // ... (keep the existing logic for transactions)
         // Ensure transactions is an array to prevent errors
         const currentTransactions = prevWallet.transactions || [];
 
@@ -526,6 +537,9 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
 
     // 3. Close the confirmation modal
     setOrderToDelete(null);
+    } catch (err) {
+        console.error("Error in handleDeleteOrder:", err);
+    }
   };
 
   const updateOrderField = (id: string, field: keyof Order, value: any) => {
