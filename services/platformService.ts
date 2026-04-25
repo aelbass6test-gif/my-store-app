@@ -221,7 +221,7 @@ const normalizeWuiltProducts = (data: any): Product[] => {
     return {
       id: `wuilt-${node.id}`, // Prefix to avoid collisions
       sku: `W-${node.id}`,
-      name: node.title,
+      name: node.title || 'منتج بدون عنوان',
       description: node.descriptionHtml || '',
       price: firstVariant?.price || 0,
       inStock: true,
