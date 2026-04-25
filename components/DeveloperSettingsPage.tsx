@@ -181,14 +181,14 @@ const DeveloperSettingsPage: React.FC<DeveloperSettingsPageProps> = ({ settings,
                     type="text" 
                     readOnly
                     className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-600 dark:text-slate-400 font-mono outline-none"
-                    value={`https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/webhook?storeId=${activeStoreId || 'YOUR_STORE_ID'}&platform=wuilt`}
+                    value={`https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/wuilt-webhook?storeId=${activeStoreId || 'YOUR_STORE_ID'}`}
                   />
                   <button 
-                    onClick={() => handleCopy(`https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/webhook?storeId=${activeStoreId || 'YOUR_STORE_ID'}&platform=wuilt`)} 
+                    onClick={() => handleCopy(`https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/wuilt-webhook?storeId=${activeStoreId || 'YOUR_STORE_ID'}`)} 
                     className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 p-2 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition"
                     title="نسخ الرابط"
                   >
-                     {copiedLink === `https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/webhook?storeId=${activeStoreId || 'YOUR_STORE_ID'}&platform=wuilt` ? <CheckCircle2 size={18} className="text-green-500" /> : <Copy size={18} />}
+                     {copiedLink === `https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/wuilt-webhook?storeId=${activeStoreId || 'YOUR_STORE_ID'}` ? <CheckCircle2 size={18} className="text-green-500" /> : <Copy size={18} />}
                   </button>
                 </div>
              </div>

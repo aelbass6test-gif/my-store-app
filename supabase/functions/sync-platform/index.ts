@@ -264,8 +264,14 @@ async function wuiltRequest(apiKey: string, query: string, variables: any = {}, 
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Handle CORS
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
+  // Handle GET vs POST
+  // (Sync usually needs POST if sending complex filters, but here we mostly use query params)
+  
   try {
     const url = new URL(req.url);
     const storeId = url.searchParams.get("storeId");
@@ -308,6 +314,24 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 2.5 Filter by selectedIds if provided in POST body
+    if (req.method === "POST") {
+        try {
+            const body = await req.json();
+            if (body.selectedIds && Array.isArray(body.selectedIds) && body.selectedIds.length > 0) {
+                const selectedSet = new Set(body.selectedIds.map((id: string) => String(id).toLowerCase()));
+                console.log(`[sync-platform] Filtering sync to ${selectedSet.size} selected items out of ${items.length}`);
+                items = items.filter(item => {
+                    const itemId = String(item.id).toLowerCase();
+                    return selectedSet.has(itemId) || selectedSet.has(itemId.replace('wuilt-', ''));
+                });
+                console.log(`[sync-platform] Found ${items.length} matches after filtering`);
+            }
+        } catch (e) {
+            console.log("[sync-platform] No valid JSON body found or error parsing POST request");
+        }
+    }
+
     if (isPreview) {
       return new Response(JSON.stringify({ items }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
@@ -322,8 +346,18 @@ Deno.serve(async (req) => {
       const { error: upsertError } = await supabase.from('products').upsert(productsPayload, { onConflict: 'id' });
       if (upsertError) throw upsertError;
 
-      // Update settings backup
-      const updatedSettings = { ...settings, products: items };
+      // Update settings backup - MERGE instead of overwrite to prevent wiping existing products during selective sync
+      const existingSettingsProducts = settings.products || [];
+      
+      // Create a map to handle updates vs inserts
+      const productMap = new Map(existingSettingsProducts.map((p: any) => [p.id, p]));
+      items.forEach((p: any) => {
+          productMap.set(p.id, p);
+      });
+      
+      const mergedProducts = Array.from(productMap.values());
+      const updatedSettings = { ...settings, products: mergedProducts };
+      
       await supabase.from('stores_data').update({ settings: updatedSettings }).eq('id', storeId);
 
     } else {

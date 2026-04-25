@@ -38,7 +38,12 @@ export const calculateOrderProfitLoss = (order: Order, settings: Settings): { pr
   if (order.status === 'تم_التحصيل') {
     const codFee = calculateCodFee(order, settings);
     const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : inspectionCost;
-    profit = (order.productPrice - order.productCost - insuranceFee - inspectionAdjustment - codFee);
+    
+    const platformTaxes = order.taxAmountReal || order.taxAmount || 0;
+    const platformFees = order.feesAmount || 0;
+    const platformShippingCost = order.shippingCost || 0;
+    
+    profit = (order.productPrice - order.productCost - insuranceFee - inspectionAdjustment - codFee - platformTaxes - platformFees - platformShippingCost);
   } else if (order.status === 'مرتجع' || order.status === 'فشل_التوصيل') {
     const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;
     const returnFeeAmount = applyReturnFee ? (useCustom ? (compFees?.returnShippingFee ?? 0) : settings.returnShippingFee) : 0;

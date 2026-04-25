@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Settings, PlatformIntegration, Store } from '../types';
-import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe } from 'lucide-react';
+import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe, Send, Bell } from 'lucide-react';
 import { clearStoreData } from '../services/databaseService';
 
 interface SettingsPageProps {
@@ -38,6 +38,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
           <DatabaseManagementCard onSync={onManualSave} />
       )}
       <DomainSettingsCard settings={settings} setSettings={setSettings} />
+      <NotificationSettingsCard settings={settings} setSettings={setSettings} />
       <CommunicationSettingsCard settings={settings} setSettings={setSettings} />
       <EmployeeDashboardSettingsCard settings={settings} setSettings={setSettings} />
       <PlatformIntegrationCard 
@@ -303,6 +304,68 @@ interface PlatformIntegrationCardProps {
   isEnabled: boolean;
   onToggle: () => void;
 }
+
+const NotificationSettingsCard: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
+    // @ts-ignore
+    const telegram = settings.telegramNotifications || { isActive: false, botToken: '', chatId: '' };
+
+    const handleUpdate = (updates: any) => {
+        setSettings(prev => ({
+            ...prev,
+            // @ts-ignore
+            telegramNotifications: {
+                // @ts-ignore
+                ...prev.telegramNotifications,
+                ...updates
+            }
+        }));
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center justify-between mb-6 border-b border-slate-200 dark:border-slate-800 pb-6">
+                <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400">
+                    <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg"><Bell size={24}/></div>
+                    <div>
+                        <h2 className="text-xl font-black dark:text-white">إشعارات تليجرام الواردة</h2>
+                        <p className="text-xs text-slate-500">استقبل تنبيهات لحظية على هاتفك عند وصول أي طلب جديد.</p>
+                    </div>
+                </div>
+                <ToggleButton active={telegram.isActive} onToggle={() => handleUpdate({ isActive: !telegram.isActive })} variant="blue" />
+            </div>
+
+            <div className={`space-y-4 transition-all duration-300 ${telegram.isActive ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-600 mr-1">رقم التوكن (Bot Token)</label>
+                        <input 
+                            type="password" 
+                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                            placeholder="712345678:AAH..."
+                            value={telegram.botToken || ''}
+                            onChange={e => handleUpdate({ botToken: e.target.value })}
+                            dir="ltr"
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-600 mr-1">معرف المحادثة (Chat ID)</label>
+                        <input 
+                            type="text" 
+                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                            placeholder="123456789"
+                            value={telegram.chatId || ''}
+                            onChange={e => handleUpdate({ chatId: e.target.value })}
+                            dir="ltr"
+                        />
+                    </div>
+                </div>
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/20 text-[10px] text-blue-700 dark:text-blue-300 leading-relaxed text-center">
+                    <p>للحصول على التوكن، تحدث مع <a href="https://t.me/BotFather" target="_blank" className="font-bold underline">@BotFather</a> وأنشئ بوت جديد. للحصول على Chat ID، أرسل أي رسالة للبوت ثم ابحث عن الـ ID الخاص بك عبر <a href="https://t.me/userinfobot" target="_blank" className="font-bold underline">@userinfobot</a>.</p>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const DomainSettingsCard: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
     return (

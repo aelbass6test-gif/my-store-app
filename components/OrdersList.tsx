@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users, Mail } from 'lucide-react';
+import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users, Mail, Copy, ExternalLink, Cable } from 'lucide-react';
 import { Order, Settings, OrderStatus, Wallet, Transaction, PaymentStatus, PreparationStatus, OrderItem, Product, CustomerProfile, Store, Employee, User, AuditLog } from '../types';
 import { ORDER_STATUSES, EGYPT_GOVERNORATES, ORDER_STATUS_METADATA } from '../constants';
 import { motion, Variants } from 'framer-motion';
@@ -10,6 +10,7 @@ import { calculateCodFee } from '../utils/financials';
 import { generateOrdersReportHTML } from '../utils/reportGenerator';
 import { triggerWebhooks } from '../utils/webhook';
 import { databaseService } from '../services/databaseService';
+import { browserSyncPlatform } from '../services/platformService';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -177,6 +178,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
   const [showSummaryModal, setShowSummaryModal] = useState<Order | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncingWuilt, setIsSyncingWuilt] = useState(false);
 
   // Polling for real-time updates
   useEffect(() => {
@@ -195,6 +197,24 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       await onRefresh();
     } finally {
       setTimeout(() => setIsRefreshing(false), 600);
+    }
+  };
+
+  const hasWuiltIntegration = useMemo(() => {
+    return settings.connectedPlatforms?.includes('wuilt') && settings.platformConfigs?.['wuilt']?.isActive;
+  }, [settings.connectedPlatforms, settings.platformConfigs]);
+
+  const handleWuiltSync = async () => {
+    if (!activeStore?.id) return;
+    setIsSyncingWuilt(true);
+    try {
+      await browserSyncPlatform('wuilt', activeStore.id, 'orders');
+      if (onRefresh) await onRefresh();
+    } catch (error) {
+      console.error("Failed to sync Wuilt orders manually:", error);
+      alert("حدث خطأ أثناء مزامنة طلبات ويلت");
+    } finally {
+      setIsSyncingWuilt(false);
     }
   };
   
@@ -908,13 +928,26 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1">إدارة الطلبات</h1>
-              <button 
-                onClick={handleManualRefresh}
-                className={`p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-primary transition-all ${isRefreshing ? 'animate-spin text-primary border-primary/30' : ''}`}
-                title="تحديث البيانات"
-              >
-                <RefreshCcw size={18} />
-              </button>
+              <div className="flex bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+                <button 
+                  onClick={handleManualRefresh}
+                  className={`p-2 lg:p-2.5 text-slate-400 hover:text-primary transition-all flex items-center justify-center ${isRefreshing ? 'animate-spin text-primary' : ''}`}
+                  title="تحديث البيانات"
+                >
+                  <RefreshCcw size={18} />
+                </button>
+                {hasWuiltIntegration && (
+                  <button 
+                    onClick={handleWuiltSync}
+                    disabled={isSyncingWuilt}
+                    className="p-2 lg:p-2.5 border-r border-slate-200 dark:border-slate-800 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all font-black text-sm flex gap-2 items-center tracking-tight disabled:opacity-50"
+                    title="استيراد جديد من ويلت"
+                  >
+                    {isSyncingWuilt ? <Cable size={18} className="animate-pulse" /> : <Cable size={18} />}
+                    <span className="hidden lg:inline-block tracking-tight text-[11px] uppercase">مزامنة ويلت</span>
+                  </button>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <p className="text-xs md:text-sm text-slate-500 font-medium">{filteredOrders.length} طلب</p>
@@ -1683,32 +1716,69 @@ const OrderRow = ({
 
       <td className="p-4 whitespace-nowrap text-center">
          <div className="relative group/status inline-block cursor-pointer">
-           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-rose-100 text-rose-700 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold transition-colors">
-              <span>{ORDER_STATUS_METADATA[order.status]?.label || order.status.replace(/_/g, ' ')}</span>
-              <div className="w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[9px] drop-shadow-sm font-black">
-                 {order.shippingCompany ? order.shippingCompany.charAt(0).toUpperCase() : <Truck size={8}/>}
+           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 text-xs font-bold transition-colors">
+              <div className="w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] drop-shadow-sm font-black overflow-hidden flex-shrink-0">
+                 {order.shippingCompany ? (
+                   order.shippingCompany.toLowerCase().includes('aramex') 
+                     ? <span className="text-white text-lg leading-none mt-[-2px]">a</span>
+                     : order.shippingCompany.charAt(0).toUpperCase()
+                 ) : (
+                   <Truck size={10}/>
+                 )}
               </div>
+              <span className="max-w-[100px] truncate">{ORDER_STATUS_METADATA[order.status]?.label || order.status.replace(/_/g, ' ')}</span>
            </div>
-            <div className="absolute top-full right-1/2 translate-x-1/2 mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-3 hidden group-hover/status:block z-30 text-right">
-               <div className="flex items-center justify-between mb-2">
-                 <div className="text-[11px] text-slate-500 font-bold">الحالة</div>
-                 <div className="text-[10px] font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-1">مع شركة <span className="w-3 h-3 rounded-full bg-rose-600 text-white flex items-center justify-center text-[7px]">{order.shippingCompany?.charAt(0).toUpperCase()}</span></div>
-               </div>
-               <select 
-                 value={order.status}
-                 onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
-                 className={`w-full appearance-none px-3 py-2 rounded-lg text-xs font-black border border-slate-200 outline-none focus:border-rose-500 bg-slate-50 mb-2 cursor-pointer`}
-               >
-                 {[...new Set([...ORDER_STATUSES, order.status])].map(s => (
-                   <option key={s} value={s} className="text-slate-900 bg-white">{ORDER_STATUS_METADATA[s]?.label || s.replace(/_/g, ' ')}</option>
-                 ))}
-               </select>
-               {order.waybillNumber && (
-                 <div className="border-t border-slate-100 pt-2 mt-1 flex items-center justify-between group/copy cursor-pointer" onClick={() => navigator.clipboard.writeText(order.waybillNumber!)}>
-                    <span className="text-[10px] text-slate-400">التتبع</span>
-                    <span className="text-xs font-mono font-bold text-slate-700">{order.waybillNumber}</span>
+
+            <div className="absolute top-full right-1/2 translate-x-1/2 mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl hidden group-hover/status:flex flex-col z-30 text-right overflow-hidden group-hover/status:animate-in group-hover/status:fade-in group-hover/status:zoom-in-95 group-hover/status:duration-200">
+               {/* Header: Company */}
+               <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col items-end gap-2 bg-slate-50/50 dark:bg-slate-800/20">
+                 <div className="text-[11px] text-slate-400 font-bold">مع شركة</div>
+                 <div className="flex items-center justify-end gap-3 w-full">
+                    <span className="font-black text-sm text-slate-800 dark:text-slate-200">{order.shippingCompany || 'غير محدد'}</span>
+                    <div className="w-10 h-10 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-sm font-black overflow-hidden shrink-0">
+                      {order.shippingCompany ? (
+                        order.shippingCompany.toLowerCase().includes('aramex') ? <span className="text-white text-3xl leading-none mt-[-4px]">a</span> : order.shippingCompany.charAt(0).toUpperCase()
+                      ) : <Truck size={18}/>}
+                    </div>
                  </div>
-               )}
+               </div>
+
+               {/* Body: Status & Tracking */}
+               <div className="p-4 flex flex-col gap-5">
+                   <div className="flex flex-col gap-2">
+                     <div className="text-[11px] text-slate-400 font-bold mb-1">الحالة</div>
+                     <select 
+                       value={order.status}
+                       onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
+                       className="w-full appearance-none px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-full text-xs font-black text-slate-700 dark:text-slate-300 outline-none focus:border-rose-500 bg-white dark:bg-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-right"
+                       dir="rtl"
+                     >
+                       {[...new Set([...ORDER_STATUSES, order.status])].map(s => (
+                         <option key={s} value={s}>{ORDER_STATUS_METADATA[s]?.label || s.replace(/_/g, ' ')}</option>
+                       ))}
+                     </select>
+                   </div>
+
+                   {order.waybillNumber && (
+                     <div className="border-t border-slate-100 dark:border-slate-800 pt-5 flex flex-col gap-3">
+                        <div className="text-[11px] text-slate-400 font-bold">تتبع الطلب</div>
+                        <div className="flex items-center justify-end gap-3 cursor-pointer group/copy" onClick={() => navigator.clipboard.writeText(order.waybillNumber!)}>
+                           <span className="text-sm font-mono font-bold text-slate-700 dark:text-slate-300 tracking-wider hover:text-indigo-600 transition-colors">{order.waybillNumber}</span>
+                           <div className="p-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-emerald-600 group-hover/copy:bg-emerald-50 dark:group-hover/copy:bg-emerald-900/30 transition-colors">
+                              <Copy size={14} />
+                           </div>
+                        </div>
+                        <a 
+                          href={order.shippingCompany?.toLowerCase().includes('aramex') ? `https://www.aramex.com/ae/en/track/shipments?ShipmentNumber=${order.waybillNumber}` : `#`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="w-full mt-2 flex items-center justify-center gap-2 py-2 border border-slate-200 dark:border-slate-700 rounded-full text-xs font-bold text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                        >
+                          <span>تتبع الطلب</span>
+                          <ExternalLink size={14} />
+                        </a>
+                     </div>
+                   )}
+               </div>
             </div>
          </div>
       </td>
@@ -2320,9 +2390,11 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                                             {hasVariants && (
                                                 <select value={item.variantId || ''} onChange={e => handleItemChange(index, 'variantId', e.target.value)} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white">
                                                     <option value="">بدون متغيرات</option>
-                                                    {product.variants?.map(v => (
+                                                    {product.variants?.map((v: any) => (
                                                         <option key={v.id} value={v.id}>
-                                                            {Object.entries(v.options).map(([k, val]) => `${k}: ${val}`).join(', ')}
+                                                            {v.options && typeof v.options === 'object' && Object.keys(v.options).length > 0
+                                                              ? Object.entries(v.options).map(([k, val]) => `${k}: ${val}`).join(', ') 
+                                                              : v.name || v.title || 'متغير'}
                                                         </option>
                                                     ))}
                                                 </select>

@@ -464,7 +464,17 @@ export const browserSyncPlatform = async (platformId: string, storeId: string, t
     if (platformId === 'wuilt') {
         if (type === 'products') {
             const products = await fetchWuiltProducts(apiKey, shopId);
-            const filtered = selectedIds ? products.filter(p => selectedIds.includes(p.id.replace('wuilt-', ''))) : products;
+            let filtered = products;
+            
+            if (selectedIds && selectedIds.length > 0) {
+                const selectedSet = new Set(selectedIds.map(id => String(id).toLowerCase()));
+                filtered = products.filter(p => {
+                    const pid = String(p.id).toLowerCase();
+                    return selectedSet.has(pid) || selectedSet.has(pid.replace('wuilt-', ''));
+                });
+            }
+            
+            console.log(`[BrowserSync] Processed ${filtered.length} products to sync out of ${products.length} found.`);
             
             // Map products to match DB schema
             const productsPayload = filtered.map(p => {

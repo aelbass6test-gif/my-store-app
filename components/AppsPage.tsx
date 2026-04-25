@@ -575,32 +575,43 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
                         </div>
                      </div>
 
-                     {/* Webhook Configuration Section */}
-                     <div className={`space-y-4 pt-2 border-t border-slate-100 dark:border-slate-700 ${config.isActive === false ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
-                        <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 ">
-                           <Webhook className="w-4 h-4" />
-                           <h4 className="font-bold text-sm uppercase tracking-wider">إعدادات الـ Webhook (للاستقبال اللحظي)</h4>
-                        </div>
-                        
-                        <div className="space-y-3">
-                           <p className="text-[11px] text-slate-500 mr-1 leading-relaxed">انسخ الرابط التالي وضعه في إعدادات الـ Webhook في لوحة تحكم {selectedApp.name} لاستقبال الطلبات والسلات بمجرد حدوثها.</p>
-                           <div className="flex border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900 group">
-                             <input 
-                               type="text"
-                               readOnly 
-                               value={getWebhookUrl(selectedApp.id)} 
-                               className="w-full px-4 py-3 text-xs font-mono bg-transparent text-left focus:outline-none"
-                               dir="ltr"
-                             />
-                             <button 
-                               onClick={() => copyToClipboard(getWebhookUrl(selectedApp.id))} 
-                               className={`px-6 flex items-center justify-center transition-all border-r dark:border-slate-700 min-w-[80px] font-bold text-xs ${copied ? 'bg-green-500 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'}`}
-                             >
-                               {copied ? 'تم النسخ!' : 'نسخ الرابط'}
-                             </button>
-                           </div>
-                        </div>
-                     </div>
+                      {/* Webhook Configuration Section */}
+                      <div className={`space-y-4 pt-4 border-t border-slate-100 dark:border-slate-700 ${config.isActive === false ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
+                         <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 ">
+                            <Webhook className="w-4 h-4" />
+                            <h4 className="font-bold text-sm uppercase tracking-wider">إعدادات الـ Webhook (للاستقبال اللحظي)</h4>
+                         </div>
+                         
+                         <div className="space-y-4">
+                            <div className="bg-blue-50 dark:bg-blue-900/10 p-3 rounded-xl border border-blue-100 dark:border-blue-900/20">
+                               <p className="text-[11px] text-blue-800 dark:text-blue-300 leading-relaxed font-medium">
+                                  <strong>مهم جداً:</strong> لكي تصل الطلبات لمتجرك لحظة حدوثها، انسخ الرابط أدناه وضعه في لوحة تحكم ويلت (إعدادات Webhook) واختر حدث (Order Created).
+                               </p>
+                            </div>
+
+                            <div className="space-y-3">
+                               <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-400 mr-1">رابط المزامنة السحابية (Cloud Proxy - مستحسن):</label>
+                                  <div className="flex border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900 group">
+                                    <input 
+                                      type="text"
+                                      readOnly 
+                                      value={`https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/${selectedApp.id}-webhook?storeId=${storeId}`} 
+                                      className="w-full px-4 py-3 text-[11px] font-mono bg-transparent text-left focus:outline-none overflow-x-auto"
+                                      dir="ltr"
+                                    />
+                                    <button 
+                                      onClick={() => copyToClipboard(`https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/${selectedApp.id}-webhook?storeId=${storeId}`)} 
+                                      className={`px-4 flex items-center justify-center transition-all border-r dark:border-slate-700 min-w-[70px] font-bold text-[10px] ${copied ? 'bg-green-500 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}
+                                    >
+                                      {copied ? 'تم!' : 'نسخ'}
+                                    </button>
+                                  </div>
+                                  <p className="text-[9px] text-slate-400 mr-1">هذا الرابط أكثر استقراراً ويضمن وصول الطلبات حتى لو كان التطبيق مغلقاً.</p>
+                               </div>
+                            </div>
+                         </div>
+                      </div>
 
                      <div className="bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-400 p-4 rounded-xl text-xs leading-relaxed border border-amber-100 dark:border-amber-900/20">
                          <strong>توصية:</strong> الربط عبر الـ API يضمن جلب البيانات السابقة، بينما الـ Webhook يضمن استمرارية العمل اللحظي دون تدخل منك.

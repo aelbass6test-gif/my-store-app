@@ -58,7 +58,9 @@ import GlobalLoader from './components/GlobalLoader';
 import EmployeesPage from './components/EmployeesPage';
 import ReportsPage from './components/ReportsPage';
 import ChatBot from './components/ChatBot';
+import TaskCenter from './components/TaskCenter';
 import CongratsModal from './components/CongratsModal';
+import { BackgroundTask } from './types';
 import OrderTrackingPage from './components/OrderTrackingPage';
 import OtpVerificationPage from './components/OtpVerificationPage';
 import IosInstallPrompt from './components/IosInstallPrompt';
@@ -76,12 +78,14 @@ interface EmployeeRegisterRequestData {
 
 const MainLayout = ({ currentUser, handleLogout, isSidebarOpen, setSidebarOpen, activeStore, theme, setTheme }: any) => {
     return (
-        <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-50" dir="rtl">
+        <div className="flex flex-col h-screen bg-slate-100 dark:bg-[#09090b] text-slate-900 dark:text-slate-50 overflow-hidden" dir="rtl">
     <Header currentUser={currentUser} onLogout={handleLogout} onToggleSidebar={() => setSidebarOpen(true)} theme={theme} setTheme={setTheme} activeStore={activeStore} />
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-1 overflow-hidden p-2 md:p-3 gap-2 md:gap-3">
         <Sidebar activeStore={activeStore} isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar">
-            <Outlet />
+        <main className="flex-1 overflow-y-auto bg-white dark:bg-[#121214] rounded-[2rem] md:rounded-[2.5rem] shadow-sm border border-slate-200/50 dark:border-white/5 relative z-10 no-scrollbar">
+            <div className="p-4 md:p-8 min-h-full">
+                <Outlet />
+            </div>
         </main>
     </div>
 </div>
@@ -773,13 +777,85 @@ export const AppComponent = () => {
             }
         }, 120000); // Every 2 minutes
 
-        return () => {
-            console.log('[REALTIME] Removing subscriptions and polling.');
-            subscriptions.forEach(sub => supabase.removeChannel(sub));
-            clearInterval(pollingInterval);
-            clearInterval(autoSyncInterval);
-        };
-    }, [activeStoreId]); 
+    return () => {
+        console.log('[REALTIME] Removing subscriptions and polling.');
+        subscriptions.forEach(sub => supabase.removeChannel(sub));
+        clearInterval(pollingInterval);
+        clearInterval(autoSyncInterval);
+    };
+}, [activeStoreId]); 
+
+const addTask = (task: BackgroundTask) => {
+    if (!activeStoreId || !allStoresData[activeStoreId]) return;
+    
+    setAllStoresData(prev => ({
+        ...prev,
+        [activeStoreId]: {
+            ...prev[activeStoreId],
+            settings: {
+                ...prev[activeStoreId].settings,
+                backgroundTasks: [task, ...(prev[activeStoreId].settings.backgroundTasks || [])]
+            }
+        }
+    }));
+};
+
+const updateTask = (taskId: string, updates: Partial<BackgroundTask>) => {
+    if (!activeStoreId || !allStoresData[activeStoreId]) return;
+
+    setAllStoresData(prev => ({
+        ...prev,
+        [activeStoreId]: {
+            ...prev[activeStoreId],
+            settings: {
+                ...prev[activeStoreId].settings,
+                backgroundTasks: (prev[activeStoreId].settings.backgroundTasks || []).map(t => 
+                    t.id === taskId ? { ...t, ...updates } : t
+                )
+            }
+        }
+    }));
+};
+
+const dismissTask = (taskId: string) => {
+    if (!activeStoreId || !allStoresData[activeStoreId]) return;
+
+    setAllStoresData(prev => ({
+        ...prev,
+        [activeStoreId]: {
+            ...prev[activeStoreId],
+            settings: {
+                ...prev[activeStoreId].settings,
+                backgroundTasks: (prev[activeStoreId].settings.backgroundTasks || []).filter(t => t.id !== taskId)
+            }
+        }
+    }));
+};
+
+const logActivity = (action: string, details: string, type: 'order' | 'stock' | 'system' | 'sync' | 'financial' = 'system') => {
+    if (!activeStoreId || !allStoresData[activeStoreId]) return;
+
+    const newLog = {
+        id: `log-${Date.now()}`,
+        user: currentUser?.fullName || 'النظام',
+        action,
+        details,
+        date: new Date().toISOString(),
+        timestamp: Date.now(),
+        type
+    };
+
+    setAllStoresData(prev => ({
+        ...prev,
+        [activeStoreId]: {
+            ...prev[activeStoreId],
+            settings: {
+                ...prev[activeStoreId].settings,
+                activityLogs: [newLog, ...(prev[activeStoreId].settings.activityLogs || [])].slice(0, 100)
+            }
+        }
+    }));
+};
 
     if (!authChecked) {
         return <GlobalLoader />;
@@ -825,6 +901,10 @@ export const AppComponent = () => {
         cart,
         forceSync,
         onRefresh: () => activeStoreId && refreshStoreData(activeStoreId),
+        addTask,
+        updateTask,
+        dismissTask,
+        logActivity,
         customers: activeStoreId ? allStoresData[activeStoreId]?.customers || [] : [],
         setCustomers: (updater: any) => {
             if(activeStoreId) {
@@ -951,11 +1031,21 @@ export const AppComponent = () => {
             isInsured: false,
             paymentStatus: 'بانتظار الدفع',
             preparationStatus: 'بانتظار التجهيز',
+            sourcePlatform: 'المتجر الإلكتروني'
         };
         
         pageProps.setOrders((prev: Order[]) => [newOrder, ...prev]);
         pageProps.setCart([]); // Clear cart
         triggerWebhooks(newOrder, pageProps.settings);
+        
+        // Activity Log
+        logActivity('طلب جديد', `تم استلام طلب جديد #${newOrder.orderNumber} من ${newOrder.customerName}`, 'order');
+        
+        // Multi-Channel Notification
+        import('./services/notificationService').then(({ sendTelegramNotification }) => {
+            sendTelegramNotification(newOrder, pageProps.settings);
+        });
+
         return newOrder.id;
     };
 
@@ -1039,7 +1129,7 @@ export const AppComponent = () => {
                     <Route index element={<Dashboard {...pageProps} />} />
                     <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} forceSync={pageProps.forceSync} />} />
                     <Route path="orders" element={<OrdersList {...pageProps} currentUser={currentUser} addLoyaltyPointsForOrder={() => {}} onRefresh={() => activeStoreId && refreshStoreData(activeStoreId)} />} />
-                    <Route path="products" element={<ProductsPage {...pageProps} />} />
+                    <Route path="products" element={<ProductsPage {...pageProps} addTask={addTask} updateTask={updateTask} logActivity={logActivity} />} />
                     <Route path="customers" element={<CustomersPage orders={pageProps.orders} loyaltyData={{}} updateCustomerLoyaltyPoints={() => {}} />} />
                     <Route path="wallet" element={<WalletPage {...pageProps} />} />
                     <Route path="settings" element={<SettingsPage {...pageProps} onManualSave={currentUser?.isAdmin ? handleManualMigration : undefined} />} />
@@ -1086,6 +1176,12 @@ export const AppComponent = () => {
             </Routes>
             )}
             {showCongratsModal && <CongratsModal onClose={() => setShowCongratsModal(false)} />}
+            {activeStoreId && allStoresData[activeStoreId] && (
+                <TaskCenter 
+                    tasks={allStoresData[activeStoreId].settings.backgroundTasks || []} 
+                    onDismiss={dismissTask}
+                />
+            )}
             <GlobalSaveIndicator status={saveStatus} message={saveMessage} />
         </>
     );
