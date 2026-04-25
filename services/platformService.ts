@@ -431,39 +431,78 @@ export const getWuiltProductByHandle = async (apiKey: string, handle: string, sh
 export const browserSyncPlatform = async (platformId: string, storeId: string, type: 'products' | 'orders', selectedIds?: string[]) => {
     console.log(`[BrowserSync] Syncing ${type} for ${platformId} / ${storeId}...`);
     
-    // 1. Get Config from Supabase
-    const { data: config, error: configError } = await supabase
+    // 1. Get Config from Supabase - Try platform_configs first, then stores_data settings
+    let apiKey: string | undefined;
+    let shopId: string | undefined;
+
+    const { data: config } = await supabase
         .from('platform_configs')
         .select('*')
         .eq('store_id', storeId)
         .eq('platform_id', platformId)
         .single();
         
-    if (configError || !config) {
-        throw new Error(`لم يتم العثور على إعدادات للمنصة ${platformId}`);
+    if (config) {
+        apiKey = config.apiKey;
+        shopId = config.shopId;
+    } else {
+        // Fallback to stores_data settings
+        const { data: storeRow } = await supabase.from('stores_data').select('settings').eq('id', storeId).single();
+        const settings = storeRow?.settings || {};
+        const platformConfig = settings.platformConfigs?.[platformId] || (settings.integration?.platform === platformId ? settings.integration : null);
+        
+        if (platformConfig) {
+            apiKey = platformConfig.apiKey;
+            shopId = platformConfig.shopId;
+        }
     }
-
-    const { apiKey, shopId, isActive } = config;
-    if (!isActive) throw new Error('المنصة غير نشطة');
+        
+    if (!apiKey) {
+        throw new Error(`لم يتم العثور على إعدادات للمنصة ${platformId}. يرجى إعداد الربط أولاً.`);
+    }
 
     if (platformId === 'wuilt') {
         if (type === 'products') {
             const products = await fetchWuiltProducts(apiKey, shopId);
             const filtered = selectedIds ? products.filter(p => selectedIds.includes(p.id.replace('wuilt-', ''))) : products;
             
-            // Upsert to Supabase directly
-            const { error: upsertError } = await supabase.from('products').upsert(
-                filtered.map(p => ({ ...p, store_id: storeId }))
-            );
-            
+            // Map products to match DB schema
+            const productsPayload = filtered.map(p => {
+                const { id, name, sku, price, stockQuantity, ...details } = p;
+                return { 
+                    id, 
+                    store_id: storeId, 
+                    name, 
+                    sku, 
+                    price, 
+                    stock_quantity: stockQuantity, 
+                    details,
+                    updated_at: new Date().toISOString()
+                };
+            });
+
+            const { error: upsertError } = await supabase.from('products').upsert(productsPayload, { onConflict: 'id' });
             if (upsertError) throw upsertError;
             return { count: filtered.length };
         } else {
             const orders = await fetchWuiltOrders(apiKey, shopId);
-            // Upsert orders
-            const { error: upsertError } = await supabase.from('orders').upsert(
-                orders.map(o => ({ ...o, store_id: storeId }))
-            );
+            // Map orders to match DB schema
+            const ordersPayload = orders.map(o => {
+                const { id, orderNumber, customerName, status, date, totalAmount, ...details } = o;
+                return { 
+                    id, 
+                    store_id: storeId, 
+                    order_number: orderNumber, 
+                    customer_name: customerName, 
+                    status, 
+                    date, 
+                    total_price: totalAmount, 
+                    details,
+                    updated_at: new Date().toISOString()
+                };
+            });
+
+            const { error: upsertError } = await supabase.from('orders').upsert(ordersPayload, { onConflict: 'id' });
             if (upsertError) throw upsertError;
             return { count: orders.length };
         }
