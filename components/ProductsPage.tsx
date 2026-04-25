@@ -6,6 +6,7 @@ import { generateProductDescription, generateSocialMediaPost } from '../services
 import { apiCall } from '../services/apiService';
 import { browserSyncPlatform, fetchWuiltProducts } from '../services/platformService';
 import { supabase } from '../services/supabaseClient';
+import { databaseService } from '../services/databaseService';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -113,13 +114,19 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (productToDelete) {
-        setSettings({
-            ...settings,
-            products: settings.products.filter(p => p.id !== productToDelete.id)
-        });
-        setProductToDelete(null);
+        try {
+            await databaseService.deleteProduct(productToDelete.id);
+            setSettings({
+                ...settings,
+                products: settings.products.filter(p => p.id !== productToDelete.id)
+            });
+            setProductToDelete(null);
+        } catch (error) {
+            console.error("Failed to delete product:", error);
+            alert("حدث خطأ أثناء حذف المنتج.");
+        }
     }
   };
 
