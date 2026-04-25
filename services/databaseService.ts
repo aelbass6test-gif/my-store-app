@@ -108,28 +108,52 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
     try {
         // Fetching for ALL 17 Tables in chunks to prevent 'TypeError: Failed to fetch'
         // caused by overwhelming AI Studio proxy / browser connection limits
-        const storeRes = await supabase.from('stores_data').select('settings, name').eq('id', storeId).single();
-        const productsRes = await supabase.from('products').select('*').eq('store_id', storeId);
-        const ordersRes = await supabase.from('orders').select('*').eq('store_id', storeId);
-        const transactionsRes = await supabase.from('transactions').select('*').eq('store_id', storeId);
-        
-        const suppliersRes = await supabase.from('suppliers').select('*').eq('store_id', storeId);
-        const supplyOrdersRes = await supabase.from('supply_orders').select('*').eq('store_id', storeId);
-        const reviewsRes = await supabase.from('reviews').select('*').eq('store_id', storeId);
-        const abandonedCartsRes = await supabase.from('abandoned_carts').select('*').eq('store_id', storeId);
-        
-        const activityLogsRes = await supabase.from('activity_logs').select('*').eq('store_id', storeId);
-        const employeesRes = await supabase.from('employees').select('*, users(full_name, email)').eq('store_id', storeId);
-        const discountsRes = await supabase.from('discount_codes').select('*').eq('store_id', storeId);
-        const collectionsRes = await supabase.from('collections').select('*').eq('store_id', storeId);
-        
-        const pagesRes = await supabase.from('custom_pages').select('*').eq('store_id', storeId);
-        const paymentMethodsRes = await supabase.from('payment_methods').select('*').eq('store_id', storeId);
-        const customersRes = await supabase.from('customers').select('*').eq('store_id', storeId);
-        const globalOptionsRes = await supabase.from('global_options').select('*').eq('store_id', storeId);
-        const shippingIntRes = await supabase.from('shipping_integrations').select('*').eq('store_id', storeId);
+        const [
+            storeRes,
+            productsRes,
+            ordersRes,
+            transactionsRes,
+            suppliersRes,
+            supplyOrdersRes,
+            reviewsRes,
+            abandonedCartsRes,
+            activityLogsRes,
+            employeesRes,
+            discountsRes,
+            collectionsRes,
+            pagesRes,
+            paymentMethodsRes,
+            customersRes,
+            globalOptionsRes,
+            shippingIntRes
+        ] = await Promise.all([
+            supabase.from('stores_data').select('settings, name').eq('id', storeId).single(),
+            supabase.from('products').select('*').eq('store_id', storeId),
+            supabase.from('orders').select('*').eq('store_id', storeId),
+            supabase.from('transactions').select('*').eq('store_id', storeId),
+            supabase.from('suppliers').select('*').eq('store_id', storeId),
+            supabase.from('supply_orders').select('*').eq('store_id', storeId),
+            supabase.from('reviews').select('*').eq('store_id', storeId),
+            supabase.from('abandoned_carts').select('*').eq('store_id', storeId),
+            supabase.from('activity_logs').select('*').eq('store_id', storeId),
+            supabase.from('employees').select('*, users(full_name, email)').eq('store_id', storeId),
+            supabase.from('discount_codes').select('*').eq('store_id', storeId),
+            supabase.from('collections').select('*').eq('store_id', storeId),
+            supabase.from('custom_pages').select('*').eq('store_id', storeId),
+            supabase.from('payment_methods').select('*').eq('store_id', storeId),
+            supabase.from('customers').select('*').eq('store_id', storeId),
+            supabase.from('global_options').select('*').eq('store_id', storeId),
+            supabase.from('shipping_integrations').select('*').eq('store_id', storeId)
+        ]);
 
-        if (storeRes.error || !storeRes.data) {
+        // If major tables fail, abort refresh to prevent clearing local state with empty/null data
+        const criticalErrors = [storeRes, productsRes, ordersRes].filter(r => r.error);
+        if (criticalErrors.length > 0) {
+            console.error("Critical fetch errors during getStoreData:", criticalErrors);
+            throw new Error(`Failed to fetch critical store data: ${criticalErrors[0].error?.message}`);
+        }
+
+        if (!storeRes.data) {
             console.log(`Store ${storeId} not found in relational DB, trying legacy...`);
             const legacyData = await fetchLegacyDocument(storeId);
             // Also check legacy data for products
@@ -352,6 +376,12 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         
         const { orders = [], wallet = { balance: 0, transactions: [] }, customers = [] } = data;
         
+        // DEBUG LOGGING: Track data volume
+        console.log(`[SAVE] Attempting to save store ${store.id}: ${orders.length} orders, ${products.length} products, ${wallet.transactions.length} transactions`);
+        
+        // Anti-Wipe Guard: If for some reason state is completely empty but DB has data, skip syncAndDelete to prevent accidental wipe
+        const isDataSuspiciouslyEmpty = orders.length === 0 && products.length === 0 && wallet.transactions.length === 0;
+
         // --- Handle Deletions by Syncing ---
         const syncAndDelete = async (tableName: string, stateItems: any[], dbIdColumn = 'id', stateIdColumn = 'id') => {
             const { data: dbItems, error: fetchError } = await supabase
@@ -370,6 +400,13 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             const idsToDelete = [...dbIds].filter(id => !stateIds.has(id));
 
             if (idsToDelete.length > 0) {
+                // SAFETY: If stateItems is empty but dB has more than 5 items, skip deletion to prevent accidental wipe
+                // (Unless it's a small table or intentional clear)
+                if (stateItems.length === 0 && dbIds.size > 5) {
+                    console.warn(`[SYNC] Skipping deletion for table '${tableName}' because local state is empty while DB has ${dbIds.size} items. Likely a stale/incomplete state.`, { storeId: store.id });
+                    return;
+                }
+
                 const { error: deleteError } = await supabase
                     .from(tableName)
                     .delete()
