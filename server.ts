@@ -196,9 +196,15 @@ async function startServer() {
           const remoteProducts = await platformService.fetchWuiltProducts(config.apiKey, config.shopId);
           
           let productsToSync = remoteProducts;
-          if (selectedIds && Array.from(selectedIds).length > 0) {
-            const idSet = new Set(selectedIds);
-            productsToSync = remoteProducts.filter(p => idSet.has(p.id.replace('wuilt-', '')));
+          if (selectedIds && Array.isArray(selectedIds) && selectedIds.length > 0) {
+            const idSet = new Set(selectedIds.map(id => String(id).toLowerCase()));
+            console.log(`[SYNC] Filtering ${remoteProducts.length} products with ${idSet.size} selected IDs`);
+            
+            productsToSync = remoteProducts.filter(p => {
+              const pid = String(p.id).toLowerCase();
+              return idSet.has(pid) || idSet.has(pid.replace('wuilt-', ''));
+            });
+            console.log(`[SYNC] Found ${productsToSync.length} matches after filtering`);
           }
 
           const existingProducts = storeData.settings.products || [];

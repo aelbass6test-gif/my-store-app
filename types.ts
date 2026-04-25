@@ -60,6 +60,16 @@ export interface ShippingCarrierIntegration {
   isConnected: boolean;
 }
 
+export interface CompositeCategory {
+  id: string;
+  name: string;
+  image?: string;
+  selectionType: 'single' | 'multiple';
+  isRequired: boolean;
+  allowSameItemMultipleTimes: boolean;
+  productIds: string[];
+}
+
 export interface ProductVariant {
   id: string;
   sku: string;
@@ -76,11 +86,17 @@ export interface Product {
   sku: string;
   name: string;
   description?: string;
+  shortDescription?: string;
   price: number;
+  discountPrice?: number;
   weight: number;
+  length?: number;
+  width?: number;
+  height?: number;
   costPrice: number;
   thumbnail?: string;
   images?: string[];
+  isActive?: boolean;
   inStock?: boolean;
   stock?: number;
   stockQuantity: number | null;
@@ -89,6 +105,17 @@ export interface Product {
   options: string[];
   variants: ProductVariant[];
   
+  productType?: 'standard' | 'composite';
+  compositeCategories?: CompositeCategory[];
+  compositeDiscountType?: 'percentage' | 'fixed';
+  compositeDiscountValue?: number;
+  enableCompositeDiscount?: boolean;
+
+  // SEO
+  seoTitle?: string;
+  seoDescription?: string;
+  slug?: string;
+
   // For profit calculation
   useProfitPercentage?: boolean; // Legacy, will be phased out
   profitPercentage?: number;     // For margin mode
@@ -265,6 +292,20 @@ export interface ActivityLog {
   details: string;
   date: string;
   timestamp: number;
+  type?: 'order' | 'stock' | 'system' | 'sync' | 'financial';
+  metadata?: any;
+}
+
+export interface BackgroundTask {
+  id: string;
+  name: string;
+  description: string;
+  progress: number; // 0 to 100
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  startTime: string;
+  endTime?: string;
+  error?: string;
+  type: 'sync_orders' | 'sync_products' | 'bulk_edit' | 'export' | 'report';
 }
 
 export interface CustomPage {
@@ -296,6 +337,9 @@ export interface Collection {
   name: string;
   image?: string;
   description?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  slug?: string;
 }
 
 export interface WhatsAppTemplate {
@@ -371,6 +415,7 @@ export interface Settings {
   suppliers: Supplier[];
   supplyOrders: SupplyOrder[];
   activityLogs: ActivityLog[];
+  backgroundTasks?: BackgroundTask[];
   customPages: CustomPage[];
   paymentMethods: PaymentMethod[];
   globalOptions: GlobalOption[]; 
@@ -486,6 +531,12 @@ export interface Order {
   sentiment?: string;
   sourcePlatform?: string;
   sourceStatus?: string;
+  
+  // Specific for Wuilt/Advanced Profit
+  shippingCost?: number;
+  taxAmountReal?: number;
+  feesAmount?: number;
+  netProfit?: number;
 }
 
 export interface StoreData {
