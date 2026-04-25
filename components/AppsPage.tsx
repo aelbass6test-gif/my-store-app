@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { StoreData, Product } from '../types';
 import { CheckCircle2, ChevronLeft, Cable, HardDriveDownload, Search, Shapes, X, RefreshCw, ListChecks, CheckCircle, Package, ImageIcon, Save, XCircle } from 'lucide-react';
 import { apiCall } from '../services/apiService';
+import { browserSyncPlatform, fetchWuiltProducts } from '../services/platformService';
+import { supabase } from '../services/supabaseClient';
 
 interface AppsPageProps {
   storeId: string;
@@ -173,29 +175,37 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
   const handleSyncOrders = async (appId: string) => {
     setSyncing(appId);
     try {
+        console.log(`[AppsPage] Attempting server sync for ${appId}...`);
         const response = await apiCall(`/api/sync/platform/${appId}/${storeId}?type=orders`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
 
-        const responseText = await response.text();
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch (e) {
-            throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
-        }
-
         if (response.ok) {
+            const data = await response.json();
             updateSyncTime(appId, 'orders');
             if (onRefresh) onRefresh();
-            showLocalNotification('success', `نجحت المزامنة! تم استيراد ${data.inserted} طلب جديد.`);
-        } else {
-            showLocalNotification('error', `خطأ في المزامنة: ${data.error}`);
+            showLocalNotification('success', `نجحت المزامنة! تم استيراد ${data.inserted || data.count || 0} طلب جديد.`);
+            return;
         }
-    } catch (error) {
-        console.error('Sync error:', error);
-        alert('حدث خطأ أثناء محاولة الاتصال بالسيرفر للمزامنة.');
+        
+        // Fallback or explicit browser sync if server isn't ready
+        console.warn(`[AppsPage] Server sync failed (Status: ${response.status}). Falling back to Browser Sync...`);
+        const result = await browserSyncPlatform(appId, storeId, 'orders');
+        updateSyncTime(appId, 'orders');
+        if (onRefresh) onRefresh();
+        showLocalNotification('success', `نجحت المزامنة (محلياً)! تم استيراد ${result.count} طلب جديد.`);
+    } catch (error: any) {
+        console.warn('[AppsPage] Server sync failed with error, trying direct browser sync...', error.message);
+        try {
+            const result = await browserSyncPlatform(appId, storeId, 'orders');
+            updateSyncTime(appId, 'orders');
+            if (onRefresh) onRefresh();
+            showLocalNotification('success', `نجحت المزامنة (محلياً)! تم استيراد ${result.count} طلب جديد.`);
+        } catch (innerError: any) {
+            console.error('Browser sync failed:', innerError);
+            alert(`خطأ في المزامنة: ${innerError.message}`);
+        }
     } finally {
         setSyncing(null);
     }
@@ -203,35 +213,44 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
 
   const handleSyncProducts = async (appId: string, selectedIds?: string[]) => {
     const isSelective = !!selectedIds;
-    if (isSelective) setSyncingProducts(appId); // Use local state for modal button
+    if (isSelective) setSyncingProducts(appId); 
     else setSyncing(appId + '-products');
 
     try {
+        console.log(`[AppsPage] Attempting server product sync for ${appId}...`);
         const response = await apiCall(`/api/sync/platform/${appId}/${storeId}?type=products`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: selectedIds ? JSON.stringify({ selectedIds }) : undefined
         });
 
-        const responseText = await response.text();
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch (e) {
-            throw new Error(`Invalid JSON response (Status: ${response.status}): ${responseText.substring(0, 200)}`);
-        }
-
         if (response.ok) {
+            const data = await response.json();
             updateSyncTime(appId, 'products');
             if (onRefresh) onRefresh();
-            showLocalNotification('success', isSelective ? `تم استيراد ${data.inserted} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.inserted} منتج.`);
+            showLocalNotification('success', isSelective ? `تم استيراد ${data.inserted || data.count || 0} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.inserted || data.count || 0} منتج.`);
             if (isSelective) setShowSelectiveModal(false);
-        } else {
-            showLocalNotification('error', `خطأ في مزامنة المنتجات: ${data.error}`);
+            return;
         }
-    } catch (error) {
-        console.error('Product sync error:', error);
-        showLocalNotification('error', 'حدث خطأ أثناء محاولة التزامن للمنتجات.');
+
+        console.warn(`[AppsPage] Server product sync failed (Status: ${response.status}). Falling back to Browser Sync...`);
+        const result = await browserSyncPlatform(appId, storeId, 'products', selectedIds);
+        updateSyncTime(appId, 'products');
+        if (onRefresh) onRefresh();
+        showLocalNotification('success', `نجحت المزامنة (محلياً)! تم تحديث ${result.count} منتج.`);
+        if (isSelective) setShowSelectiveModal(false);
+    } catch (error: any) {
+        console.warn('[AppsPage] Server product sync failed, trying direct browser sync...', error.message);
+        try {
+            const result = await browserSyncPlatform(appId, storeId, 'products', selectedIds);
+            updateSyncTime(appId, 'products');
+            if (onRefresh) onRefresh();
+            showLocalNotification('success', `نجحت المزامنة (محلياً)! تم تحديث ${result.count} منتج.`);
+            if (isSelective) setShowSelectiveModal(false);
+        } catch (innerError: any) {
+            console.error('Browser product sync failed:', innerError);
+            showLocalNotification('error', `خطأ في المزامنة: ${innerError.message}`);
+        }
     } finally {
         setSyncingProducts(null);
         setSyncing(null);
@@ -241,22 +260,44 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
   const handleFetchSelectable = async (appId: string) => {
      setIsFetchingSelectable(true);
      try {
+         console.log(`[AppsPage] Attempting server preview for ${appId}...`);
          const response = await apiCall(`/api/sync/platform/${appId}/${storeId}/preview?type=products`);
-         const responseText = await response.text();
-         let data;
-         try {
-             data = JSON.parse(responseText);
-         } catch (e) {
-             throw new Error(`Invalid JSON response: ${responseText.substring(0, 50)}...`);
-         }
+         
          if (response.ok) {
+             const data = await response.json();
              setSelectableProducts(data.items || []);
              setShowSelectiveModal(true);
-         } else {
-             alert(`فشل جلب المنتجات: ${data.error}`);
+             return;
          }
-     } catch (error) {
-         alert('حدث خطأ أثناء محاولة الاتصال بالسيرفر.');
+
+         console.warn(`[AppsPage] Server preview failed (Status: ${response.status}). Falling back to Direct Fetch...`);
+         if (appId === 'wuilt') {
+            const { data: config } = await supabase.from('platform_configs').select('apiKey, shopId').eq('store_id', storeId).eq('platform_id', appId).single();
+            if (config?.apiKey) {
+                const products = await fetchWuiltProducts(config.apiKey, config.shopId);
+                setSelectableProducts(products);
+                setShowSelectiveModal(true);
+                return;
+            }
+         }
+         
+         throw new Error(`تعذر جلب البيانات من السيرفر (Status: ${response.status})`);
+     } catch (error: any) {
+         console.warn('[AppsPage] Server preview failed, trying direct fetch...', error.message);
+         try {
+            if (appId === 'wuilt') {
+                const { data: config } = await supabase.from('platform_configs').select('apiKey, shopId').eq('store_id', storeId).eq('platform_id', appId).single();
+                if (config?.apiKey) {
+                    const products = await fetchWuiltProducts(config.apiKey, config.shopId);
+                    setSelectableProducts(products);
+                    setShowSelectiveModal(true);
+                    return;
+                }
+            }
+            alert(`خطأ: ${error.message}`);
+         } catch (innerError: any) {
+            alert(`خطأ في جلب البيانات: ${innerError.message}`);
+         }
      } finally {
          setIsFetchingSelectable(false);
      }
@@ -279,22 +320,37 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
     setTestResult(null);
     
     try {
+        console.log(`[AppsPage] Testing preview for ${selectedApp.id}...`);
         const response = await apiCall(`/api/sync/platform/${selectedApp.id}/${storeId}/preview?type=products&apiKey=${config.apiKey}&shopId=${config.shopId || ''}`);
-        const responseText = await response.text();
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch (e) {
-            throw new Error(`Invalid JSON response: ${responseText.substring(0, 50)}...`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.items) {
+                setTestResult({ success: true, message: 'تم الاتصال بنجاح! تم العثور على المنتجات.' });
+                return;
+            }
         }
 
-        if (response.ok && data.items) {
-            setTestResult({ success: true, message: 'تم الاتصال بنجاح! تم العثور على المنتجات.' });
-        } else {
-            setTestResult({ success: false, message: `فشل الاتصال: ${data.error || 'خطأ غير معروف'}` });
+        console.warn(`[AppsPage] Server test failed (Status: ${response.status}). Falling back to browser-direct check...`);
+        if (selectedApp.id === 'wuilt') {
+            const products = await fetchWuiltProducts(config.apiKey!, config.shopId);
+            setTestResult({ success: true, message: `تم الاتصال (مباشر) بنجاح! تم العثور على ${products.length} منتج.` });
+            return;
         }
+
+        throw new Error(`فشل اختبار الاتصال (Status: ${response.status})`);
     } catch (error: any) {
-        setTestResult({ success: false, message: `خطأ في الاتصال: ${error.message}` });
+        console.warn('[AppsPage] Server test failed, trying browser-direct...', error.message);
+        try {
+            if (selectedApp.id === 'wuilt') {
+                const products = await fetchWuiltProducts(config.apiKey!, config.shopId);
+                setTestResult({ success: true, message: `تم الاتصال (مباشر) بنجاح! تم العثور على ${products.length} منتج.` });
+                return;
+            }
+            setTestResult({ success: false, message: `فشل الاتصال: ${error.message}` });
+        } catch (innerError: any) {
+            setTestResult({ success: false, message: `خطأ في الاتصال: ${innerError.message}` });
+        }
     } finally {
         setIsTesting(false);
     }
