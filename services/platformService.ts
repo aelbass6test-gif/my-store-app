@@ -1,6 +1,7 @@
 
 
 import { Product, Order, OrderItem, PaymentStatus, PreparationStatus, OrderStatus } from '../types';
+import { supabase } from './supabaseClient';
 
 const WUILT_GRAPHQL_ENDPOINT = 'https://graphql.wuilt.com/';
 
@@ -423,4 +424,50 @@ export const createWuiltAttributeValue = async (apiKey: string, input: any, shop
 export const getWuiltProductByHandle = async (apiKey: string, handle: string, shopId?: string) => {
     if (!shopId) throw new Error('Shop ID is required for Get Product');
     return wuiltRequest(apiKey, QUERIES.GET_PRODUCT_BY_HANDLE, { handle, storeId: shopId }, shopId);
+};
+
+// --- Browser-Side Sync Logic (Fallback for missing server) ---
+
+export const browserSyncPlatform = async (platformId: string, storeId: string, type: 'products' | 'orders', selectedIds?: string[]) => {
+    console.log(`[BrowserSync] Syncing ${type} for ${platformId} / ${storeId}...`);
+    
+    // 1. Get Config from Supabase
+    const { data: config, error: configError } = await supabase
+        .from('platform_configs')
+        .select('*')
+        .eq('store_id', storeId)
+        .eq('platform_id', platformId)
+        .single();
+        
+    if (configError || !config) {
+        throw new Error(`لم يتم العثور على إعدادات للمنصة ${platformId}`);
+    }
+
+    const { apiKey, shopId, isActive } = config;
+    if (!isActive) throw new Error('المنصة غير نشطة');
+
+    if (platformId === 'wuilt') {
+        if (type === 'products') {
+            const products = await fetchWuiltProducts(apiKey, shopId);
+            const filtered = selectedIds ? products.filter(p => selectedIds.includes(p.id.replace('wuilt-', ''))) : products;
+            
+            // Upsert to Supabase directly
+            const { error: upsertError } = await supabase.from('products').upsert(
+                filtered.map(p => ({ ...p, store_id: storeId }))
+            );
+            
+            if (upsertError) throw upsertError;
+            return { count: filtered.length };
+        } else {
+            const orders = await fetchWuiltOrders(apiKey, shopId);
+            // Upsert orders
+            const { error: upsertError } = await supabase.from('orders').upsert(
+                orders.map(o => ({ ...o, store_id: storeId }))
+            );
+            if (upsertError) throw upsertError;
+            return { count: orders.length };
+        }
+    }
+    
+    throw new Error(`المزامنة المباشرة غير مدعومة للمنصة ${platformId}`);
 };
