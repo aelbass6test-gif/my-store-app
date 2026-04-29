@@ -272,7 +272,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
 
          console.warn(`[AppsPage] Server preview failed (Status: ${response.status}). Falling back to Direct Fetch...`);
          if (appId === 'wuilt') {
-            const { data: config } = await supabase.from('platform_configs').select('apiKey, shopId').eq('store_id', storeId).eq('platform_id', appId).single();
+            const config = storeData?.settings?.platformConfigs?.[appId] || (storeData?.settings?.integration?.platform === appId ? storeData.settings.integration : null);
             if (config?.apiKey) {
                 const products = await fetchWuiltProducts(config.apiKey, config.shopId);
                 setSelectableProducts(products);
@@ -286,7 +286,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
          console.warn('[AppsPage] Server preview failed, trying direct fetch...', error.message);
          try {
             if (appId === 'wuilt') {
-                const { data: config } = await supabase.from('platform_configs').select('apiKey, shopId').eq('store_id', storeId).eq('platform_id', appId).single();
+                const config = storeData?.settings?.platformConfigs?.[appId] || (storeData?.settings?.integration?.platform === appId ? storeData.settings.integration : null);
                 if (config?.apiKey) {
                     const products = await fetchWuiltProducts(config.apiKey, config.shopId);
                     setSelectableProducts(products);
