@@ -668,6 +668,10 @@ export const AppComponent = () => {
         }
 
         refreshDebounceTimers.current[storeId] = setTimeout(async () => {
+            if (isSavingRef.current) {
+                console.log(`[REALTIME] Ignoring refresh (checked inside timeout) to prevent flicker during active save.`);
+                return;
+            }
             console.log(`[REALTIME] Debounced refresh executing for store: ${storeId}`);
             try {
                 // LOCK state during refresh to prevent accidental writes back to DB
@@ -698,6 +702,7 @@ export const AppComponent = () => {
             clearTimeout(refreshDebounceTimers.current[key]!);
         }
         refreshDebounceTimers.current[key] = setTimeout(async () => {
+            if (isSavingRef.current) return;
             console.log('[REALTIME] Debounced global refresh executing.');
             const globalData = await db.getGlobalData();
             if (globalData?.users) {
