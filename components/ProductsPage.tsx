@@ -33,12 +33,13 @@ interface ProductsPageProps {
   setSettings: (updater: React.SetStateAction<Settings>) => void;
   activeStoreId: string | null;
   onRefresh?: () => void;
+  forceSync?: () => Promise<void>;
   addTask?: (task: BackgroundTask) => void;
   updateTask?: (taskId: string, updates: Partial<BackgroundTask>) => void;
   logActivity?: (action: string, details: string, type?: any) => void;
 }
 
-const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSettings, activeStoreId, onRefresh, addTask, updateTask, logActivity }) => {
+const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSettings, activeStoreId, onRefresh, forceSync, addTask, updateTask, logActivity }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -74,7 +75,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     p.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     const productData = editingProduct || newProduct;
 
@@ -122,11 +123,22 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     };
     
     if (editingProduct) {
-        setSettings({ ...settings, products: settings.products.map(p => p.id === editingProduct.id ? productToSave : p) });
+        setSettings(prev => ({ ...prev, products: prev.products.map(p => p.id === editingProduct.id ? productToSave : p) }));
         setEditingProduct(null);
     } else {
-        setSettings({ ...settings, products: [...settings.products, productToSave] });
+        setSettings(prev => ({ ...prev, products: [...prev.products, productToSave] }));
         setIsAdding(false);
+    }
+
+    if (activeStoreId) {
+        try {
+            const { id, name, sku, price, stockQuantity, ...details } = productToSave;
+            await databaseService.upsertProduct({
+                id, store_id: activeStoreId, name, sku, price, stock_quantity: stockQuantity, details
+            });
+        } catch (error) {
+            console.error("Failed to direct-sync product:", error);
+        }
     }
   };
 
@@ -134,10 +146,10 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     if (productToDelete) {
         try {
             await databaseService.deleteProduct(productToDelete.id);
-            setSettings({
-                ...settings,
-                products: settings.products.filter(p => p.id !== productToDelete.id)
-            });
+            setSettings(prev => ({
+                ...prev,
+                products: prev.products.filter(p => p.id !== productToDelete.id)
+            }));
             setProductToDelete(null);
         } catch (error) {
             console.error("Failed to delete product:", error);
@@ -751,7 +763,7 @@ const ProductFormModal: React.FC<any> = ({ isOpen, onClose, onSave, productData,
               </div>
               <div className="flex gap-3">
                  <button type="button" onClick={onClose} className="px-6 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">إلغاء</button>
-                 <button type="button" onClick={(e) => { setIsSaving(true); onSave(e); setIsSaving(false); }} disabled={isSaving} className="px-8 py-2.5 bg-[#1E293B] dark:bg-indigo-600 text-white rounded-xl font-bold hover:bg-slate-800 dark:hover:bg-indigo-700 transition-colors shadow-sm">{isSaving ? 'جاري الحفظ...' : 'حفظ'}</button>
+                 <button type="button" onClick={async (e) => { setIsSaving(true); try { await onSave(e); } finally { setIsSaving(false); } }} disabled={isSaving} className="px-8 py-2.5 bg-[#1E293B] dark:bg-indigo-600 text-white rounded-xl font-bold hover:bg-slate-800 dark:hover:bg-indigo-700 transition-colors shadow-sm">{isSaving ? 'جاري الحفظ...' : 'حفظ'}</button>
               </div>
             </div>
 
