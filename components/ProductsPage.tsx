@@ -129,17 +129,6 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
         setSettings(prev => ({ ...prev, products: [...prev.products, productToSave] }));
         setIsAdding(false);
     }
-
-    if (activeStoreId) {
-        try {
-            const { id, name, sku, price, stockQuantity, ...details } = productToSave;
-            await databaseService.upsertProduct({
-                id, store_id: activeStoreId, name, sku, price, stock_quantity: stockQuantity, details
-            });
-        } catch (error) {
-            console.error("Failed to direct-sync product:", error);
-        }
-    }
   };
 
   const confirmDelete = async () => {
@@ -203,9 +192,9 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
           return;
       }
 
-      const { data: dbConfig } = await supabase.from('platform_configs').select('apiKey, shopId').eq('store_id', activeStoreId).eq('platform_id', platform).single();
-      if (dbConfig?.apiKey) {
-          const products = await fetchWuiltProducts(dbConfig.apiKey, dbConfig.shopId);
+      const config = settings.platformConfigs?.[platform] || (settings.integration?.platform === platform ? settings.integration : null);
+      if (config?.apiKey) {
+          const products = await fetchWuiltProducts(config.apiKey, config.shopId);
           setSelectableProducts(products);
           return;
       }
@@ -736,12 +725,6 @@ const ProductFormModal: React.FC<any> = ({ isOpen, onClose, onSave, productData,
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
-    };
-
-    const handleDrop = (e: React.DragEvent, target: string) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleFileUpload(e, target);
     };
 
     if (!isOpen) return null;
