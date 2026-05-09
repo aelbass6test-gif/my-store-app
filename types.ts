@@ -241,6 +241,24 @@ export interface Review {
   status: 'pending' | 'approved' | 'rejected';
 }
 
+export interface Partner {
+  id: string;
+  name: string;
+  phone?: string;
+  notes?: string;
+  balance: number;
+  profitRatio: number; // Added profit ratio
+}
+
+export interface PartnerTransaction {
+  id: string;
+  partnerId: string;
+  type: 'loan' | 'capital_addition' | 'profit_withdrawal' | 'repayment';
+  amount: number;
+  date: string;
+  note?: string;
+}
+
 export interface Supplier {
   id: string;
   name: string;
@@ -394,6 +412,9 @@ export interface Settings {
   whatsappTemplates?: WhatsAppTemplate[];
   callScripts?: CallScript[];
   employeeDashboardSettings?: EmployeeDashboardSettings;
+  partners?: Partner[];
+  partnerTransactions?: PartnerTransaction[];
+  expenseCategories?: string[]; // Added expense categories
 }
 
 export interface OrderItem {
@@ -464,6 +485,7 @@ export interface Order {
   notes?: string;
   items: OrderItem[];
   shippingFee: number;
+  adminFee?: number;
   tax?: number;
   status: OrderStatus;
   paymentStatus: PaymentStatus;

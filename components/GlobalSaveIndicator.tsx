@@ -7,9 +7,10 @@ export type SaveStatus = 'idle' | 'pending' | 'saving' | 'success' | 'error';
 interface GlobalSaveIndicatorProps {
   status: SaveStatus;
   message?: string;
+  onRetry?: () => void;
 }
 
-const GlobalSaveIndicator: React.FC<GlobalSaveIndicatorProps> = ({ status, message }) => {
+const GlobalSaveIndicator: React.FC<GlobalSaveIndicatorProps> = ({ status, message, onRetry }) => {
   if (status === 'idle') return null;
 
   const config = {
@@ -30,10 +31,18 @@ const GlobalSaveIndicator: React.FC<GlobalSaveIndicatorProps> = ({ status, messa
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, scale: 0.9 }}
-          className={`${config.bg} ${config.color} border border-current/20 px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 backdrop-blur-md`}
+          className={`${config.bg} ${config.color} border border-current/20 px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 backdrop-blur-md pointer-events-auto`}
         >
           <Icon size={16} className={config.spin ? 'animate-spin' : ''} />
           <span className="text-xs font-black">{message || 'جاري الحفظ...'}</span>
+          {status === 'error' && onRetry && (
+            <button
+                onClick={onRetry}
+                className="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition"
+            >
+                إعادة محاولة
+            </button>
+          )}
         </motion.div>
       </AnimatePresence>
     </div>

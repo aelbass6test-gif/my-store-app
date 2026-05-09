@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { Order, Settings, Wallet, Store } from '../types';
-import { FileText, TrendingUp, Package, Truck, DollarSign, ArrowUp, ArrowDown, PieChart as PieChartIcon, Printer, AlertTriangle, MapPin, Calendar, Wallet as WalletIcon, Download, Loader2 } from 'lucide-react';
-import { calculateOrderProfitLoss, calculateCodFee } from '../utils/financials';
-import { generateLossesReportHTML, generateComprehensiveFinancialReportHTML } from '../utils/reportGenerator';
+import { FileText, TrendingUp, Package, Truck, DollarSign, ArrowUp, ArrowDown, PieChart as PieChartIcon, Printer, AlertTriangle, MapPin, Calendar, Wallet as WalletIcon, Download, Loader2, ArrowUpLeft, ArrowDownRight, X, Eye } from 'lucide-react';
+import { AccountingReports } from './AccountingReports';
+import { calculateOrderProfitLoss, calculateCodFee, getLatestProductCost } from '../utils/financials';
+import { generateLossesReportHTML, generateComprehensiveFinancialReportHTML, generatePartnersFinancialReportHTML, generatePurchasesAndInventoryReportHTML } from '../utils/reportGenerator';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line, CartesianGrid, Legend } from 'recharts';
+
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 interface ReportsPageProps {
   orders: Order[];
@@ -60,15 +63,15 @@ const SalesSummaryReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ o
             return d.getMonth() === prevMonth && d.getFullYear() === prevYear;
         });
 
-        const getRevenue = (os: Order[]) => os.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة').reduce((sum, o) => sum + (o.productPrice + o.shippingFee - (o.discount || 0)), 0);
+        const getRevenue = (os: Order[]) => os.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة').reduce((sum, o) => sum + (o.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) + o.shippingFee - (o.discount || 0)), 0);
         
         const currentRevenue = getRevenue(currentMonthOrders);
         const prevRevenue = getRevenue(prevMonthOrders);
         const revenueGrowth = prevRevenue > 0 ? ((currentRevenue - prevRevenue) / prevRevenue) * 100 : 0;
 
         const collectedOrders = orders.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة');
-        const totalProductRevenue = collectedOrders.reduce((sum, o) => sum + o.productPrice, 0);
-        const totalRevenue = collectedOrders.reduce((sum, o) => sum + (o.productPrice + o.shippingFee - (o.discount || 0)), 0);
+        const totalProductRevenue = collectedOrders.reduce((sum, o) => sum + o.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0), 0);
+        const totalRevenue = collectedOrders.reduce((sum, o) => sum + (o.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) + o.shippingFee - (o.discount || 0)), 0);
         const totalOrders = orders.length;
         const avgOrderValue = collectedOrders.length > 0 ? totalRevenue / collectedOrders.length : 0;
         
@@ -93,7 +96,7 @@ const SalesSummaryReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ o
             const dayOrders = orders.filter(o => o.date.startsWith(date) && (o.status === 'تم_التحصيل' || o.status === 'مدفوعة'));
             return {
                 date: date.split('-').slice(1).join('/'),
-                revenue: dayOrders.reduce((sum, o) => sum + (o.productPrice + o.shippingFee), 0)
+                revenue: dayOrders.reduce((sum, o) => sum + (o.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) + o.shippingFee), 0)
             };
         });
 
@@ -354,7 +357,7 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
                                             <td className="px-4 py-3 font-mono">{order.productPrice.toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono">{order.shippingFee.toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono">{(insuranceFee + inspectionCost).toLocaleString()}</td>
-                                            <td className="px-4 py-3 font-mono">{order.productCost.toLocaleString()}</td>
+                                            <td className="px-4 py-3 font-mono">{order.items.reduce((sum, item) => sum + (item.cost * item.quantity), 0).toLocaleString()}</td>
                                             <td className="px-4 py-3">
                                                 <span className="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 rounded-full whitespace-nowrap">
                                                     {order.status.replace(/_/g, ' ')}
@@ -410,9 +413,9 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
             const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : inspectionCost;
 
-            totalRevenue += order.productPrice + order.shippingFee;
+            totalRevenue += order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.shippingFee;
             totalShippingRevenue += order.shippingFee;
-            totalCogs += order.productCost;
+            totalCogs += order.items.reduce((sum, item) => sum + (item.cost * item.quantity), 0);
             totalInsuranceFees += insuranceFee;
             totalInspectionFees += inspectionAdjustment;
             totalCodFees += codFee;
@@ -454,7 +457,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
             const inspectionCost = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
             const isInsured = order.isInsured ?? true;
-            const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
+            const insuranceFee = isInsured ? ((order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.shippingFee) * insuranceRate) / 100 : 0;
             
             const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;
             const returnFeeAmount = applyReturnFee ? (useCustom ? (compFees?.returnShippingFee ?? 0) : settings.returnShippingFee) : 0;
@@ -478,15 +481,16 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
         const avgProfitPerOrder = orders.length > 0 ? finalNet / orders.length : 0;
 
         // Geographic Analysis
-        const geoStats: Record<string, { count: number, success: number, revenue: number, loss: number }> = {};
+        const geoStats: Record<string, { count: number, success: number, revenue: number, loss: number, netProfit: number }> = {};
         orders.forEach(o => {
             const area = o.governorate || o.shippingArea || 'غير محدد';
-            if (!geoStats[area]) geoStats[area] = { count: 0, success: 0, revenue: 0, loss: 0 };
+            if (!geoStats[area]) geoStats[area] = { count: 0, success: 0, revenue: 0, loss: 0, netProfit: 0 };
             geoStats[area].count++;
             const { net, loss } = calculateOrderProfitLoss(o, settings);
+            geoStats[area].netProfit += net;
             if (o.status === 'تم_التحصيل' || o.status === 'مدفوعة') {
                 geoStats[area].success++;
-                geoStats[area].revenue += (o.productPrice + o.shippingFee);
+                geoStats[area].revenue += (o.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) + o.shippingFee);
             }
             geoStats[area].loss += loss;
         });
@@ -496,7 +500,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             successRate: (s.success / s.count) * 100,
             revenue: s.revenue,
             loss: s.loss,
-            net: s.revenue - s.loss
+            net: s.netProfit
         })).sort((a, b) => b.revenue - a.revenue);
 
         // Expense Categories for Pie Chart
@@ -543,8 +547,51 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
         // Wallet Sync
         const pendingCollection = orders.filter(o => o.status === 'تم_توصيلها' && !o.collectionProcessed).reduce((sum, o) => sum + (o.productPrice + o.shippingFee), 0);
         
+        // --- PARTNER CALCULATIONS ---
+        const partners = settings.partners || [];
+        const partnerTransactions = settings.partnerTransactions || [];
+        
+        const totalCapital = partnerTransactions
+            .filter(t => t.type === 'capital_addition')
+            .reduce((sum, t) => sum + t.amount, 0);
+            
+        const totalLoans = partnerTransactions
+            .filter(t => t.type === 'loan')
+            .reduce((sum, t) => sum + t.amount, 0);
+            
+        const totalProfitWithdrawals = partnerTransactions
+            .filter(t => t.type === 'profit_withdrawal')
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        const partnerPerformance = partners.map(partner => {
+            const partnerTx = partnerTransactions.filter(t => t.partnerId === partner.id);
+            const capitalContribution = partnerTx.filter(t => t.type === 'capital_addition').reduce((sum, t) => sum + t.amount, 0);
+            const loans = partnerTx.filter(t => t.type === 'loan').reduce((sum, t) => sum + t.amount, 0);
+            const withdrawals = partnerTx.filter(t => t.type === 'profit_withdrawal').reduce((sum, t) => sum + t.amount, 0);
+            const repayments = partnerTx.filter(t => t.type === 'repayment').reduce((sum, t) => sum + t.amount, 0);
+            
+            const currentProfitShare = (finalNet * (partner.profitRatio || 0)) / 100;
+            const currentBalance = (partner.balance || 0) + currentProfitShare; // current balance includes their share of today's net profit
+            
+            return {
+                ...partner,
+                capitalContribution,
+                loans,
+                withdrawals,
+                repayments,
+                netLoan: loans - repayments,
+                currentProfitShare,
+                currentBalance
+            };
+        });
+
         // Inventory Value
-        const inventoryValue = settings.products.reduce((sum, p) => sum + (p.costPrice * (p.stockQuantity || 0)), 0);
+        const inventoryValue = settings.products.reduce((sum, p) => {
+            if (p.hasVariants && p.variants) {
+                return sum + p.variants.reduce((vSum, v) => vSum + (getLatestProductCost(v.id, settings) * (v.stockQuantity || 0)), 0);
+            }
+            return sum + (getLatestProductCost(p.id, settings) * (p.stockQuantity || 0));
+        }, 0);
 
         return { 
             totalRevenue, totalProductRevenue, totalExtraMarkup, totalShippingRevenue, totalCogs, 
@@ -552,7 +599,8 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             totalLoss, totalFailedShipping, totalFailedInsurance, totalFailedInspection, 
             totalReturnFees, totalExpenses, finalNet, totalPercentageProfit, totalCommissionProfit,
             successRate, lossRatio, avgProfitPerOrder, carrierStats, productStats, pendingCollection,
-            collectedOrdersCount: collectedOrders.length, geoData, expenseCategories, inventoryValue
+            collectedOrdersCount: collectedOrders.length, geoData, expenseCategories, inventoryValue,
+            partnerPerformance, totalCapital, totalLoans, totalProfitWithdrawals
         };
     }, [orders, settings, wallet]);
 
@@ -589,9 +637,9 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-slate-700 dark:text-white">ملخص الأداء المالي الشامل</h2>
-                <div className="flex items-center gap-4">
+            <div className="flex justify-between items-center flex-col sm:flex-row gap-4 mb-4">
+                <h2 className="text-lg sm:text-xl font-bold text-slate-700 dark:text-white">ملخص شامل لأداء متجرك والمركز المالي للشركاء</h2>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 justify-center">
                     <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
                         <button 
                             onClick={() => setIsContinuous(false)}
@@ -771,6 +819,67 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                         <h4 className="font-bold text-amber-800 dark:text-amber-400 mb-1 flex items-center gap-2"><Package size={18}/> قيمة المخزون</h4>
                         <p className="text-2xl font-black text-amber-600">{stats.inventoryValue.toLocaleString()} ج.م</p>
                         <p className="text-[10px] text-amber-500 mt-1">قيمة البضاعة المتاحة في المخزن</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex justify-center py-2">
+                <ArrowDown className="text-slate-300 animate-bounce" size={24} />
+            </div>
+
+            {/* Stage 6: Partners */}
+            <div className="bg-indigo-50/30 dark:bg-indigo-900/5 p-6 rounded-3xl border border-indigo-100 dark:border-indigo-800/50">
+                <div className="flex items-center gap-3 mb-8">
+                    <div className="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-black shadow-lg">6</div>
+                    <div>
+                        <h3 className="text-lg font-black text-indigo-900 dark:text-indigo-100">المرحلة السادسة: إدارة الشركاء وتوزيع الأرباح (من يملك ماذا؟)</h3>
+                        <p className="text-xs text-indigo-600/70 dark:text-indigo-400/70">متابعة رؤوس الأموال، السلف، ونسبة كل شريك من الأرباح المحققة.</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                    <ReportCard title="إجمالي رأس المال" value={`${stats.totalCapital.toLocaleString('ar-EG')} ج.م`} icon={<DollarSign size={24}/>} color="blue" subValue="رؤوس الأموال المودعة" tooltip="إجمالي المبالغ التي ساهم بها الشركاء كرأس مال للمشروع." />
+                    <ReportCard title="إجمالي السلف" value={`${stats.totalLoans.toLocaleString('ar-EG')} ج.م`} icon={<ArrowUp size={24}/>} color="red" subValue="مبالغ مسحوبة كسلف" tooltip="إجمالي المبالغ التي سحبها الشركاء كسلف أو قروض من المشروع." />
+                    <ReportCard title="أرباح تحت التوزيع" value={`${stats.finalNet.toLocaleString('ar-EG')} ج.م`} icon={<TrendingUp size={24}/>} color="emerald" subValue="صافي ربح الفترة الحالية" tooltip="صافي الأرباح المحققة في هذه الفترة والجاهزة للتوزيع حسب النسب." />
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+                        <h4 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                             موقف الشركاء الحالي
+                        </h4>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-right text-sm">
+                            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 font-bold uppercase tracking-wider">
+                                <tr>
+                                    <th className="px-4 py-3">الشريك</th>
+                                    <th className="px-4 py-3">النسبة</th>
+                                    <th className="px-4 py-3">المساهمة</th>
+                                    <th className="px-4 py-3">الربح المستحق</th>
+                                    <th className="px-4 py-3">صافي السلف</th>
+                                    <th className="px-4 py-3">الرصيد التراكمي</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                {stats.partnerPerformance.length === 0 ? (
+                                    <tr><td colSpan={6} className="text-center py-8 text-slate-400">لا يوجد شركاء مسجلين.</td></tr>
+                                ) : (
+                                    stats.partnerPerformance.map(p => (
+                                        <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                            <td className="px-4 py-3 font-bold text-slate-800 dark:text-white">{p.name}</td>
+                                            <td className="px-4 py-3"><span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full font-bold">{p.profitRatio}%</span></td>
+                                            <td className="px-4 py-3 font-mono">{p.capitalContribution.toLocaleString()}</td>
+                                            <td className="px-4 py-3 font-mono text-emerald-600">+{p.currentProfitShare.toLocaleString()}</td>
+                                            <td className="px-4 py-3 font-mono text-red-600">-{p.netLoan.toLocaleString()}</td>
+                                            <td className={`px-4 py-3 font-black ${p.currentBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                {p.currentBalance.toLocaleString()} ج.م
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1128,29 +1237,674 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
     );
 };
 
-const ReportsPage: React.FC<ReportsPageProps> = ({ orders, settings, wallet, activeStore }) => {
-    const [activeTab, setActiveTab] = useState<'summary' | 'losses' | 'comprehensive'>('summary');
+const PartnersFinancialReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ orders, settings, wallet }) => {
+    const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
+    const [isContinuous, setIsContinuous] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const transactions = useMemo(() => settings.partnerTransactions || [], [settings.partnerTransactions]);
+    const partners = useMemo(() => settings.partners || [], [settings.partners]);
+
+    const stats = useMemo(() => {
+        let grossMargin = 0;
+        let operationalFees = 0;
+        let returnsLosses = 0;
+
+        orders.forEach(order => {
+            const { profit, loss } = calculateOrderProfitLoss(order, settings);
+            if (order.status === 'تم_التحصيل' || order.status === 'مدفوعة') {
+                const totalItemsRevenue = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                const totalItemsCost = order.items.reduce((sum, item) => sum + (item.cost * item.quantity), 0);
+                grossMargin += (totalItemsRevenue - totalItemsCost);
+                operationalFees += (totalItemsRevenue - totalItemsCost) - profit;
+            } else if (['مرتجع', 'فشل_التوصيل', 'تمت_الاعادة_لشركة_الشحن', 'مرتجع_جزئي', 'مرتجع_بعد_الاستلام'].includes(order.status)) {
+                returnsLosses += loss;
+            }
+        });
+
+        const adminExpenses = wallet.transactions
+            .filter(t => {
+                const isExpenseCategory = t.category?.startsWith('expense_') || (settings.expenseCategories || []).includes(t.category || '');
+                const isManualWithdrawal = t.category === 'manual_withdrawal';
+                const isNotPartnerTx = !t.note?.includes('معاملة شريك');
+                return t.type === 'سحب' && (isExpenseCategory || isManualWithdrawal) && isNotPartnerTx;
+            })
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        const totalOperationalExpenses = operationalFees + returnsLosses + adminExpenses;
+        const allTimeNetProfit = grossMargin - totalOperationalExpenses;
+
+        const distributed = transactions
+            .filter(t => t.type === 'profit_withdrawal')
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        const undistributedProfit = Math.max(0, allTimeNetProfit - distributed);
+
+        const totals = {
+            capital: transactions.filter(t => t.type === 'capital_addition').reduce((a, b) => a + b.amount, 0),
+            loans: transactions.filter(t => t.type === 'loan').reduce((a, b) => a + b.amount, 0),
+            repayments: transactions.filter(t => t.type === 'repayment').reduce((a, b) => a + b.amount, 0),
+            withdrawals: distributed
+        };
+
+        return {
+            allTimeNetProfit,
+            undistributedProfit,
+            distributedProfit: distributed,
+            totals,
+            grossMargin,
+            totalOperationalExpenses,
+            partnerDetails: partners.map(p => {
+                const pTx = transactions.filter(t => t.partnerId === p.id);
+                const capital = pTx.filter(t => t.type === 'capital_addition').reduce((a, b) => a + b.amount, 0);
+                const loans = pTx.filter(t => t.type === 'loan').reduce((a, b) => a + b.amount, 0);
+                const repayments = pTx.filter(t => t.type === 'repayment').reduce((a, b) => a + b.amount, 0);
+                const withdrawals = pTx.filter(t => t.type === 'profit_withdrawal').reduce((a, b) => a + b.amount, 0);
+                const profitShare = undistributedProfit * (p.profitRatio / 100);
+                const balance = capital + profitShare - (loans - repayments);
+                
+                return {
+                    ...p,
+                    capital,
+                    loans,
+                    repayments,
+                    withdrawals,
+                    balance
+                };
+            })
+        };
+    }, [orders, settings, wallet, transactions, partners]);
+
+    const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+
+    const handlePreview = () => {
+        const html = generatePartnersFinancialReportHTML(stats, settings.storeName, orientation, isContinuous);
+        setPreviewHtml(html);
+    };
+
+    const handleActualPrint = () => {
+        if (!previewHtml) return;
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.write(previewHtml);
+            
+            // Add a script that triggers print and close
+            const script = printWindow.document.createElement('script');
+            script.textContent = `
+                window.onload = function() {
+                    window.print();
+                }
+            `;
+            printWindow.document.body.appendChild(script);
+            printWindow.document.close();
+        }
+    };
+
+    const handleActualExportPDF = async () => {
+        if (!previewHtml) return;
+        setIsExporting(true);
+        
+        const container = document.createElement('div');
+        container.innerHTML = previewHtml;
+        container.style.width = orientation === 'landscape' ? '297mm' : '210mm';
+        container.style.padding = '0';
+        container.style.backgroundColor = 'white';
+        // Remove print script
+        const scriptTags = container.getElementsByTagName('script');
+        for (let i = scriptTags.length - 1; i >= 0; i--) {
+            scriptTags[i].parentNode?.removeChild(scriptTags[i]);
+        }
+        
+        document.body.appendChild(container);
+
+        try {
+            const opt = {
+                margin: isContinuous ? 0 : 10,
+                filename: `تقرير_الشركاء_والمركز_المالي_${new Date().toISOString().split('T')[0]}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, logging: false },
+                jsPDF: { unit: 'mm', format: isContinuous ? [orientation === 'landscape' ? 297 : 210, Math.max(297, container.offsetHeight * 0.264583)] : 'a4', orientation: orientation }
+            };
+
+            await html2pdf().set(opt).from(container).save();
+        } catch (error) {
+            console.error("Error generating PDF:", error);
+            alert('حدث خطأ أثناء تصدير PDF. قد تحتاج لتجربة الطباعة وحفظ كملف PDF.');
+        } finally {
+            document.body.removeChild(container);
+            setIsExporting(false);
+        }
+    };
 
     return (
-        <div className="space-y-8">
-            <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl"><FileText size={28} /></div>
-                <div>
-                    <h1 className="text-3xl font-black text-slate-800 dark:text-white">مركز التقارير</h1>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">ملخص شامل لأداء متجرك.</p>
+        <div className="space-y-6">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <h2 className="text-xl font-bold text-slate-700 dark:text-white flex items-center gap-2">
+                    <PieChartIcon className="text-indigo-500" /> تقرير الشركاء والمركز المالي
+                </h2>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full lg:w-auto">
+                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <button 
+                            onClick={() => setIsContinuous(false)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${!isContinuous ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            صفحات
+                        </button>
+                        <button 
+                            onClick={() => setIsContinuous(true)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${isContinuous ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            متصل
+                        </button>
+                    </div>
+                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <button 
+                            onClick={() => setOrientation('portrait')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${orientation === 'portrait' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            طولي
+                        </button>
+                        <button 
+                            onClick={() => setOrientation('landscape')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${orientation === 'landscape' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            عرضي
+                        </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={handlePreview} 
+                            disabled={isExporting}
+                            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 dark:shadow-none disabled:opacity-50"
+                        >
+                            <Eye size={18}/>
+                            معاينة التقرير للطباعة والتصدير
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <div className="flex gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800 w-fit">
-                <button onClick={() => setActiveTab('summary')} className={`px-6 py-2 rounded-lg font-bold transition-all ${activeTab === 'summary' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>ملخص المبيعات</button>
-                <button onClick={() => setActiveTab('losses')} className={`px-6 py-2 rounded-lg font-bold transition-all ${activeTab === 'losses' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>تقرير الخسائر</button>
-                <button onClick={() => setActiveTab('comprehensive')} className={`px-6 py-2 rounded-lg font-bold transition-all ${activeTab === 'comprehensive' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>التقرير الشامل</button>
+            <div className="text-left bg-indigo-50 dark:bg-indigo-900/20 px-4 py-3 sm:py-2 rounded-xl border border-indigo-100 dark:border-indigo-800 self-start sm:self-auto w-full sm:w-auto inline-block">
+                <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">إجمالي الربح التاريخي</p>
+                <p className="text-xl sm:text-2xl font-black text-indigo-700 dark:text-indigo-300">{stats.allTimeNetProfit.toLocaleString('ar-EG')} ج.م</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                <ReportCard title="إجمالي رأس المال" value={`${stats.totals.capital.toLocaleString()} ج.م`} icon={<ArrowUpLeft size={24}/>} color="blue" tooltip="مجموع رؤوس الأموال التي تم إيداعها من قبل جميع الشركاء." />
+                <ReportCard title="الأرباح الموزعة" value={`${stats.distributedProfit.toLocaleString()} ج.م`} icon={<TrendingUp size={24}/>} color="emerald" tooltip="إجمالي الأرباح التي تم سحبها بالفعل من قبل الشركاء." />
+                <ReportCard title="الأرباح غير الموزعة" value={`${stats.undistributedProfit.toLocaleString()} ج.م`} icon={<PieChartIcon size={24}/>} color="amber" tooltip="الأرباح المحققة التي لم يتم توزيعها على الشركاء بعد." />
+                <ReportCard title="إجمالي السلف القائمة" value={`${(stats.totals.loans - stats.totals.repayments).toLocaleString()} ج.م`} icon={<ArrowDownRight size={24}/>} color="red" tooltip="إجمالي مديونات الشركاء (السلف التي لم يتم سدادها بعد)." />
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-8">
+                <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">تفاصيل المركز المالي لكل شريك</h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs sm:text-sm">
+                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 font-bold uppercase tracking-wider">
+                            <tr>
+                                <th className="px-4 py-3">الشريك</th>
+                                <th className="px-4 py-3">النسبة</th>
+                                <th className="px-4 py-3">رأس المال</th>
+                                <th className="px-4 py-3">الأرباح المسحوبة</th>
+                                <th className="px-4 py-3">السلف القائمة</th>
+                                <th className="px-4 py-3">الرصيد الكلي</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {stats.partnerDetails.length === 0 ? (
+                                <tr><td colSpan={6} className="text-center py-12 text-slate-400 font-medium">لا يوجد شركاء مسجلين حالياً.</td></tr>
+                            ) : (
+                                stats.partnerDetails.map(p => (
+                                    <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                        <td className="px-4 py-3 font-bold text-slate-800 dark:text-white">{p.name}</td>
+                                        <td className="px-4 py-3"><span className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-bold">{p.profitRatio}%</span></td>
+                                        <td className="px-4 py-3 font-mono">{p.capital.toLocaleString()}</td>
+                                        <td className="px-4 py-3 font-mono text-emerald-600">+{p.withdrawals.toLocaleString()}</td>
+                                        <td className="px-4 py-3 font-mono text-red-600">{(p.loans - p.repayments).toLocaleString()}</td>
+                                        <td className={`px-4 py-3 font-black ${p.balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                            {p.balance.toLocaleString()} ج.م
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><ArrowUpLeft className="text-blue-500"/> تحليل حصص الشركاء</h3>
+                    <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie 
+                                    data={stats.partnerDetails.map(p => ({ name: p.name, value: p.profitRatio }))} 
+                                    innerRadius={60} 
+                                    outerRadius={80} 
+                                    paddingAngle={5} 
+                                    dataKey="value"
+                                >
+                                    {stats.partnerDetails.map((_, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip />
+                                <Legend />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><ArrowDownRight className="text-red-500"/> سلف الشركاء المسددة وغير المسددة</h3>
+                    <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={stats.partnerDetails}>
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
+                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
+                                <Tooltip contentStyle={{ borderRadius: '12px' }} />
+                                <Bar dataKey="loans" name="إجمالي السلف" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="repayments" name="المسدد منها" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {previewHtml && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+                    <div className="bg-slate-200 dark:bg-slate-800 w-full max-w-5xl h-full max-h-[90vh] rounded-2xl shadow-2xl flex flex-col border border-slate-300 dark:border-slate-700 animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-t-2xl">
+                            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <FileText className="text-indigo-500" />
+                                معاينة تقرير الشركاء
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                 <button 
+                                    onClick={handleActualExportPDF} 
+                                    disabled={isExporting}
+                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-sm disabled:opacity-50"
+                                >
+                                    {isExporting ? <Loader2 size={16} className="animate-spin"/> : <Download size={16}/>}
+                                    <span className="hidden sm:inline">{isExporting ? 'جاري التصدير...' : 'تصدير PDF'}</span>
+                                </button>
+                                <button onClick={handleActualPrint} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-900 transition-all">
+                                    <Printer size={16}/> <span className="hidden sm:inline">طباعة التقرير</span>
+                                </button>
+                                <button onClick={() => setPreviewHtml(null)} className="p-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 rounded-xl transition-colors mr-2">
+                                    <X size={20} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4 sm:p-8 bg-slate-100 dark:bg-slate-800/50 flex align-top justify-center">
+                            <div className="bg-white rounded-xl shadow-lg w-full overflow-hidden h-fit min-h-full" style={{ maxWidth: orientation === 'landscape' ? '1122.5px' : '793px' }}>
+                                <iframe srcDoc={previewHtml} className="w-full h-[800px] border-0" title="Report Preview" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const InventoryReport: React.FC<{ activeStore?: Store; settings: Settings }> = ({ activeStore, settings }) => {
+    const [isExporting, setIsExporting] = useState(false);
+    const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
+    const [isContinuous, setIsContinuous] = useState(false);
+    const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+
+    const products = settings?.products || activeStore?.products || [];
+    const suppliers = settings?.suppliers || activeStore?.suppliers || [];
+    const supplyOrders = settings?.supplyOrders || activeStore?.supplyOrders || [];
+
+    const stats = useMemo(() => {
+        let totalInventoryValue = 0;
+        let totalPurchasesValue = 0;
+        let totalOrdersCount = supplyOrders.length;
+
+        const productHistory: Record<string, {
+            name: string;
+            purchaseCount: number;
+            totalPurchasedQuantity: number;
+            lastPurchaseDate: string | null;
+            suppliers: Set<string>;
+            currentStock: number;
+            stockValue: number;
+        }> = {};
+
+        // Compute product purchase history AND inventory value
+        products.forEach(p => {
+            let currentStock = 0;
+            let stockValue = 0;
+            if (p.hasVariants && p.variants && p.variants.length > 0) {
+                p.variants.forEach(v => {
+                    currentStock += (v.stockQuantity || 0);
+                    // Use getLatestProductCost, fallback to variant costPrice or product costPrice
+                    const cost = getLatestProductCost(v.id, settings) || getLatestProductCost(p.id, settings) || (v.costPrice ?? p.costPrice ?? 0);
+                    const vStockValue = (v.stockQuantity || 0) * cost;
+                    stockValue += vStockValue;
+                    totalInventoryValue += vStockValue;
+                });
+            } else {
+                currentStock = p.stockQuantity || 0;
+                const cost = getLatestProductCost(p.id, settings) || (p.costPrice || 0);
+                stockValue = currentStock * cost;
+                totalInventoryValue += stockValue;
+            }
+
+            productHistory[p.id] = {
+                name: p.name,
+                purchaseCount: 0,
+                totalPurchasedQuantity: 0,
+                lastPurchaseDate: null,
+                suppliers: new Set(),
+                currentStock,
+                stockValue
+            };
+        });
+
+        // Calculate total purchases value
+        supplyOrders.forEach(o => {
+            if (o.status !== 'cancelled') {
+                totalPurchasesValue += o.totalCost;
+            }
+            
+            const supplierName = suppliers.find(s => s.id === o.supplierId)?.name || 'غير معروف';
+
+            o.items.forEach(item => {
+                // Find matching product by ID. Product ID could be the main product ID, or a variant ID.
+                let matchingProductId = item.productId;
+                if (!productHistory[matchingProductId]) {
+                    // Try to find if this is a variant ID
+                    const parentProduct = products.find(p => p.variants?.some(v => v.id === item.productId));
+                    if (parentProduct && productHistory[parentProduct.id]) {
+                        matchingProductId = parentProduct.id;
+                    }
+                }
+
+                if (productHistory[matchingProductId]) {
+                    productHistory[matchingProductId].purchaseCount += 1;
+                    productHistory[matchingProductId].totalPurchasedQuantity += item.quantity;
+                    productHistory[matchingProductId].suppliers.add(supplierName);
+                    
+                    if (!productHistory[matchingProductId].lastPurchaseDate || new Date(o.date) > new Date(productHistory[matchingProductId].lastPurchaseDate as string)) {
+                        productHistory[matchingProductId].lastPurchaseDate = o.date;
+                    }
+                }
+            });
+        });
+
+        const sortedProductHistory = Object.values(productHistory).sort((a, b) => b.stockValue - a.stockValue);
+        const sortedSupplyOrders = [...supplyOrders].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(o => ({
+            ...o,
+            supplierName: suppliers.find(s => s.id === o.supplierId)?.name || 'غير معروف'
+        }));
+
+        return {
+            totalInventoryValue,
+            totalPurchasesValue,
+            totalOrdersCount,
+            productHistory: sortedProductHistory,
+            supplyOrders: sortedSupplyOrders
+        };
+    }, [products, suppliers, supplyOrders, settings]);
+
+    const handlePreview = () => {
+        const html = generatePurchasesAndInventoryReportHTML(stats, settings.storeName || 'متجري', orientation, isContinuous);
+        setPreviewHtml(html);
+    };
+
+    const handleActualExportPDF = async () => {
+        if (!previewHtml) return;
+        setIsExporting(true);
+        const container = document.createElement('div');
+        container.innerHTML = previewHtml;
+        container.style.width = orientation === 'landscape' ? '297mm' : '210mm';
+        container.style.padding = '0';
+        container.style.backgroundColor = 'white';
+
+        try {
+            await html2pdf().set({
+                margin: isContinuous ? 0 : [15, 0, 15, 0],
+                filename: `تقرير_المشتريات_والمخزون_${new Date().toISOString().split('T')[0]}.pdf`,
+                image: { type: 'jpeg', quality: 1 },
+                html2canvas: { scale: 2, useCORS: true, logging: false },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: orientation }
+            }).from(container).save();
+        } catch (error) {
+            console.error('PDF generation failed:', error);
+            alert('حدث خطأ أثناء تصدير PDF');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleActualPrint = () => {
+        if (!previewHtml) return;
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.write(previewHtml);
+            const script = printWindow.document.createElement('script');
+            script.textContent = `window.onload = function() { window.print(); }`;
+            printWindow.document.body.appendChild(script);
+            printWindow.document.close();
+        }
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-4 sm:p-6 mb-8 animate-in fade-in-5 duration-300">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 sm:mb-8 gap-4 border-b border-slate-100 dark:border-slate-800 pb-4 sm:pb-6">
+                <div>
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white flex items-center gap-2">
+                        <Package className="text-emerald-500" /> تقرير المشتريات والمخزون
+                    </h2>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full lg:w-auto">
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={handlePreview} 
+                            disabled={isExporting}
+                            className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 dark:shadow-none disabled:opacity-50"
+                        >
+                            <Eye size={18}/>
+                            معاينة التقرير للطباعة والتصدير
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-8">
+                <ReportCard title="إجمالي قيمة المخزون (رأس المال)" value={`${stats.totalInventoryValue.toLocaleString('ar-EG')} ج.م`} icon={<Package size={24}/>} color="emerald" tooltip="إجمالي قيمة المخزون الحالي بناءً على تكلفة المنتجات." />
+                <ReportCard title="إجمالي المشتريات التاريخية" value={`${stats.totalPurchasesValue.toLocaleString('ar-EG')} ج.م`} icon={<TrendingUp size={24}/>} color="blue" tooltip="إجمالي قيمة فواتير الشراء التي تم تسجيلها." />
+                <ReportCard title="عدد مرات الشراء (الفواتير)" value={`${stats.totalOrdersCount} طلب`} icon={<FileText size={24}/>} color="amber" />
+            </div>
+
+            <div className="space-y-6">
+                <div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">حركة المنتجات والمخزون الحالي</h3>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                        <table className="w-full text-sm text-right">
+                            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
+                                <tr>
+                                    <th className="px-4 py-3 font-semibold">المنتج</th>
+                                    <th className="px-4 py-3 font-semibold">المخزون المتوفر</th>
+                                    <th className="px-4 py-3 font-semibold">قيمة المخزون</th>
+                                    <th className="px-4 py-3 font-semibold">مرات الشراء</th>
+                                    <th className="px-4 py-3 font-semibold">تاريخ آخر شراء</th>
+                                    <th className="px-4 py-3 font-semibold">الموردين</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-900">
+                                {stats.productHistory.slice(0, 10).map((p: any, i: number) => (
+                                    <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                                        <td className="px-4 py-3 font-medium text-slate-800 dark:text-white">{p.name}</td>
+                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                                            {p.currentStock > 0 ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-bold">
+                                                    {p.currentStock}
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold">
+                                                    نفذ
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-800 dark:text-white font-mono">{p.stockValue.toLocaleString('ar-EG')} ج.م</td>
+                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{p.purchaseCount}</td>
+                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300 hover:text-slate-800">
+                                            {p.lastPurchaseDate ? new Date(p.lastPurchaseDate).toLocaleDateString('ar-EG') : 'لم يشترى'}
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300 text-xs">
+                                            {Array.from(p.suppliers).join('، ') || 'لا يوجد'}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {stats.productHistory.length === 0 && (
+                                    <tr>
+                                        <td colSpan={6} className="px-4 py-8 text-center text-slate-500">لا توجد منتجات مسجلة</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">أحدث طلبات التوريد</h3>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                        <table className="w-full text-sm text-right">
+                            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
+                                <tr>
+                                    <th className="px-4 py-3 font-semibold">رقم المرجع / الفاتورة</th>
+                                    <th className="px-4 py-3 font-semibold">التاريخ</th>
+                                    <th className="px-4 py-3 font-semibold">المورد</th>
+                                    <th className="px-4 py-3 font-semibold">القيمة الإجمالية</th>
+                                    <th className="px-4 py-3 font-semibold">عدد الأصناف</th>
+                                    <th className="px-4 py-3 font-semibold">طريقة الدفع</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-900">
+                                {stats.supplyOrders.slice(0, 10).map((o: any, i: number) => (
+                                    <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                                        <td className="px-4 py-3 font-mono text-slate-700 dark:text-slate-300 font-bold">{o.referenceNumber || o.orderNumber || o.id.slice(-6).toUpperCase()}</td>
+                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{new Date(o.date).toLocaleDateString('ar-EG')}</td>
+                                        <td className="px-4 py-3 font-medium text-slate-800 dark:text-white">{o.supplierName}</td>
+                                        <td className="px-4 py-3 font-bold text-emerald-600 dark:text-emerald-400">{o.totalCost.toLocaleString('ar-EG')} ج.م</td>
+                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300 flex items-center gap-2">
+                                            <div className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-mono font-bold">{o.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}</div>
+                                            منتج
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]">{o.paymentMethod === 'cash' ? 'نقدي' : o.paymentMethod === 'credit' ? 'آجل' : 'غير محدد'}</td>
+                                    </tr>
+                                ))}
+                                {stats.supplyOrders.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="px-4 py-8 text-center text-slate-500">لا توجد طلبات توريد</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            {previewHtml && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+                    <div className="bg-slate-200 dark:bg-slate-800 w-full max-w-5xl h-full max-h-[90vh] rounded-2xl shadow-2xl flex flex-col border border-slate-300 dark:border-slate-700 animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-t-2xl">
+                            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <FileText className="text-emerald-500" />
+                                معاينة تقرير المشتريات والمخزون
+                            </h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                                    <button 
+                                        onClick={() => setIsContinuous(false)}
+                                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${!isContinuous ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        صفحات
+                                    </button>
+                                    <button 
+                                        onClick={() => setIsContinuous(true)}
+                                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${isContinuous ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        متصل
+                                    </button>
+                                </div>
+                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                                    <button 
+                                        onClick={() => setOrientation('portrait')}
+                                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${orientation === 'portrait' ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        طولي
+                                    </button>
+                                    <button 
+                                        onClick={() => setOrientation('landscape')}
+                                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${orientation === 'landscape' ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        عرضي
+                                    </button>
+                                </div>
+                                 <button 
+                                    onClick={handleActualExportPDF} 
+                                    disabled={isExporting}
+                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-sm disabled:opacity-50"
+                                >
+                                    {isExporting ? <Loader2 size={16} className="animate-spin"/> : <Download size={16}/>}
+                                    <span className="hidden sm:inline">{isExporting ? 'جاري التصدير...' : 'تصدير PDF'}</span>
+                                </button>
+                                <button onClick={handleActualPrint} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-900 transition-all">
+                                    <Printer size={16}/> <span className="hidden sm:inline">طباعة</span>
+                                </button>
+                                <button onClick={() => setPreviewHtml(null)} className="p-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 rounded-xl transition-colors">
+                                    <X size={20} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4 sm:p-8 bg-slate-100 dark:bg-slate-800/50 flex align-top justify-center">
+                            <div className="bg-white rounded-xl shadow-lg w-full overflow-hidden h-fit min-h-full" style={{ maxWidth: orientation === 'landscape' ? '1122.5px' : '793px' }}>
+                                <iframe srcDoc={previewHtml} className="w-full h-[800px] border-0" title="Report Preview" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ReportsPage: React.FC<ReportsPageProps> = ({ orders, settings, wallet, activeStore }) => {
+    const [activeTab, setActiveTab] = useState<'summary' | 'losses' | 'comprehensive' | 'partners' | 'inventory' | 'accounting'>('summary');
+
+    return (
+        <div className="space-y-6 sm:space-y-8 pb-12">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl shrink-0"><FileText size={28} /></div>
+                <div>
+                    <h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-white">مركز التقارير</h1>
+                    <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 mt-1">ملخص شامل لأداء متجرك والمركز المالي للشركاء.</p>
+                </div>
+            </div>
+
+            <div className="flex gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar scroll-smooth w-full sm:w-fit">
+                <button onClick={() => setActiveTab('summary')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'summary' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>ملخص المبيعات</button>
+                <button onClick={() => setActiveTab('losses')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'losses' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>تقرير الخسائر</button>
+                <button onClick={() => setActiveTab('comprehensive')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'comprehensive' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>التقرير الشامل</button>
+                <button onClick={() => setActiveTab('partners')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'partners' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>تقرير الشركاء</button>
+                <button onClick={() => setActiveTab('inventory')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'inventory' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 dark:shadow-none' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>المشتريات والمخزون</button>
+                <button onClick={() => setActiveTab('accounting')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'accounting' ? 'bg-purple-600 text-white shadow-lg shadow-purple-200 dark:shadow-none' : 'text-purple-600 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-900/30 border border-purple-200 dark:border-purple-800/50'}`}>الحسابات الختامية 📊</button>
             </div>
             
-            <div className="animate-in fade-in-5 duration-300">
+            <div className="relative min-h-[calc(100vh-200px)] mt-6 animate-in fade-in-5 duration-300">
                 {activeTab === 'summary' && <SalesSummaryReport orders={orders} settings={settings} wallet={wallet} />}
                 {activeTab === 'losses' && <LossesReport orders={orders} settings={settings} activeStore={activeStore} />}
                 {activeTab === 'comprehensive' && <ComprehensiveReport orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
+                {activeTab === 'partners' && <PartnersFinancialReport orders={orders} settings={settings} wallet={wallet} />}
+                {activeTab === 'inventory' && <InventoryReport activeStore={activeStore} settings={settings} />}
+                {activeTab === 'accounting' && <AccountingReports orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
             </div>
         </div>
     );

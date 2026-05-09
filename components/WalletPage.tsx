@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Wallet as WalletIcon, Plus, Minus, ArrowUpRight, ArrowDownLeft, Trash2, Calendar, Shield, Eye, Truck, TrendingUp, Info, AlertTriangle, Coins, Receipt, X, Layers } from 'lucide-react';
-import { Wallet, Transaction, Order, Settings } from '../types';
+import { Wallet, Transaction, Order, Settings, TransactionCategory } from '../types';
 import { motion, Variants } from 'framer-motion';
 
 const containerVariants = {
@@ -45,10 +45,20 @@ interface WalletPageProps {
 }
 
 const TransactionDetailsModal: React.FC<{
-  groupedTransaction: GroupedTransaction;
+  transaction: ProcessedTransaction;
   onClose: () => void;
   onDelete: (id: string) => void;
-}> = ({ groupedTransaction, onClose, onDelete }) => {
+}> = ({ transaction, onClose, onDelete }) => {
+    const isGrouped = transaction.type === 'grouped';
+    const groupedTransaction = isGrouped ? transaction : {
+        type: 'grouped' as const,
+        orderNumber: 'يدوية',
+        customerName: 'معاملة يدوية',
+        transactions: [transaction.transaction],
+        netAmount: transaction.transaction.type === 'إيداع' ? transaction.transaction.amount : -transaction.transaction.amount,
+        lastTransactionDate: transaction.transaction.date,
+        order: undefined
+    };
 
     const summary = useMemo(() => {
         const deposits = groupedTransaction.transactions.filter(t => t.type === 'إيداع').reduce((sum, t) => sum + t.amount, 0);
@@ -62,7 +72,7 @@ const TransactionDetailsModal: React.FC<{
                 <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
                     <h3 className="font-black dark:text-white flex items-center gap-2">
                         <Receipt className="text-blue-600" />
-                        تفاصيل عمليات الأوردر #{groupedTransaction.orderNumber}
+                        {isGrouped ? `تفاصيل عمليات الأوردر #${groupedTransaction.orderNumber}` : 'تفاصيل المعاملة'}
                     </h3>
                     <button onClick={onClose} className="text-slate-400 hover:text-red-500"><X size={20}/></button>
                 </div>
@@ -139,10 +149,25 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
   const [modalType, setModalType] = useState<'إيداع' | 'سحب'>('إيداع');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  
+  // Custom dialog states
+  const [dialog, setDialog] = useState<{
+      isOpen: boolean;
+      title: string;
+      message: string;
+      onConfirm: () => void;
+  } | null>(null);
+
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+      setToast({message, type});
+      setTimeout(() => setToast(null), 3000);
+  };
   const [activeTab, setActiveTab] = useState<'all' | 'orders' | 'returns' | 'collected' | 'manual'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
-  const [selectedOrderDetails, setSelectedOrderDetails] = useState<GroupedTransaction | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<ProcessedTransaction | null>(null);
 
   const walletStats = useMemo(() => {
     const liveBalance = wallet.transactions.reduce((sum, t) => t.type === 'إيداع' ? sum + t.amount : sum - t.amount, 0);
@@ -230,6 +255,32 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
   }, [filteredData, currentPage]);
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  
+  const getCategoryDetails = (category?: string) => {
+    const defaultDetails = { label: category || 'عملية يدوية', bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-500' };
+    if (!category) return defaultDetails;
+
+    const mapping: Record<string, { label: string, bg: string, text: string }> = {
+      'manual_deposit': { label: 'إيداع يدوي', bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-400' },
+      'manual_withdrawal': { label: 'سحب يدوي', bg: 'bg-rose-100 dark:bg-rose-900/30', text: 'text-rose-600 dark:text-rose-400' },
+      'inventory_purchase': { label: 'شراء مخزون', bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-600 dark:text-amber-400' },
+      'shipping': { label: 'مصاريف شحن', bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400' },
+      'insurance': { label: 'تأمين شحنات', bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-400' },
+      'inspection': { label: 'رسوم معاينة', bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-600 dark:text-purple-400' },
+      'collection': { label: 'تحصيل نقدية', bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-400' },
+      'cod': { label: 'رسوم COD', bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-600 dark:text-orange-400' },
+      'return': { label: 'مصاريف مرتجع', bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-400' }
+    };
+
+    if (mapping[category]) return mapping[category];
+    
+    // For custom expense categories
+    return { 
+      label: category.startsWith('expense_') ? category.replace('expense_', '') : category, 
+      bg: 'bg-slate-100 dark:bg-slate-800', 
+      text: 'text-slate-600 dark:text-slate-300' 
+    };
+  };
 
   const handleTransaction = (e: React.FormEvent) => {
     e.preventDefault();
@@ -241,8 +292,8 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
       type: modalType,
       amount: numAmount,
       date: new Date().toISOString(),
-      note: note || (modalType === 'إيداع' ? 'إيداع يدوي' : 'سحب يدوي'),
-      category: modalType === 'إيداع' ? 'manual_deposit' : 'manual_withdrawal'
+      note: note,
+      category: note as TransactionCategory // Using the selected category as the category
     };
 
     setWallet(prev => ({ ...prev, transactions: [newTransaction, ...prev.transactions] }));
@@ -252,23 +303,45 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
   };
 
   const deleteTransaction = (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذه المعاملة؟ سيتم التراجع عن تأثيرها المالي.')) return;
-    setWallet(prev => ({ ...prev, transactions: prev.transactions.filter(t => t.id !== id) }));
-    setSelectedOrderDetails(prev => {
-        if (!prev) return null;
-        const updatedTransactions = prev.transactions.filter(t => t.id !== id);
-        if (updatedTransactions.length === 0) return null;
-        return { ...prev, transactions: updatedTransactions };
+    setDialog({
+        isOpen: true,
+        title: 'تأكيد الحذف',
+        message: 'هل أنت متأكد من حذف هذه المعاملة؟ سيتم التراجع عن تأثيرها المالي.',
+        onConfirm: () => {
+            setWallet(prev => ({ ...prev, transactions: prev.transactions.filter(t => t.id !== id) }));
+            setSelectedTransaction(null);
+            setDialog(null);
+            showToast('تم حذف المعاملة بنجاح');
+        }
     });
   };
 
   return (
-    <motion.div
-      className="space-y-6"
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-    >
+    <div className="space-y-6">
+      {dialog && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-xl">
+            <h3 className="font-bold text-lg">{dialog.title}</h3>
+            <p className="text-slate-600">{dialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDialog(null)} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200">إلغاء</button>
+              <button onClick={dialog.onConfirm} className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">تأكيد</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast && (
+        <div className={`fixed bottom-4 right-4 z-50 px-6 py-3 rounded-xl shadow-lg text-white font-bold ${toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
+          {toast.message}
+        </div>
+      )}
+
+      <motion.div
+        className="space-y-6"
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+      >
       <motion.div variants={itemVariants} className="bg-gradient-to-l from-indigo-700 via-blue-700 to-blue-600 p-8 rounded-3xl text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-12 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl"></div>
         <div className="relative z-10 flex items-center gap-4">
@@ -338,7 +411,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
               {paginatedData.map((item, index) => {
                 if (item.type === 'grouped') {
                   return (
-                    <tr key={item.orderNumber} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                    <tr key={item.orderNumber} onClick={() => setSelectedTransaction(item)} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group cursor-pointer">
                       <td className="px-6 py-4">
                         <div className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                             <Layers size={16} className="text-slate-400"/>
@@ -347,7 +420,14 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
                         <div className="text-xs text-slate-500">{item.customerName}</div>
                       </td>
                       <td className="px-6 py-4">
-                          <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold px-2 py-1 rounded">عملية مجمعة</span>
+                        {(() => {
+                           const details = getCategoryDetails(item.type === 'grouped' ? 'grouped' : (item as any).transaction?.category);
+                           return (
+                             <span className={`text-[10px] sm:text-xs font-bold px-2 py-1 rounded-lg ${details.bg} ${details.text}`}>
+                               {item.type === 'grouped' ? 'عملية مجمعة' : details.label}
+                             </span>
+                           );
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-xs text-slate-500 font-mono"><Calendar size={12} className="inline ml-1"/>{new Date(item.lastTransactionDate).toLocaleString('ar-EG')}</td>
                       <td className="px-6 py-4 text-center">
@@ -356,19 +436,26 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
                           </span>
                       </td>
                       <td className="px-6 py-4 text-left">
-                        <button onClick={() => setSelectedOrderDetails(item)} className="p-2 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 rounded-lg transition-all"><Info size={18}/></button>
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedTransaction(item); }} className="p-2 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 rounded-lg transition-all"><Info size={18}/></button>
                       </td>
                     </tr>
                   );
                 } else {
                   const t = item.transaction;
                   return (
-                    <tr key={t.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <tr key={t.id} onClick={() => setSelectedTransaction(item)} className="group hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer">
                       <td className="px-6 py-4">
                           <div className="font-bold text-slate-700 dark:text-slate-300">{t.note}</div>
                       </td>
                       <td className="px-6 py-4">
-                          <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold px-2 py-1 rounded">عملية يدوية</span>
+                        {(() => {
+                           const details = getCategoryDetails(t.category);
+                           return (
+                             <span className={`text-[10px] sm:text-xs font-bold px-2 py-1 rounded-lg ${details.bg} ${details.text}`}>
+                               {details.label}
+                             </span>
+                           );
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-xs text-slate-500 font-mono"><Calendar size={12} className="inline ml-1"/>{new Date(t.date).toLocaleString('ar-EG')}</td>
                       <td className="px-6 py-4 text-center">
@@ -377,7 +464,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
                         </span>
                       </td>
                       <td className="px-6 py-4 text-left">
-                         <button onClick={() => deleteTransaction(t.id)} className="p-2 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-red-600 rounded-lg transition-all"><Trash2 size={18}/></button>
+                         <button onClick={(e) => { e.stopPropagation(); deleteTransaction(t.id); }} className="p-2 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-red-600 rounded-lg transition-all"><Trash2 size={18}/></button>
                       </td>
                     </tr>
                   )
@@ -424,8 +511,15 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
                 </div>
               </div>
               <div>
-                <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">البيان / ملاحظات</label>
-                <input type="text" value={note} onChange={e => setNote(e.target.value)} className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white" placeholder="مثال: مصاريف إعلانات فيسبوك" />
+                <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">تصنيف المعاملة</label>
+                <select 
+                    value={note} 
+                    onChange={e => setNote(e.target.value)} 
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                >
+                    <option value="">-- اختر التصنيف --</option>
+                    {(settings.expenseCategories || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
               </div>
               <div className="flex gap-3 pt-2">
                 <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">تأكيد</button>
@@ -436,8 +530,9 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
         </div>
       )}
       
-      {selectedOrderDetails && <TransactionDetailsModal groupedTransaction={selectedOrderDetails} onClose={() => setSelectedOrderDetails(null)} onDelete={deleteTransaction} />}
+      {selectedTransaction && <TransactionDetailsModal transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} onDelete={deleteTransaction} />}
     </motion.div>
+    </div>
   );
 };
 

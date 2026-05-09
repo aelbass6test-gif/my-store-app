@@ -1,41 +1,77 @@
 import React, { useState, useMemo } from 'react';
-import { Wallet, Transaction, TransactionCategory } from '../types';
+import { Wallet, Transaction, TransactionCategory, Settings } from '../types';
 import { DollarSign, Plus, TrendingDown, PieChart as PieChartIcon, Calendar, Trash2, Tag, Receipt } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface ExpensesPageProps {
   wallet: Wallet;
   setWallet: React.Dispatch<React.SetStateAction<Wallet>>;
+  settings: Settings;
+  updateSettings: (newSettings: Settings) => void;
 }
 
-const EXPENSE_CATEGORIES: { key: TransactionCategory; label: string; color: string }[] = [
-    { key: 'expense_ads', label: 'إعلانات وتسويق', color: '#f43f5e' }, // Rose
-    { key: 'expense_salary', label: 'رواتب موظفين', color: '#8b5cf6' }, // Violet
-    { key: 'expense_rent', label: 'إيجار وخدمات', color: '#f59e0b' }, // Amber
-    { key: 'expense_other', label: 'مصروفات نثرية', color: '#64748b' }, // Slate
-];
-
-const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet }) => {
+const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings, updateSettings }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<TransactionCategory>('expense_ads');
+  const [category, setCategory] = useState<TransactionCategory>(
+      (settings.expenseCategories && settings.expenseCategories.length > 0) 
+      ? (settings.expenseCategories[0] as TransactionCategory) 
+      : 'expense_ads'
+  );
+  
+  // Custom dialog states
+  const [dialog, setDialog] = useState<{
+      isOpen: boolean;
+      title: string;
+      message: string;
+      onConfirm: () => void;
+  } | null>(null);
+
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+      setToast({message, type});
+      setTimeout(() => setToast(null), 3000);
+  };
 
   const expenses = useMemo(() => {
       return wallet.transactions
-        .filter(t => t.category && t.category.startsWith('expense_'))
+        .filter(t => t.category && (t.category.startsWith('expense_') || (settings.expenseCategories || []).includes(t.category)))
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [wallet.transactions]);
 
+  const expenseCategoriesConfig = useMemo(() => {
+    // A simple hash function to generate consistent colors based on the category name
+    const stringToColor = (str: string) => {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        let color = '#';
+        for (let i = 0; i < 3; i++) {
+            const value = (hash >> (i * 8)) & 0xFF;
+            color += ('00' + value.toString(16)).substr(-2);
+        }
+        return color;
+    };
+
+    return (settings.expenseCategories || []).map(cat => ({
+        key: cat,
+        label: cat, // You can later add a mapping in settings if specific Arabic labels are needed
+        color: stringToColor(cat)
+    }));
+  }, [settings.expenseCategories]);
+
   const stats = useMemo(() => {
       const total = expenses.reduce((sum, t) => sum + t.amount, 0);
-      const categoryTotals = EXPENSE_CATEGORIES.map(cat => ({
+      const categoryTotals = expenseCategoriesConfig.map(cat => ({
           name: cat.label,
           value: expenses.filter(t => t.category === cat.key).reduce((sum, t) => sum + t.amount, 0),
           color: cat.color
       })).filter(c => c.value > 0);
       return { total, categoryTotals };
-  }, [expenses]);
+  }, [expenses, expenseCategoriesConfig]);
 
   const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,31 +102,55 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet }) => {
   };
 
   const deleteExpense = (id: string) => {
-      if(!window.confirm("هل أنت متأكد من حذف هذا المصروف؟ سيتم إعادة المبلغ للمحفظة.")) return;
-      
-      setWallet(prevWallet => {
-        const transactionToDelete = prevWallet.transactions.find(t => t.id === id);
-        if (!transactionToDelete) {
-            return prevWallet;
-        }
-        
-        const updatedTransactions = prevWallet.transactions.filter(t => t.id !== id);
-        
-        // Ensure both balance and amount are numbers before performing arithmetic
-        const currentBalance = Number(prevWallet.balance) || 0;
-        const amountToDelete = Number(transactionToDelete.amount) || 0;
-        
-        const newBalance = currentBalance + amountToDelete;
+      setDialog({
+        isOpen: true,
+        title: 'تأكيد الحذف',
+        message: 'هل أنت متأكد من حذف هذا المصروف؟ سيتم إعادة المبلغ للمحفظة.',
+        onConfirm: () => {
+          setWallet(prevWallet => {
+            const transactionToDelete = prevWallet.transactions.find(t => t.id === id);
+            if (!transactionToDelete) {
+                return prevWallet;
+            }
+            
+            const updatedTransactions = prevWallet.transactions.filter(t => t.id !== id);
+            
+            // Ensure both balance and amount are numbers before performing arithmetic
+            const currentBalance = Number(prevWallet.balance) || 0;
+            const amountToDelete = Number(transactionToDelete.amount) || 0;
+            
+            const newBalance = currentBalance + amountToDelete;
 
-        return {
-            balance: newBalance,
-            transactions: updatedTransactions
-        };
-    });
+            return {
+                balance: newBalance,
+                transactions: updatedTransactions
+            };
+          });
+          setDialog(null);
+          showToast('تم حذف المصروف بنجاح');
+        }
+      });
   };
 
   return (
     <div className="space-y-6">
+      {dialog && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-xl">
+            <h3 className="font-bold text-lg">{dialog.title}</h3>
+            <p className="text-slate-600">{dialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDialog(null)} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200">إلغاء</button>
+              <button onClick={dialog.onConfirm} className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">تأكيد</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast && (
+        <div className={`fixed bottom-4 right-4 z-50 px-6 py-3 rounded-xl shadow-lg text-white font-bold ${toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
+          {toast.message}
+        </div>
+      )}
         <div className="flex justify-between items-center gap-4">
             <div>
                 <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-2">
@@ -172,7 +232,7 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet }) => {
                             <tr><td colSpan={5} className="text-center py-12 text-slate-400">لم يتم تسجيل أي مصروفات.</td></tr>
                         ) : (
                             expenses.map(exp => {
-                                const catInfo = EXPENSE_CATEGORIES.find(c => c.key === exp.category);
+                                const catInfo = expenseCategoriesConfig.find(c => c.key === exp.category);
                                 return (
                                     <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                         <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">{exp.note}</td>
@@ -210,11 +270,11 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet }) => {
                         <div>
                             <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">التصنيف</label>
                             <div className="grid grid-cols-2 gap-2">
-                                {EXPENSE_CATEGORIES.map(cat => (
+                                {expenseCategoriesConfig.map(cat => (
                                     <button 
                                         key={cat.key} 
                                         type="button" 
-                                        onClick={() => setCategory(cat.key)}
+                                        onClick={() => setCategory(cat.key as any)}
                                         className={`p-2 rounded-lg text-xs font-bold border transition-all ${category === cat.key ? 'bg-red-50 dark:bg-red-900/30 border-red-500 text-red-600 dark:text-red-400' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'}`}
                                     >
                                         {cat.label}

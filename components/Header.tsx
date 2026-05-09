@@ -80,13 +80,13 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onLogout, onToggleSidebar,
     };
 
     return (
-        <header className="h-20 glass border-b border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between px-8 sticky top-0 z-40 flex-shrink-0">
-            <div className="flex items-center gap-6">
+        <header className="h-20 glass border-b border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between px-4 sm:px-8 sticky top-0 z-40 flex-shrink-0">
+            <div className="flex items-center gap-3 sm:gap-6">
     <button onClick={onToggleSidebar} className="md:hidden p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-500">
         <Menu size={24} />
     </button>
-    <div className="flex items-center gap-3">
-        <h1 className="text-xl font-display font-black text-slate-900 dark:text-white tracking-tight">{pageTitle}</h1>
+    <div className="flex items-center gap-2 sm:gap-3">
+        <h1 className="text-lg sm:text-xl font-display font-black text-slate-900 dark:text-white tracking-tight">{pageTitle}</h1>
         {activeStore && (
             <span className="hidden sm:inline-block px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black rounded-lg border border-slate-200 dark:border-slate-700">
                 ID: {activeStore.id}

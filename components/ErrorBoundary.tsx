@@ -15,6 +15,10 @@ class ErrorBoundary extends Component<Props, State> {
     hasError: false
   };
 
+  private handleReset = () => {
+    this.setState({ hasError: false, error: undefined });
+  };
+
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
@@ -39,8 +43,16 @@ class ErrorBoundary extends Component<Props, State> {
 
             <div className="space-y-3">
               <button 
-                onClick={() => window.location.reload()}
+                onClick={this.handleReset}
                 className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-6 rounded-2xl transition-all active:scale-95 shadow-lg shadow-indigo-500/25"
+              >
+                <RefreshCcw size={20} />
+                إعادة المحاولة
+              </button>
+              
+              <button 
+                onClick={() => window.location.reload()}
+                className="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold py-3.5 px-6 rounded-2xl transition-all active:scale-95"
               >
                 <RefreshCcw size={20} />
                 تحديث الصفحة
@@ -48,7 +60,7 @@ class ErrorBoundary extends Component<Props, State> {
               
               <button 
                 onClick={() => window.location.href = '/'}
-                className="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold py-3.5 px-6 rounded-2xl transition-all active:scale-95"
+                className="w-full flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold py-3.5 px-6 rounded-2xl transition-all active:scale-95"
               >
                 <Home size={20} />
                 العودة للرئيسية

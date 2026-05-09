@@ -234,45 +234,39 @@ const EmployeePerformance = ({ orders, currentUser, setNotification }: { orders:
     }, [stats.rank, setNotification]);
 
     return (
-        <div className="bg-indigo-600 text-white p-4 rounded-xl shadow-lg mb-6 flex flex-col sm:flex-row justify-between items-center gap-4 sm:gap-0 relative overflow-hidden">
-            <div className="absolute -right-4 -top-4 opacity-20 text-white">
-                <Trophy size={100} />
+        <div className="bg-indigo-600 text-white p-4 sm:p-5 rounded-2xl shadow-lg mb-6 flex flex-col sm:flex-row justify-between items-center gap-4 sm:gap-6 relative overflow-hidden">
+            <div className="absolute -right-6 -top-6 opacity-10 text-white rotate-12">
+                <Trophy size={120} />
             </div>
-            <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-1">
-                    <h4 className="text-sm font-bold text-white">إنجازك اليوم</h4>
+            <div className="relative z-10 w-full sm:w-auto">
+                <div className="flex items-center gap-2 mb-2">
+                    <h4 className="text-xs sm:text-sm font-bold text-indigo-100 uppercase tracking-wider">إنجازك اليوم</h4>
                     {stats.rank === 1 && stats.confirmed > 0 && (
-                        <span className="bg-yellow-400 text-yellow-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Medal size={12} /> المركز الأول
-                        </span>
-                    )}
-                    {stats.rank === 2 && stats.confirmed > 0 && (
-                        <span className="bg-slate-300 text-slate-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Medal size={12} /> المركز الثاني
-                        </span>
-                    )}
-                    {stats.rank === 3 && stats.confirmed > 0 && (
-                        <span className="bg-amber-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Medal size={12} /> المركز الثالث
+                        <span className="bg-yellow-400 text-yellow-900 text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                            <Medal size={10} /> المركز الأول
                         </span>
                     )}
                 </div>
-                <div className="flex gap-4 mt-2">
-                    <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-lg">
-                        <CheckCircle size={14} className="text-emerald-300" />
-                        <span className="font-black text-white">{stats.confirmed} مؤكد</span>
+                <div className="flex flex-wrap gap-2 items-center">
+                    <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-white/10">
+                        <CheckCircle size={16} className="text-emerald-400" />
+                        <span className="font-black text-white text-sm sm:text-base">{stats.confirmed} مؤكد</span>
                     </div>
-                    <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-lg">
-                        <XCircle size={14} className="text-red-300" />
-                        <span className="font-black text-white">{stats.canceled} ملغي</span>
+                    <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-white/10">
+                        <XCircle size={16} className="text-rose-400" />
+                        <span className="font-black text-white text-sm sm:text-base">{stats.canceled} ملغي</span>
                     </div>
                 </div>
             </div>
-            <div className="text-right relative z-10">
-                <p className="text-3xl font-black text-white">{stats.total}</p>
-                <p className="text-[10px] font-bold text-white uppercase tracking-wider">إجمالي العمليات</p>
-                {stats.rank > 3 && stats.confirmed > 0 && (
-                    <p className="text-[10px] mt-1 text-white font-bold">ترتيبك: {stats.rank} من {stats.totalEmployees}</p>
+            <div className="text-center sm:text-right relative z-10 border-t sm:border-t-0 sm:border-r border-white/10 pt-4 sm:pt-0 sm:pr-6 flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto">
+                <div className="flex flex-col sm:mb-1">
+                    <p className="text-2xl sm:text-4xl font-black text-white leading-none">{stats.total}</p>
+                    <p className="text-[8px] sm:text-[10px] font-bold text-indigo-100 uppercase tracking-widest leading-none mt-1">عملية</p>
+                </div>
+                {stats.rank > 0 && stats.confirmed > 0 && (
+                    <div className="text-left sm:text-right">
+                        <p className="text-[10px] sm:text-xs text-white font-bold bg-white/20 px-2 py-1 rounded-lg"># {stats.rank} على الفريق</p>
+                    </div>
                 )}
             </div>
         </div>
@@ -295,6 +289,12 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
 
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
     const [transferTo, setTransferTo] = useState('');
+
+    const [isEditingWaybill, setIsEditingWaybill] = useState(false);
+    const [editedWaybill, setEditedWaybill] = useState('');
+    const [isEditingTotalOverride, setIsEditingTotalOverride] = useState(false);
+    const [editedTotalOverride, setEditedTotalOverride] = useState<number | ''>('');
+    const [editedTotalOverrideReason, setEditedTotalOverrideReason] = useState('');
 
     const truncateString = (str: string, num: number) => {
         if (!str) return '';
@@ -660,6 +660,11 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
             setEditedShippingCompany(activeOrder.shippingCompany || '');
             setIsEditingDiscount(false);
             setEditedDiscount(activeOrder.discount || 0);
+            setIsEditingWaybill(false);
+            setEditedWaybill(activeOrder.waybillNumber || '');
+            setIsEditingTotalOverride(false);
+            setEditedTotalOverride(activeOrder.totalAmountOverride ?? '');
+            setEditedTotalOverrideReason(activeOrder.totalAmountOverrideReason || '');
             setCallStartTime(Date.now());
             setCallDuration(0);
         } else {
@@ -993,6 +998,26 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         setIsEditingDiscount(false);
     };
 
+    const handleSaveWaybill = () => {
+        if (!activeOrder) return;
+        logAudit(activeOrder.id, 'waybillNumber', activeOrder.waybillNumber, editedWaybill);
+        setOrders(currentOrders => 
+            currentOrders.map(o => o.id === activeOrder.id ? { ...o, waybillNumber: editedWaybill } : o)
+        );
+        setIsEditingWaybill(false);
+    };
+
+    const handleSaveTotalOverride = () => {
+        if (!activeOrder) return;
+        const overrideValue = typeof editedTotalOverride === 'number' ? editedTotalOverride : undefined;
+        logAudit(activeOrder.id, 'totalAmountOverride', activeOrder.totalAmountOverride, overrideValue);
+        logAudit(activeOrder.id, 'totalAmountOverrideReason', activeOrder.totalAmountOverrideReason, editedTotalOverrideReason);
+        setOrders(currentOrders => 
+            currentOrders.map(o => o.id === activeOrder.id ? { ...o, totalAmountOverride: overrideValue, totalAmountOverrideReason: editedTotalOverrideReason } : o)
+        );
+        setIsEditingTotalOverride(false);
+    };
+
     const handleSaveProducts = (newItems: OrderItem[]) => {
         if (!activeOrder) return;
 
@@ -1055,46 +1080,46 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     return (
         <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden">
             {/* Top Stats Bar / Dashboard Integration */}
-            <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center justify-between gap-4 overflow-x-auto no-scrollbar shrink-0 rounded-b-2xl shadow-sm">
-                <div className="flex items-center gap-4 min-w-max">
+            <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2 flex items-center justify-between gap-2 sm:gap-4 overflow-x-auto no-scrollbar shrink-0 rounded-b-2xl shadow-sm z-10">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-max">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                            <ListChecks size={18} />
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                            <ListChecks size={16} />
                         </div>
                         <div>
-                            <p className="text-[10px] font-bold text-slate-500 uppercase leading-none">قيد التأكيد</p>
-                            <p className="text-sm font-black text-slate-800 dark:text-white">{pendingOrders.length}</p>
+                            <p className="text-[8px] sm:text-[10px] font-bold text-slate-500 uppercase leading-none">قيد التأكيد</p>
+                            <p className="text-xs sm:text-sm font-black text-slate-800 dark:text-white leading-none mt-0.5">{pendingOrders.length}</p>
                         </div>
                     </div>
-                    <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800" />
+                    <div className="h-6 sm:h-8 w-[1px] bg-slate-200 dark:bg-slate-800" />
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                            <TrendingUp size={18} />
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                            <TrendingUp size={16} />
                         </div>
                         <div>
-                            <p className="text-[10px] font-bold text-slate-500 uppercase leading-none">معدل التأكيد</p>
-                            <p className="text-sm font-black text-slate-800 dark:text-white">
+                            <p className="text-[8px] sm:text-[10px] font-bold text-slate-500 uppercase leading-none">معدل التأكيد</p>
+                            <p className="text-xs sm:text-sm font-black text-slate-800 dark:text-white leading-none mt-0.5">
                                 {orders.length > 0 ? ((orders.filter(o => o.status === 'جاري_المراجعة').length / orders.length) * 100).toFixed(0) : 0}%
                             </p>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 min-w-max">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-max">
                     <button 
                         onClick={() => setShowDashboard(!showDashboard)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all ${
                             showDashboard 
                             ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' 
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                         }`}
                     >
-                        <Trophy size={14} />
-                        <span className="hidden sm:inline">لوحة الإنجازات</span>
+                        <Trophy size={13} />
+                        <span className="sm:inline">لوحة الإنجازات</span>
                     </button>
                     <button 
                         onClick={handleRefresh}
-                        className="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-all"
+                        className="p-1.5 sm:p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-all"
                         title="تحديث القائمة"
                     >
                         <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
@@ -1119,19 +1144,19 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                     </div>
                 )}
 
-            <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex overflow-hidden min-h-[600px]">
+            <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex overflow-hidden min-h-0">
                 <div className={`w-full md:w-1/3 border-l border-slate-200 dark:border-slate-800 flex flex-col h-full transition-all duration-300 ${activeOrder ? 'hidden md:flex' : 'flex'}`}>
-                    <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">
-                        <h2 className="font-bold text-slate-800 dark:text-white whitespace-nowrap">طلبات جديدة ({pendingOrders.length})</h2>
+                    <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4">
+                        <h2 className="font-bold text-sm sm:text-base text-slate-800 dark:text-white whitespace-nowrap">الطلبات ({pendingOrders.length})</h2>
                         <div className="flex items-center gap-2 w-full sm:w-auto">
                             <div className="relative flex-1">
-                                <Search size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                 <input
                                     type="text"
                                     placeholder="بحث..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full bg-slate-100 dark:bg-slate-800 rounded-lg border-transparent focus:ring-2 focus:ring-cyan-500 outline-none pr-10 pl-3 py-2 text-sm"
+                                    className="w-full bg-slate-100 dark:bg-slate-800 rounded-xl border-transparent focus:ring-2 focus:ring-primary/20 outline-none pr-9 pl-3 py-1.5 text-xs sm:text-sm"
                                 />
                             </div>
                             <div className="relative">
@@ -1238,7 +1263,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                     return (
                                         <div key={order.id} className="flex justify-between items-center bg-white dark:bg-slate-800 p-3 rounded-lg shadow-sm">
                                             <div className="flex flex-col">
-                                                <span className="font-bold text-sm">طلب #{order.orderNumber}</span>
+                                                <span className="font-bold text-sm">طلب #{order.orderNumber || order.id.slice(0, 4)}</span>
                                                 <span className="text-xs text-slate-500">محول من: {sender?.name || order.transferFrom}</span>
                                             </div>
                                             <div className="flex gap-2">
@@ -1330,33 +1355,15 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         </button>
                                         <button 
                                             onClick={() => {
-                                                if (window.confirm(`هل أنت متأكد من إلغاء ${selectedOrderIds.length} طلب؟`)) {
-                                                    const now = new Date().toISOString();
-                                                    setOrders(current => current.map(o => {
-                                                        if (selectedOrderIds.includes(o.id)) {
-                                                            const newLog: AuditLog = {
-                                                                id: Math.random().toString(36).substr(2, 9),
-                                                                timestamp: now,
-                                                                userId: currentUser?.phone || 'unknown',
-                                                                userName: currentUser?.name || 'مستخدم غير معروف',
-                                                                field: 'status',
-                                                                oldValue: o.status,
-                                                                newValue: 'ملغي'
-                                                            };
-                                                            return { 
-                                                                ...o, 
-                                                                status: 'ملغي',
-                                                                auditLogs: [...(o.auditLogs || []), newLog]
-                                                            };
-                                                        }
-                                                        return o;
-                                                    }));
+                                                if (window.confirm(`هل أنت متأكد من حذف ${selectedOrderIds.length} طلب نهائياً؟`)) {
+                                                    setOrders(current => current.filter(o => !selectedOrderIds.includes(o.id)));
                                                     setSelectedOrderIds([]);
+                                                    setNotification("تم حذف الطلبات بنجاح");
                                                 }
                                             }}
-                                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                                            className="bg-slate-500 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
                                         >
-                                            إلغاء الكل
+                                            حذف الكل
                                         </button>
                                     </div>
                                 </div>
@@ -1470,7 +1477,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                             <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 flex-shrink-0">
                                 <button onClick={() => setActiveOrder(null)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"><ArrowRight size={20}/></button>
                                 <div className="flex-1 flex items-center justify-between">
-                                    <h3 className="font-bold text-slate-800 dark:text-white">تفاصيل الطلب #{activeOrder.orderNumber}</h3>
+                                    <h3 className="font-bold text-slate-800 dark:text-white">تفاصيل الطلب #{activeOrder.orderNumber || activeOrder.id.slice(0, 4)}</h3>
                                     <div className="flex items-center gap-2">
                                         <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${activeOrder.assignedTo ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
                                             <UserIcon size={12} />
@@ -1795,6 +1802,27 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         <DetailItem icon={<CalendarDays size={14}/>} label="تاريخ الطلب" value={new Date(activeOrder.date).toLocaleString('ar-EG')} />
                                         <EditableField
                                             icon={<Truck size={14}/>}
+                                            label="رقم البوليصة (Waybill)"
+                                            isEditing={!isReadOnly && isEditingWaybill}
+                                            disabled={isReadOnly}
+                                            onEdit={() => { setIsEditingWaybill(true); setEditedWaybill(activeOrder.waybillNumber || ''); }}
+                                            onSave={handleSaveWaybill}
+                                            onCancel={() => setIsEditingWaybill(false)}
+                                            editComponent={
+                                                <input type="text" value={editedWaybill} onChange={e => setEditedWaybill(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-sm font-bold" placeholder="أدخل رقم البوليصة..."/>
+                                            }
+                                            displayComponent={
+                                                <div className="flex items-center justify-between w-full">
+                                                    {activeOrder.waybillNumber ? (
+                                                        <p className="font-bold text-sm text-slate-800 dark:text-white font-mono">{activeOrder.waybillNumber}</p>
+                                                    ) : (
+                                                        <p className="text-sm text-slate-400 italic">لا يوجد</p>
+                                                    )}
+                                                </div>
+                                            }
+                                        />
+                                        <EditableField
+                                            icon={<Truck size={14}/>}
                                             label="شركة الشحن"
                                             isEditing={!isReadOnly && isEditingShippingCompany}
                                             disabled={isReadOnly}
@@ -1869,8 +1897,29 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                         <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 my-2 !mt-4 !mb-3"></div>
                                         <div className="flex justify-between items-center font-black text-lg">
                                             <span className="text-slate-800 dark:text-white">الإجمالي المطلوب:</span>
-                                            <span className="text-indigo-600 dark:text-indigo-400">{totalAmount.toLocaleString()} ج.م</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-indigo-600 dark:text-indigo-400">{totalAmount.toLocaleString()} ج.م</span>
+                                                <button 
+                                                    onClick={() => setIsEditingTotalOverride(true)}
+                                                    className="p-1 text-slate-400 hover:text-indigo-600 transition-colors"
+                                                    title="تعديل الإجمالي يدوياً"
+                                                >
+                                                    <Edit3 size={16} />
+                                                </button>
+                                            </div>
                                         </div>
+                                        {activeOrder.totalAmountOverride !== undefined && (
+                                            <div className="bg-amber-50 dark:bg-amber-900/20 p-2 rounded-lg border border-amber-100 dark:border-amber-800/50 mt-1">
+                                                <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400">تم تعديل الإجمالي يدوياً</p>
+                                                <p className="text-[10px] text-amber-600 dark:text-amber-500 italic">{activeOrder.totalAmountOverrideReason || 'لا يوجد سبب محدد'}</p>
+                                                <button 
+                                                    onClick={() => updateActiveOrderField('totalAmountOverride', undefined)}
+                                                    className="text-[10px] text-red-500 font-bold hover:underline mt-1"
+                                                >
+                                                    استعادة الإقيمة التلقائية
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </DetailSection>
 
@@ -2291,6 +2340,7 @@ const ProductEditModal: React.FC<ProductEditModalProps> = ({ isOpen, onClose, on
                         return (
                             <div key={index} className="p-3 bg-slate-50 dark:bg-slate-800/50 border rounded-lg space-y-2 relative">
                                 <button onClick={() => removeItem(index)} className="absolute top-2 left-2 text-slate-400 hover:text-red-500"><XCircle size={16}/></button>
+                                {product?.thumbnail && <img src={product.thumbnail} alt={product.name} className="w-16 h-16 object-cover rounded-lg" />}
                                 <select value={item.productId} onChange={e => updateItem(index, 'productId', e.target.value)} className="w-full p-2 bg-white dark:bg-slate-800 rounded text-sm font-bold">{allProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
                                 
                                 {hasVariants && (

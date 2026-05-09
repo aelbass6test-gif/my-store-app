@@ -6,7 +6,7 @@ import { motion, Variants } from 'framer-motion';
 import { generateInvoiceHTML } from '../utils/invoiceGenerator';
 import { generateShippingLabelHTML } from '../utils/shippingLabelGenerator';
 import { generateShippingNote } from '../services/geminiService';
-import { calculateCodFee } from '../utils/financials';
+import { calculateCodFee, getLatestProductCost } from '../utils/financials';
 import { generateOrdersReportHTML } from '../utils/reportGenerator';
 import { triggerWebhooks } from '../utils/webhook';
 
@@ -1145,29 +1145,29 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       {/* Header & Main Actions */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex items-center justify-between w-full lg:w-auto">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1">إدارة الطلبات</h1>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <h1 className="text-xl sm:text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1 truncate">إدارة الطلبات</h1>
               <button 
                 onClick={handleManualRefresh}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-primary hover:border-primary transition-all ${isRefreshing ? 'animate-spin text-primary border-primary/30' : ''}`}
+                className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-primary hover:border-primary transition-all whitespace-nowrap ${isRefreshing ? 'animate-spin text-primary border-primary/30' : ''}`}
                 title="مزامنة الطلبات من المتاجر الأخرى"
               >
-                <RefreshCcw size={18} />
-                <span className="text-sm font-bold">مزامنة المتاجر</span>
+                <RefreshCcw size={16} />
+                <span className="text-xs font-bold">مزامنة</span>
               </button>
             </div>
-            <div className="flex items-center gap-2">
-              <p className="text-xs md:text-sm text-slate-500 font-medium">{filteredOrders.length} طلب</p>
-              <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-1.5 py-0.5 rounded text-[10px] font-bold">المتجر: {activeStore?.id}</span>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-[10px] sm:text-xs md:text-sm text-slate-500 font-medium whitespace-nowrap">{filteredOrders.length} طلب</p>
+              <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-1.5 py-0.5 rounded text-[8px] sm:text-[10px] font-bold truncate">المتجر: {activeStore?.id}</span>
             </div>
           </div>
           
           <button 
             onClick={() => setShowAddModal(true)}
-            className="lg:hidden bg-primary text-white p-3 rounded-2xl font-black shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
+            className="lg:hidden bg-primary text-white p-2.5 sm:p-3 rounded-xl sm:rounded-2xl font-black shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center shrink-0 ml-2"
           >
-            <Plus size={24} />
+            <Plus size={20} />
           </button>
         </div>
         
@@ -1214,35 +1214,34 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       </div>
 
       {/* Quick Stats Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3 md:gap-4">
         {[
-          { label: 'في انتظار المراجعة', count: quickStats.awaitingWaybill, icon: FileSearch, color: 'bg-amber-500' },
-          { label: 'قيد الشحن', count: quickStats.onTheWay, icon: Truck, color: 'bg-indigo-500' },
-          { label: 'تم التوصيل', count: quickStats.delivered, icon: CheckCircle, color: 'bg-emerald-500' },
-          { label: 'مرتجع / فشل', count: quickStats.failed, icon: XCircle, color: 'bg-rose-500' },
-          { label: 'ملغي', count: quickStats.canceled, icon: Trash2, color: 'bg-slate-500' },
+          { label: 'في انتظار المراجعة', count: quickStats.awaitingWaybill, icon: FileSearch, color: 'bg-amber-500', hideOnMobile: false },
+          { label: 'قيد الشحن', count: quickStats.onTheWay, icon: Truck, color: 'bg-indigo-500', hideOnMobile: false },
+          { label: 'تم التوصيل', count: quickStats.delivered, icon: CheckCircle, color: 'bg-emerald-500', hideOnMobile: false },
+          { label: 'مرتجع / فشل', count: quickStats.failed, icon: XCircle, color: 'bg-rose-500', hideOnMobile: false },
+          { label: 'ملغي', count: quickStats.canceled, icon: Trash2, color: 'bg-slate-500', hideOnMobile: true },
         ].map((stat, idx) => (
-          <div key={idx} className="glass-card p-3 md:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-3">
-            <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl ${stat.color} flex items-center justify-center text-white shadow-lg shrink-0`}>
-              <stat.icon className="w-4 h-4 md:w-5 md:h-5" />
+          <div key={idx} className={`glass-card p-2 sm:p-3 md:p-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-2 sm:gap-3 ${stat.hideOnMobile ? 'hidden sm:flex' : 'flex'}`}>
+            <div className={`w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 rounded-lg sm:rounded-xl ${stat.color} flex items-center justify-center text-white shadow-lg shrink-0`}>
+              <stat.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5" />
             </div>
-            <div>
-              <p className="text-[10px] md:text-xs font-bold text-slate-500 uppercase leading-none mb-1">{stat.label}</p>
-              <p className="text-sm md:text-lg font-black text-slate-800 dark:text-white leading-none">{stat.count}</p>
+            <div className="min-w-0">
+              <p className="text-[8px] sm:text-[10px] md:text-xs font-bold text-slate-500 uppercase leading-none mb-1 truncate">{stat.label}</p>
+              <p className="text-xs sm:text-sm md:text-lg font-black text-slate-800 dark:text-white leading-none">{stat.count}</p>
             </div>
           </div>
         ))}
       </div>
 
       {/* Sticky Filter Bar */}
-      <div className="sticky top-0 z-30 py-2 -mx-4 px-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
-        <div className="flex flex-col gap-3 max-w-full">
-          <div className="flex items-center gap-1.5 p-1 bg-slate-200/50 dark:bg-slate-800/50 rounded-xl overflow-x-auto no-scrollbar">
+      <div className="sticky top-0 z-30 py-2 -mx-4 px-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50 space-y-2">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-200/50 dark:bg-slate-800/50 rounded-xl overflow-x-auto no-scrollbar scroll-smooth">
             {['الجميع', 'في_انتظار_المكالمة', 'جاري_المراجعة', 'قيد_التنفيذ', 'تم_الارسال', 'قيد_الشحن', 'تم_توصيلها', 'تم_التحصيل', 'مدفوعة', 'مرتجع', 'مرتجع_جزئي', 'فشل_التوصيل', 'ملغي', 'مؤرشف', 'مرتجع_بعد_الاستلام', 'تمت_الاعادة_لشركة_الشحن', 'تم_الاستبدال'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap scroll-mx-2 ${
                   activeTab === tab 
                     ? 'bg-white dark:bg-slate-700 text-primary shadow-sm' 
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
@@ -1253,29 +1252,28 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
             ))}
           </div>
 
-          <div className="flex items-center gap-2 w-full lg:w-auto">
-            <div className="relative flex-1 lg:w-80">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <div className="flex items-center gap-2 max-w-full">
+            <div className="relative flex-1">
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
               <input 
                 type="text"
                 placeholder="ابحث..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pr-10 pl-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                className="w-full pr-9 pl-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
               />
             </div>
             <button 
               onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              className={`p-2.5 rounded-xl border transition-all ${
+              className={`p-2 rounded-xl border transition-all shrink-0 ${
                 showAdvancedFilters 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500'
               }`}
             >
-              <Filter size={18} />
+              <Filter size={16} />
             </button>
           </div>
-        </div>
       </div>
 
       {/* Advanced Filters Panel */}
@@ -2308,7 +2306,7 @@ const KanbanView: React.FC<{ orders: Order[]; onStatusChange: (id: string, newSt
                   onClick={() => onEdit(order)}
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-mono text-slate-500 dark:text-slate-400">#{order.orderNumber || order.id.slice(0, 6)}</span>
+                    <span className="text-xs font-mono text-slate-500 dark:text-slate-400">#{order.orderNumber || order.id.slice(0, 4)}</span>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button className="p-1 text-slate-500 dark:text-slate-400 hover:text-indigo-600"><Edit3 size={14}/></button>
                     </div>
@@ -2673,7 +2671,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                 
                 newItems = newItems.filter((_, i) => i !== index);
             } else {
-                 newItems[index] = { ...newItems[index], productId: value, name: product.name, price: product.price, cost: product.costPrice, weight: product.weight, thumbnail: product.thumbnail, variantId: undefined, variantDescription: undefined };
+                 newItems[index] = { ...newItems[index], productId: value, name: product.name, price: product.price, cost: getLatestProductCost(value, settings), weight: product.weight, thumbnail: product.thumbnail, variantId: undefined, variantDescription: undefined };
             }
         } else if (field === 'variantId') {
             const product = settings.products.find(p => p.id === newItems[index].productId);

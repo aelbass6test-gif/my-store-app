@@ -270,19 +270,19 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
             <button 
                 type="button" 
                 onClick={() => setIsOpen(!isOpen)} 
-                className="w-full flex items-center gap-3 p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold text-right hover:bg-slate-50 dark:hover:bg-slate-700 transition-all outline-none"
+                className="w-full flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs sm:text-sm font-bold text-right hover:bg-slate-50 dark:hover:bg-slate-700 transition-all outline-none"
             >
-                <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-700 flex-shrink-0 overflow-hidden">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded bg-slate-100 dark:bg-slate-700 flex-shrink-0 overflow-hidden">
                     {selectedProduct?.thumbnail ? (
                         <img src={selectedProduct.thumbnail} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-400">
-                            <Package size={16} />
+                            <Package size={14} />
                         </div>
                     )}
                 </div>
                 <span className="flex-1 text-slate-800 dark:text-slate-200 truncate">{selectedProduct?.name || 'اختر منتجاً'}</span>
-                <Plus size={14} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-45' : ''}`} />
+                <Plus size={12} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-45' : ''}`} />
             </button>
 
             {isOpen && (
@@ -372,17 +372,17 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12 px-4">
-        <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl"><Truck size={28} /></div>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
+            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl flex-shrink-0"><Truck size={28} /></div>
             <div>
-                <h1 className="text-3xl font-black text-slate-800 dark:text-white">إدارة الموردين والمخزون</h1>
-                <p className="text-slate-500 dark:text-slate-400 mt-1">سجل الموردين وقم بإنشاء أوامر توريد لزيادة مخزونك.</p>
+                <h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-white">إدارة الموردين والمخزون</h1>
+                <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 mt-1">سجل الموردين وقم بإنشاء أوامر توريد لزيادة مخزونك.</p>
             </div>
         </div>
 
-        <div className="flex gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800 w-fit">
-            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-lg font-bold transition-all ${activeTab === 'orders' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>أوامر التوريد</button>
-            <button onClick={() => setActiveTab('suppliers')} className={`px-6 py-2 rounded-lg font-bold transition-all ${activeTab === 'suppliers' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>قائمة الموردين</button>
+        <div className="flex gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800 w-full sm:w-fit overflow-x-auto">
+            <button onClick={() => setActiveTab('orders')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'orders' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>أوامر التوريد</button>
+            <button onClick={() => setActiveTab('suppliers')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'suppliers' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>قائمة الموردين</button>
         </div>
 
         {activeTab === 'orders' && (
@@ -402,9 +402,9 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                     {(settings.supplyOrders || []).map(order => {
                         const supplier = settings.suppliers.find(s => s.id === order.supplierId);
                         return (
-                            <div key={order.id} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex justify-between items-center">
+                            <div key={order.id} className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                                 <div>
-                                    <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                    <h4 className="font-bold text-slate-800 dark:text-white flex flex-wrap items-center gap-2">
                                         <User size={16}/> {supplier?.name || 'مورد غير معروف'}
                                         {order.referenceNumber && <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500">Ref: {order.referenceNumber}</span>}
                                     </h4>
@@ -416,29 +416,29 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                                         {order.notes && <span className="mr-3 opacity-60">| {order.notes}</span>}
                                     </p>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="flex -space-x-3 space-x-reverse overflow-hidden">
+                                <div className="flex w-full sm:w-auto items-center justify-between sm:justify-end gap-3 sm:gap-4 border-t sm:border-0 pt-3 sm:pt-0">
+                                    <div className="flex -space-x-2 sm:-space-x-3 space-x-reverse overflow-hidden">
                                         {order.items.slice(0, 3).map((item, i) => {
                                             const product = settings.products.find(p => p.id === item.productId);
                                             return (
-                                                <div key={i} className="w-8 h-8 rounded-full border-2 border-white dark:border-slate-800 bg-slate-100 dark:bg-slate-700 overflow-hidden shadow-sm">
+                                                <div key={i} className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 border-white dark:border-slate-800 bg-slate-100 dark:bg-slate-700 overflow-hidden shadow-sm">
                                                     {product?.thumbnail ? (
                                                         <img src={product.thumbnail} className="w-full h-full object-cover" />
-                                                    ) : <Package size={12} className="m-auto mt-1" />}
+                                                    ) : <Package size={10} className="m-auto mt-1" />}
                                                 </div>
                                             );
                                         })}
                                         {order.items.length > 3 && (
-                                            <div className="w-8 h-8 rounded-full border-2 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-600 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-600 flex items-center justify-center text-[8px] sm:text-[10px] font-bold text-slate-600 dark:text-slate-300">
                                                 +{order.items.length - 3}
                                             </div>
                                         )}
                                     </div>
-                                    <div className="text-left">
-                                        <div className="font-black text-lg text-emerald-600">{order.totalCost.toLocaleString()} ج.م</div>
-                                        <div className="text-xs text-slate-500">{order.items.length} أصناف {order.items.reduce((s, i) => s + (i.bonusQuantity || 0), 0) > 0 && `(+ ${order.items.reduce((s, i) => s + (i.bonusQuantity || 0), 0)} بونص)`}</div>
+                                    <div className="text-left flex-1 sm:flex-none">
+                                        <div className="font-black text-base sm:text-lg text-emerald-600">{order.totalCost.toLocaleString()} ج.م</div>
+                                        <div className="text-[10px] sm:text-xs text-slate-500">{order.items.length} أصناف {order.items.reduce((s, i) => s + (i.bonusQuantity || 0), 0) > 0 && `(+ ${order.items.reduce((s, i) => s + (i.bonusQuantity || 0), 0)} بونص)`}</div>
                                     </div>
-                                    <div className="flex gap-1">
+                                    <div className="flex gap-1 shrink-0">
                                         <button onClick={() => startEditOrder(order)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-all"><Edit2 size={16}/></button>
                                         <button onClick={() => handleDeleteOrder(order)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"><Trash2 size={16}/></button>
                                     </div>
@@ -453,19 +453,19 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
         {activeTab === 'suppliers' && (
             <div className="space-y-4">
                 <button onClick={() => { setEditingSupplier(null); setNewSupplier({name:'', phone:'', address:'', notes:''}); setShowSupplierModal(true); }} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all"><UserPlus size={20}/> إضافة مورد</button>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
                     {(settings.suppliers || []).map(supplier => (
-                        <div key={supplier.id} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex justify-between items-start">
-                            <div>
-                                <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
-                                    {supplier.name}
-                                    {(supplier.balance || 0) > 0 && <span className="text-[10px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">مديونية: {supplier.balance?.toLocaleString()} ج.م</span>}
+                        <div key={supplier.id} className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex justify-between items-start">
+                            <div className="flex-1 min-w-0">
+                                <h3 className="font-bold text-base sm:text-lg dark:text-white flex flex-wrap items-center gap-2">
+                                    <span className="truncate">{supplier.name}</span>
+                                    {(supplier.balance || 0) > 0 && <span className="text-[10px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">مديونية: {supplier.balance?.toLocaleString()} ج.م</span>}
                                 </h3>
-                                <p className="text-slate-500 text-sm">{supplier.phone}</p>
-                                {supplier.address && <p className="text-slate-400 text-xs mt-2">{supplier.address}</p>}
-                                {supplier.notes && <p className="text-slate-400 text-[10px] mt-1 bg-slate-50 dark:bg-slate-800 p-1 rounded italic">{supplier.notes}</p>}
+                                <p className="text-slate-500 text-xs sm:text-sm truncate">{supplier.phone}</p>
+                                {supplier.address && <p className="text-slate-400 text-[10px] sm:text-xs mt-2 line-clamp-2">{supplier.address}</p>}
+                                {supplier.notes && <p className="text-slate-400 text-[9px] sm:text-[10px] mt-1 bg-slate-50 dark:bg-slate-800 p-1 rounded italic line-clamp-2">{supplier.notes}</p>}
                             </div>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 shrink-0 ml-2">
                                 {(supplier.balance || 0) > 0 && (
                                     <button onClick={() => { setSelectedSupplierForPayment(supplier); setPaymentAmount(supplier.balance || 0); setShowPaymentModal(true); }} className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all" title="تسجيل دفعة">
                                         <DollarSign size={18}/>
@@ -543,8 +543,8 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                         <div className="space-y-4">
                             {orderItems.map((item, idx) => (
                                 <div key={idx} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                                        <div className="md:col-span-4">
+                        <div className="grid grid-cols-2 md:grid-cols-12 gap-3 items-end">
+                                        <div className="col-span-2 md:col-span-4">
                                             <label className="text-xs text-slate-500 mb-1 block">المنتج</label>
                                             <ProductSelect 
                                                  value={item.productId || ''} 
@@ -559,32 +559,32 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                                                  products={settings.products}
                                             />
                                         </div>
-                                        <div className="md:col-span-1">
-                                            <label className="text-xs text-slate-500 mb-1 block">الكمية</label>
+                                        <div className="col-span-1 md:col-span-1">
+                                            <label className="text-[10px] sm:text-xs text-slate-500 mb-1 block truncate">الكمية</label>
                                             <input type="number" min="1" value={item.quantity || 1} onChange={e => {
                                                 const newItems = [...orderItems];
                                                 newItems[idx].quantity = Number(e.target.value);
                                                 setOrderItems(newItems);
                                             }} className="w-full p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white text-center outline-none" />
                                         </div>
-                                        <div className="md:col-span-1">
-                                            <label className="text-xs text-slate-500 mb-1 block">بونص</label>
+                                        <div className="col-span-1 md:col-span-1">
+                                            <label className="text-[10px] sm:text-xs text-slate-500 mb-1 block truncate">بونص</label>
                                             <input type="number" min="0" value={item.bonusQuantity || 0} onChange={e => {
                                                 const newItems = [...orderItems];
                                                 newItems[idx].bonusQuantity = Number(e.target.value);
                                                 setOrderItems(newItems);
                                             }} className="w-full p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-emerald-400 font-bold text-center outline-none" />
                                         </div>
-                                        <div className="md:col-span-2">
-                                            <label className="text-xs text-slate-500 mb-1 block">التكلفة (للقطعة)</label>
+                                        <div className="col-span-2 sm:col-span-1 md:col-span-2">
+                                            <label className="text-[10px] sm:text-xs text-slate-500 mb-1 block">التكلفة</label>
                                             <input type="number" min="0" value={item.cost || 0} onChange={e => {
                                                 const newItems = [...orderItems];
                                                 newItems[idx].cost = Number(e.target.value);
                                                 setOrderItems(newItems);
                                             }} className="w-full p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none" />
                                         </div>
-                                        <div className="md:col-span-3">
-                                            <label className="text-xs text-slate-500 mb-1 block">الخصم (على الصنف)</label>
+                                        <div className="col-span-2 sm:col-span-1 md:col-span-3">
+                                            <label className="text-[10px] sm:text-xs text-slate-500 mb-1 block">الخصم</label>
                                             <div className="flex gap-1">
                                                 <input type="number" min="0" value={item.discountValue || 0} onChange={e => {
                                                     const newItems = [...orderItems];
@@ -595,13 +595,13 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                                                     const newItems = [...orderItems];
                                                     newItems[idx].discountType = e.target.value as 'amount' | 'percentage';
                                                     setOrderItems(newItems);
-                                                }} className="p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs dark:text-white outline-none">
+                                                }} className="p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] sm:text-xs dark:text-white outline-none">
                                                     <option value="amount">ج.م</option>
                                                     <option value="percentage">%</option>
                                                 </select>
                                             </div>
                                         </div>
-                                        <div className="md:col-span-1">
+                                        <div className="col-span-2 sm:col-span-1 md:col-span-1">
                                             <button onClick={() => setOrderItems(orderItems.filter((_, i) => i !== idx))} className="w-full p-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all flex justify-center"><Trash2 size={18}/></button>
                                         </div>
                                     </div>

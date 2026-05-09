@@ -85,6 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
             title: 'النظام المالي',
             links: [
                 { to: '/wallet', label: 'المحفظة', icon: <WalletIcon size={20} /> },
+                { to: '/partners', label: 'الشركاء والسلف', icon: <Users size={20} /> },
                 { to: '/expenses', label: 'المصروفات', icon: <DollarSign size={20} /> },
                 { to: '/collections-report', label: 'التحصيلات', icon: <Receipt size={20} /> },
                 { to: '/withdrawals', label: 'عمليات السحب', icon: <ArrowRightLeft size={20} /> },
@@ -124,7 +125,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
         }
     ];
 
-    const SidebarContent = () => (
+    const sidebarContentJSX = (
         <div className="h-full flex flex-col p-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
             <div className="py-6 px-2 mb-2 flex justify-between items-center">
                 <div className="flex items-center gap-3">
@@ -189,7 +190,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
         <>
             {/* Desktop Sidebar */}
             <div className="hidden md:flex w-72 bg-white dark:bg-slate-900 border-l border-slate-200/60 dark:border-slate-800/60 h-full flex-col sticky top-0">
-                <SidebarContent />
+                {sidebarContentJSX}
             </div>
 
             {/* Mobile Sidebar */}
@@ -201,7 +202,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
                 <div 
                     className={`absolute top-0 right-0 h-full w-72 bg-white dark:bg-slate-900 shadow-2xl transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
                 >
-                    {isOpen && <SidebarContent />}
+                    {isOpen && sidebarContentJSX}
                 </div>
             </div>
         </>

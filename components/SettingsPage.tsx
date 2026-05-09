@@ -38,6 +38,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
           <DatabaseManagementCard onSync={onManualSave} />
       )}
       <DomainSettingsCard settings={settings} setSettings={setSettings} />
+      <ExpenseCategoriesSettingsCard settings={settings} setSettings={setSettings} />
       <CommunicationSettingsCard settings={settings} setSettings={setSettings} />
       <EmployeeDashboardSettingsCard settings={settings} setSettings={setSettings} />
       <PlatformIntegrationCard 
@@ -49,6 +50,55 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
       <DangerZone activeStore={activeStore} />
     </div>
   );
+};
+
+const ExpenseCategoriesSettingsCard: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
+    const [newCategory, setNewCategory] = useState('');
+    const categories = settings.expenseCategories || [];
+
+    const addCategory = () => {
+        if (!newCategory || categories.includes(newCategory)) return;
+        setSettings(prev => ({ ...prev, expenseCategories: [...categories, newCategory] }));
+        setNewCategory('');
+    };
+
+    const removeCategory = (cat: string) => {
+        setSettings(prev => ({ ...prev, expenseCategories: categories.filter(c => c !== cat) }));
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-400 mb-6 border-b border-slate-200 dark:border-slate-800 pb-6">
+                <div className="p-2 bg-red-50 dark:bg-red-900/30 rounded-lg"><Tag size={24}/></div>
+                <div>
+                    <h2 className="text-xl font-black dark:text-white">تصنيف المصروفات</h2>
+                    <p className="text-xs text-slate-500">تحديد فئات المعاملات المالية التي يجب اعتبارها "مصاريف" لخصمها من الأرباح.</p>
+                </div>
+            </div>
+            
+            <div className="space-y-4">
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={newCategory} 
+                        onChange={e => setNewCategory(e.target.value)}
+                        placeholder="أضف تصنيف جديد (مثال: expense_ads)"
+                        className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none transition-all dark:text-white"
+                    />
+                    <button onClick={addCategory} className="bg-red-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-red-700">إضافة</button>
+                </div>
+                
+                <div className="flex flex-wrap gap-2 pt-2">
+                    {categories.map(cat => (
+                        <div key={cat} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-3 py-1 rounded-full text-sm">
+                            {cat}
+                            <button onClick={() => removeCategory(cat)} className="text-slate-500 hover:text-red-600"><X size={14}/></button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const EmployeeDashboardSettingsCard: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
