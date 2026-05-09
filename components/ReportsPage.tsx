@@ -60,13 +60,13 @@ const SalesSummaryReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ o
             return d.getMonth() === prevMonth && d.getFullYear() === prevYear;
         });
 
-        const getRevenue = (os: Order[]) => os.filter(o => o.status === 'تم_التحصيل').reduce((sum, o) => sum + (o.productPrice + o.shippingFee - (o.discount || 0)), 0);
+        const getRevenue = (os: Order[]) => os.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة').reduce((sum, o) => sum + (o.productPrice + o.shippingFee - (o.discount || 0)), 0);
         
         const currentRevenue = getRevenue(currentMonthOrders);
         const prevRevenue = getRevenue(prevMonthOrders);
         const revenueGrowth = prevRevenue > 0 ? ((currentRevenue - prevRevenue) / prevRevenue) * 100 : 0;
 
-        const collectedOrders = orders.filter(o => o.status === 'تم_التحصيل');
+        const collectedOrders = orders.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة');
         const totalProductRevenue = collectedOrders.reduce((sum, o) => sum + o.productPrice, 0);
         const totalRevenue = collectedOrders.reduce((sum, o) => sum + (o.productPrice + o.shippingFee - (o.discount || 0)), 0);
         const totalOrders = orders.length;
@@ -90,7 +90,7 @@ const SalesSummaryReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ o
         }).reverse();
 
         const salesTrend = last7Days.map(date => {
-            const dayOrders = orders.filter(o => o.date.startsWith(date) && o.status === 'تم_التحصيل');
+            const dayOrders = orders.filter(o => o.date.startsWith(date) && (o.status === 'تم_التحصيل' || o.status === 'مدفوعة'));
             return {
                 date: date.split('-').slice(1).join('/'),
                 revenue: dayOrders.reduce((sum, o) => sum + (o.productPrice + o.shippingFee), 0)
@@ -208,7 +208,7 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
     const [isExporting, setIsExporting] = useState(false);
     
     const failedOrders = useMemo(() => {
-        return orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status))
+        return orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status))
             .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [orders]);
 
@@ -242,7 +242,7 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
 
     const handlePrint = () => {
         const storeName = activeStore?.name || 'متجري';
-        const html = generateLossesReportHTML(failedOrders, settings, storeName, orientation);
+        const html = generateLossesReportHTML(failedOrders, settings, storeName, orientation, isContinuous);
         const win = window.open('', '_blank');
         if(win) {
             win.document.write(html);
@@ -383,8 +383,8 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
     const [isExporting, setIsExporting] = useState(false);
     
     const stats = useMemo(() => {
-        const collectedOrders = orders.filter(o => o.status === 'تم_التحصيل');
-        const failedOrders = orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status));
+        const collectedOrders = orders.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة');
+        const failedOrders = orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status));
 
         let totalRevenue = 0;
         let totalProductRevenue = 0;
@@ -484,7 +484,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             if (!geoStats[area]) geoStats[area] = { count: 0, success: 0, revenue: 0, loss: 0 };
             geoStats[area].count++;
             const { net, loss } = calculateOrderProfitLoss(o, settings);
-            if (o.status === 'تم_التحصيل') {
+            if (o.status === 'تم_التحصيل' || o.status === 'مدفوعة') {
                 geoStats[area].success++;
                 geoStats[area].revenue += (o.productPrice + o.shippingFee);
             }
@@ -513,7 +513,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             const name = o.shippingCompany || 'غير محدد';
             if (!carrierStats[name]) carrierStats[name] = { count: 0, success: 0, shipping: 0, profit: 0 };
             carrierStats[name].count++;
-            if (o.status === 'تم_التحصيل') carrierStats[name].success++;
+            if (o.status === 'تم_التحصيل' || o.status === 'مدفوعة') carrierStats[name].success++;
             carrierStats[name].shipping += o.shippingFee;
             const { net } = calculateOrderProfitLoss(o, settings);
             carrierStats[name].profit += net;
@@ -524,7 +524,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
         orders.forEach(o => {
             o.items.forEach(item => {
                 if (!productStats[item.name]) productStats[item.name] = { revenue: 0, extra: 0, cost: 0, sold: 0, returns: 0 };
-                if (o.status === 'تم_التحصيل') {
+                if (o.status === 'تم_التحصيل' || o.status === 'مدفوعة') {
                     const product = settings.products.find(p => p.id === item.productId);
                     if (product?.profitMode === 'commission' && product.basePrice !== undefined) {
                         productStats[item.name].revenue += product.basePrice * item.quantity;
@@ -534,7 +534,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                     }
                     productStats[item.name].cost += item.cost * item.quantity;
                     productStats[item.name].sold += item.quantity;
-                } else if (['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام'].includes(o.status)) {
+                } else if (['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status)) {
                     productStats[item.name].returns += item.quantity;
                 }
             });
@@ -577,7 +577,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
 
     const handlePrint = () => {
         const storeName = activeStore?.name || 'متجري';
-        const html = generateComprehensiveFinancialReportHTML(orders, settings, wallet, storeName, orientation);
+        const html = generateComprehensiveFinancialReportHTML(orders, settings, wallet, storeName, orientation, isContinuous);
         const win = window.open('', '_blank');
         if (win) {
             win.document.write(html);
@@ -1016,8 +1016,8 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                             </tr>
                         </thead>
                         <tbody>
-                            {orders.filter(o => o.status === 'تم_التحصيل').length > 0 ? (
-                                orders.filter(o => o.status === 'تم_التحصيل').map(order => {
+                            {orders.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة').length > 0 ? (
+                                orders.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة').map(order => {
                                     const { profit } = calculateOrderProfitLoss(order, settings);
                                     let orderExtraMarkup = 0;
                                     order.items.forEach(item => {
@@ -1054,7 +1054,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                                 </tr>
                             )}
                         </tbody>
-                        {orders.filter(o => o.status === 'تم_التحصيل').length > 0 && (
+                        {orders.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة').length > 0 && (
                             <tfoot className="bg-slate-50 dark:bg-slate-800/50 font-black text-slate-900 dark:text-white">
                                 <tr>
                                     <td colSpan={3} className="p-2 border border-slate-100 dark:border-slate-800 text-left">الإجمالي:</td>
@@ -1084,8 +1084,8 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                             </tr>
                         </thead>
                         <tbody>
-                            {orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status)).length > 0 ? (
-                                orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status)).map(order => {
+                            {orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status)).length > 0 ? (
+                                orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status)).map(order => {
                                     const { loss } = calculateOrderProfitLoss(order, settings);
                                     return (
                                         <tr key={order.id} className="border-b border-slate-50 dark:border-slate-800/50">
@@ -1113,7 +1113,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                                 </tr>
                             )}
                         </tbody>
-                        {orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status)).length > 0 && (
+                        {orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status)).length > 0 && (
                             <tfoot className="bg-slate-50 dark:bg-slate-800/50 font-black text-slate-900 dark:text-white">
                                 <tr>
                                     <td colSpan={4} className="p-2 border border-slate-100 dark:border-slate-800 text-left">الإجمالي:</td>

@@ -139,6 +139,9 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
   const [modalType, setModalType] = useState<'إيداع' | 'سحب'>('إيداع');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [activeTab, setActiveTab] = useState<'all' | 'orders' | 'returns' | 'collected' | 'manual'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<GroupedTransaction | null>(null);
 
   const walletStats = useMemo(() => {
@@ -191,11 +194,42 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
     const combinedList: ProcessedTransaction[] = [...groupedList, ...manualTransactions];
     
     return combinedList.sort((a, b) => {
-        const dateA = new Date(a.type === 'grouped' ? a.transactions[0].id : a.transaction.id).getTime();
-        const dateB = new Date(b.type === 'grouped' ? b.transactions[0].id : b.transaction.id).getTime();
+        const dateA = new Date(a.type === 'grouped' ? a.transactions[0].date : a.transaction.date).getTime();
+        const dateB = new Date(b.type === 'grouped' ? b.transactions[0].date : b.transaction.date).getTime();
         return dateB - dateA;
     });
 }, [wallet.transactions, orders]);
+
+  const filteredData = useMemo(() => {
+      let data: ProcessedTransaction[] = [];
+      if (activeTab === 'all') {
+          data = processedTransactions;
+      } else if (activeTab === 'orders') {
+          data = processedTransactions.filter(t => t.type === 'grouped');
+      } else if (activeTab === 'manual') {
+          data = processedTransactions.filter(t => t.type === 'manual');
+      } else if (activeTab === 'returns') {
+          // Show individual return transactions even if they were part of a group
+          data = wallet.transactions
+              .filter(t => t.category === 'return')
+              .map(t => ({ type: 'manual' as const, transaction: t }))
+              .sort((a, b) => new Date(b.transaction.date).getTime() - new Date(a.transaction.date).getTime());
+      } else if (activeTab === 'collected') {
+          // Show individual collection transactions even if they were part of a group
+          data = wallet.transactions
+              .filter(t => t.category === 'collection')
+              .map(t => ({ type: 'manual' as const, transaction: t }))
+              .sort((a, b) => new Date(b.transaction.date).getTime() - new Date(a.transaction.date).getTime());
+      }
+      return data;
+  }, [activeTab, processedTransactions, wallet.transactions]);
+
+  const paginatedData = useMemo(() => {
+      const startIndex = (currentPage - 1) * itemsPerPage;
+      return filteredData.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredData, currentPage]);
+
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
   const handleTransaction = (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,8 +303,25 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
       </motion.div>
 
       <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
           <h3 className="text-lg font-black dark:text-white">سجل عمليات المحفظة</h3>
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full md:w-auto overflow-x-auto no-scrollbar">
+            {[
+              { id: 'all', label: 'الكل' },
+              { id: 'orders', label: 'الأوردرات' },
+              { id: 'returns', label: 'المرتجعات' },
+              { id: 'collected', label: 'المحصل' },
+              { id: 'manual', label: 'يدوي/أخرى' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => { setActiveTab(tab.id as any); setCurrentPage(1); }}
+                className={`px-4 py-2 text-xs font-black rounded-lg transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-right">
@@ -284,7 +335,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {processedTransactions.map((item, index) => {
+              {paginatedData.map((item, index) => {
                 if (item.type === 'grouped') {
                   return (
                     <tr key={item.orderNumber} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
@@ -332,10 +383,30 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, sett
                   )
                 }
               })}
-              {processedTransactions.length === 0 && <tr><td colSpan={5} className="text-center py-12 text-slate-400">لا توجد عمليات مسجلة.</td></tr>}
+              {paginatedData.length === 0 && <tr><td colSpan={5} className="text-center py-12 text-slate-400">لا توجد عمليات مسجلة.</td></tr>}
             </tbody>
           </table>
         </div>
+        
+        {totalPages > 1 && (
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+                <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    className="p-2 px-4 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-50 hover:bg-white dark:hover:bg-slate-800 transition-all dark:text-white"
+                >
+                    السابق
+                </button>
+                <span className="text-xs font-black text-slate-500">صفحة {currentPage} من {totalPages}</span>
+                <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    className="p-2 px-4 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-50 hover:bg-white dark:hover:bg-slate-800 transition-all dark:text-white"
+                >
+                    التالي
+                </button>
+            </div>
+        )}
       </motion.div>
 
       {showModal && (

@@ -137,10 +137,10 @@ export const generateOrdersReportHTML = (orders: Order[], settings: Settings, st
 
     const getStatusColor = (status: string, type: 'status' | 'payment') => {
         const paymentIsPaid = ['مدفوع'].includes(status);
-        const statusIsCollected = ['تم_التحصيل'].includes(status);
+        const statusIsCollected = ['تم_التحصيل', 'مدفوعة'].includes(status);
         if ((type === 'payment' && paymentIsPaid) || (type === 'status' && statusIsCollected)) return 'background-color: #dcfce7; color: #166534;'; // green
         
-        const isFailure = ['مرتجع', 'فشل_التوصيل', 'ملغي'].includes(status);
+        const isFailure = ['مرتجع', 'فشل_التوصيل', 'ملغي', 'تمت_الاعادة_لشركة_الشحن'].includes(status);
         if (isFailure) return 'background-color: #fee2e2; color: #991b1b;'; // red
 
         const inProgress = ['تم_توصيلها', 'قيد_الشحن', 'تم_الارسال'].includes(status);
@@ -503,11 +503,11 @@ export const generateLossesReportHTML = (orders: Order[], settings: Settings, st
 };
 
 export const generateComprehensiveFinancialReportHTML = (orders: Order[], settings: Settings, wallet: Wallet, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false): string => {
-    const collectedOrders = orders.filter(o => o.status === 'تم_التحصيل');
-    const failedOrders = orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(o.status));
-    const notCollectedOrders = orders.filter(o => o.status === 'تم_توصيلها' && !o.collectionProcessed);
-    const inShippingOrders = orders.filter(o => o.status === 'قيد_الشحن');
-    const adminExpenses = wallet.transactions.filter(t => t.category?.startsWith('expense_'));
+    const collectedOrders = (orders || []).filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة');
+    const failedOrders = (orders || []).filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status));
+    const notCollectedOrders = (orders || []).filter(o => o.status === 'تم_توصيلها' && !o.collectionProcessed);
+    const inShippingOrders = (orders || []).filter(o => o.status === 'قيد_الشحن');
+    const adminExpenses = (wallet?.transactions || []).filter(t => t.category?.startsWith('expense_'));
 
     let totalProductRevenue = 0;
     let totalExtraMarkup = 0;
@@ -657,7 +657,7 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
         const name = o.shippingCompany || 'غير محدد';
         if (!carrierStats[name]) carrierStats[name] = { count: 0, success: 0, shipping: 0, profit: 0 };
         carrierStats[name].count++;
-        if (o.status === 'تم_التحصيل') carrierStats[name].success++;
+        if (o.status === 'تم_التحصيل' || o.status === 'مدفوعة') carrierStats[name].success++;
         carrierStats[name].shipping += o.shippingFee;
         const { net } = calculateOrderProfitLoss(o, settings);
         carrierStats[name].profit += net;
@@ -679,7 +679,7 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
     orders.forEach(o => {
         o.items.forEach(item => {
             if (!productStats[item.name]) productStats[item.name] = { revenue: 0, extra: 0, cost: 0, sold: 0, returns: 0 };
-            if (o.status === 'تم_التحصيل') {
+            if (o.status === 'تم_التحصيل' || o.status === 'مدفوعة') {
                 const product = settings.products.find(p => p.id === item.productId);
                 if (product?.profitMode === 'commission' && product.basePrice !== undefined) {
                     productStats[item.name].revenue += product.basePrice * item.quantity;
@@ -689,7 +689,7 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
                 }
                 productStats[item.name].cost += item.cost * item.quantity;
                 productStats[item.name].sold += item.quantity;
-            } else if (['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام'].includes(o.status)) {
+            } else if (['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status)) {
                 productStats[item.name].returns += item.quantity;
             }
         });
@@ -747,7 +747,7 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
         if (!geoStats[area]) geoStats[area] = { count: 0, success: 0, revenue: 0, loss: 0 };
         geoStats[area].count++;
         const { loss } = calculateOrderProfitLoss(o, settings);
-        if (o.status === 'تم_التحصيل') {
+        if (o.status === 'تم_التحصيل' || o.status === 'مدفوعة') {
             geoStats[area].success++;
             geoStats[area].revenue += (o.productPrice + o.shippingFee);
         }

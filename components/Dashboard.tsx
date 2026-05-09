@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { TrendingUp, Package, CheckCircle2, Wallet as WalletIcon, Truck, RefreshCcw, FileSearch, Check, PlayCircle, X, AlertTriangle, ArrowRight, Lightbulb, Loader, BrainCircuit, PhoneForwarded, PieChart as ChartIcon, Activity, Clock, Zap } from 'lucide-react';
+import { TrendingUp, Package, CheckCircle2, Wallet as WalletIcon, Truck, RefreshCcw, FileSearch, Check, PlayCircle, X, AlertTriangle, ArrowRight, Lightbulb, Loader, BrainCircuit, PhoneForwarded, PieChart as ChartIcon, Clock, AlertCircle } from 'lucide-react';
 import { Order, Settings, Wallet, User, CustomerProfile, Store } from '../types';
 import { Link } from 'react-router-dom';
 import { motion, Variants } from 'framer-motion';
@@ -76,7 +76,7 @@ const SmartSuggestions = ({ orders, settings }: { orders: Order[], settings: Set
                 customerMap.set(cleanPhone, { name: order.customerName, successfulOrders: 0, totalSpent: 0 });
             }
             const customer = customerMap.get(cleanPhone)!;
-            if (order.status === 'تم_التحصيل') {
+            if (order.status === 'تم_التحصيل' || order.status === 'مدفوعة') {
                 customer.successfulOrders += 1;
                 customer.totalSpent += (order.productPrice + order.shippingFee) - (order.discount || 0);
             }
@@ -121,14 +121,11 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
   const stats = useMemo(() => {
     let totalProfit = 0;
     let totalLoss = 0;
-    let totalTax = 0;
-    let totalShippingCost = 0;
-    let totalFees = 0;
     let counts: Record<string, number> = {
       'في_انتظار_المكالمة': 0,
       'جاري_المراجعة': 0, 'قيد_التنفيذ': 0, 'تم_الارسال': 0, 'قيد_الشحن': 0,
-      'تم_توصيلها': 0, 'تم_التحصيل': 0, 'مرتجع': 0, 'مرتجع_جزئي': 0,
-      'فشل_التوصيل': 0, 'ملغي': 0
+      'تم_توصيلها': 0, 'تم_التحصيل': 0, 'مدفوعة': 0, 'مرتجع': 0, 'مرتجع_جزئي': 0,
+      'فشل_التوصيل': 0, 'تمت_الاعادة_لشركة_الشحن': 0, 'ملغي': 0, 'مؤجل': 0, 'مجدول': 0
     };
 
     orders.forEach((o: Order) => {
@@ -137,31 +134,18 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
       const { profit, loss } = calculateOrderProfitLoss(o, settings);
       totalProfit += profit;
       totalLoss += loss;
-
-      // Real detailed breakdown for Wuilt/Advanced and other connected platforms
-      if (o.status === 'تم_التحصيل') {
-        totalTax += o.taxAmountReal || o.taxAmount || 0;
-        totalShippingCost += o.shippingCost || 0; // Real shipping cost from platform if any
-        totalFees += (o as any).feesAmount || 0;
-      }
     });
 
-    return { 
-        net: totalProfit - totalLoss, 
-        totalTax,
-        totalShippingCost,
-        totalFees,
-        counts, 
-        total: orders.length 
-    };
+    return { net: totalProfit - totalLoss, counts, total: orders.length };
   }, [orders, settings]);
 
   const chartData = [
     { name: 'بانتظار مكالمة', value: stats.counts['في_انتظار_المكالمة'], color: '#06b6d4' },
     { name: 'مراجعة', value: stats.counts['جاري_المراجعة'], color: '#a855f7' },
-    { name: 'تحصيل', value: stats.counts['تم_التحصيل'], color: '#22c55e' },
-    { name: 'مرتجع', value: stats.counts['مرتجع'] + stats.counts['فشل_التوصيل'], color: '#ef4444' },
-    { name: 'في الطريق', value: stats.counts['قيد_الشحن'] + stats.counts['تم_الارسال'], color: '#0ea5e9' }
+    { name: 'تحصيل', value: stats.counts['تم_التحصيل'] + stats.counts['مدفوعة'], color: '#22c55e' },
+    { name: 'مرتجع', value: stats.counts['مرتجع'] + stats.counts['فشل_التوصيل'] + stats.counts['تمت_الاعادة_لشركة_الشحن'], color: '#ef4444' },
+    { name: 'في الطريق', value: stats.counts['قيد_الشحن'] + stats.counts['تم_الارسال'], color: '#0ea5e9' },
+    { name: 'مؤجل/مجدول', value: stats.counts['مؤجل'] + stats.counts['مجدول'], color: '#6366f1' }
   ];
 
   const lowStockProducts = settings.products.filter(p => p.stockQuantity < 5);
@@ -222,19 +206,13 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-12">
               <div className="space-y-2">
-                <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">الأرباح الصافية (المنصات المربوطة)</p>
+                <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">صافي الأرباح</p>
                 <h4 className="text-4xl font-black text-slate-900 dark:text-white tabular-nums">
                   {stats.net.toLocaleString()} <span className="text-lg font-bold text-slate-400">ج.م</span>
                 </h4>
-                <div className="flex flex-col gap-1 mt-2">
-                    <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                        <span>الضرائب المستقطعة:</span>
-                        <span className="text-rose-500">-{stats.totalTax.toLocaleString()} ج.م</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                        <span>تكاليف الشحن والرسوم:</span>
-                        <span className="text-rose-500">-{(stats.totalShippingCost + stats.totalFees).toLocaleString()} ج.م</span>
-                    </div>
+                <div className="flex items-center gap-1.5 text-emerald-500 text-sm font-bold">
+                  <TrendingUp size={16} />
+                  <span>+12.5%</span>
                 </div>
               </div>
 
@@ -310,41 +288,6 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
         </motion.div>
 
         {/* Inventory & Alerts - Bento Card */}
-        <motion.div variants={itemVariants} className="md:col-span-6 glass-card p-8 rounded-3xl">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest text-[11px]">سجل النشاط اللحظي</h3>
-            <Activity size={18} className="text-indigo-500" />
-          </div>
-          
-          <div className="space-y-4 max-h-[300px] overflow-y-auto no-scrollbar">
-            {settings.activityLogs && settings.activityLogs.length > 0 ? (
-                settings.activityLogs.slice(0, 10).map((log, index) => (
-                    <div key={log.id} className="flex gap-3 items-start group">
-                        <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
-                            log.type === 'order' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 
-                            log.type === 'stock' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : 
-                            log.type === 'sync' ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.4)]' : 
-                            'bg-slate-400'
-                        }`} />
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <p className="text-sm font-bold text-slate-800 dark:text-slate-200 group-hover:text-primary transition-colors">{log.action}</p>
-                                <span className="text-[10px] text-slate-400 font-medium">{new Date(log.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
-                            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{log.details}</p>
-                        </div>
-                    </div>
-                ))
-            ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                    <Zap size={32} className="opacity-20 mb-3" />
-                    <p className="text-xs font-bold">لا يوجد نشاط مسجل حالياً</p>
-                </div>
-            )}
-          </div>
-        </motion.div>
-
-        {/* Inventory - Bento Card */}
         <motion.div variants={itemVariants} className="md:col-span-6 glass-card p-8 rounded-3xl">
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">تنبيهات المخزون</h3>

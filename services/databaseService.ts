@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js';
+import { supabase } from './supabaseClient';
 import { Store, StoreData, User, Product, Order, Transaction, Supplier, SupplyOrder, Review, AbandonedCart, ActivityLog, Employee, DiscountCode, Collection, CustomPage, PaymentMethod, CustomerProfile, GlobalOption, ShippingCarrierIntegration } from '../types';
 import { INITIAL_SETTINGS } from '../constants';
 
@@ -6,7 +6,6 @@ const LOCAL_STORAGE_PREFIX = 'wuilt_backup_';
 
 // --- Local Storage Helpers (Backup) ---
 const getLocal = (key: string) => {
-    if (typeof window === 'undefined') return null;
     try {
         const item = localStorage.getItem(LOCAL_STORAGE_PREFIX + key);
         return item ? JSON.parse(item) : null;
@@ -17,7 +16,6 @@ const getLocal = (key: string) => {
 };
 
 const saveLocal = (key: string, data: any) => {
-    if (typeof window === 'undefined') return;
     try {
         if (key !== 'global' && data && data.settings) {
             // It's a store data object. Let's make it lighter for backup to avoid quota errors.
@@ -108,52 +106,28 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
     try {
         // Fetching for ALL 17 Tables in chunks to prevent 'TypeError: Failed to fetch'
         // caused by overwhelming AI Studio proxy / browser connection limits
-        const [
-            storeRes,
-            productsRes,
-            ordersRes,
-            transactionsRes,
-            suppliersRes,
-            supplyOrdersRes,
-            reviewsRes,
-            abandonedCartsRes,
-            activityLogsRes,
-            employeesRes,
-            discountsRes,
-            collectionsRes,
-            pagesRes,
-            paymentMethodsRes,
-            customersRes,
-            globalOptionsRes,
-            shippingIntRes
-        ] = await Promise.all([
-            supabase.from('stores_data').select('settings, name').eq('id', storeId).single(),
-            supabase.from('products').select('*').eq('store_id', storeId),
-            supabase.from('orders').select('*').eq('store_id', storeId),
-            supabase.from('transactions').select('*').eq('store_id', storeId),
-            supabase.from('suppliers').select('*').eq('store_id', storeId),
-            supabase.from('supply_orders').select('*').eq('store_id', storeId),
-            supabase.from('reviews').select('*').eq('store_id', storeId),
-            supabase.from('abandoned_carts').select('*').eq('store_id', storeId),
-            supabase.from('activity_logs').select('*').eq('store_id', storeId),
-            supabase.from('employees').select('*, users(full_name, email)').eq('store_id', storeId),
-            supabase.from('discount_codes').select('*').eq('store_id', storeId),
-            supabase.from('collections').select('*').eq('store_id', storeId),
-            supabase.from('custom_pages').select('*').eq('store_id', storeId),
-            supabase.from('payment_methods').select('*').eq('store_id', storeId),
-            supabase.from('customers').select('*').eq('store_id', storeId),
-            supabase.from('global_options').select('*').eq('store_id', storeId),
-            supabase.from('shipping_integrations').select('*').eq('store_id', storeId)
-        ]);
+        const storeRes = await supabase.from('stores_data').select('settings, name').eq('id', storeId).single();
+        const productsRes = await supabase.from('products').select('*').eq('store_id', storeId);
+        const ordersRes = await supabase.from('orders').select('*').eq('store_id', storeId);
+        const transactionsRes = await supabase.from('transactions').select('*').eq('store_id', storeId);
+        
+        const suppliersRes = await supabase.from('suppliers').select('*').eq('store_id', storeId);
+        const supplyOrdersRes = await supabase.from('supply_orders').select('*').eq('store_id', storeId);
+        const reviewsRes = await supabase.from('reviews').select('*').eq('store_id', storeId);
+        const abandonedCartsRes = await supabase.from('abandoned_carts').select('*').eq('store_id', storeId);
+        
+        const activityLogsRes = await supabase.from('activity_logs').select('*').eq('store_id', storeId);
+        const employeesRes = await supabase.from('employees').select('*, users(full_name, email)').eq('store_id', storeId);
+        const discountsRes = await supabase.from('discount_codes').select('*').eq('store_id', storeId);
+        const collectionsRes = await supabase.from('collections').select('*').eq('store_id', storeId);
+        
+        const pagesRes = await supabase.from('custom_pages').select('*').eq('store_id', storeId);
+        const paymentMethodsRes = await supabase.from('payment_methods').select('*').eq('store_id', storeId);
+        const customersRes = await supabase.from('customers').select('*').eq('store_id', storeId);
+        const globalOptionsRes = await supabase.from('global_options').select('*').eq('store_id', storeId);
+        const shippingIntRes = await supabase.from('shipping_integrations').select('*').eq('store_id', storeId);
 
-        // If major tables fail, abort refresh to prevent clearing local state with empty/null data
-        const criticalErrors = [storeRes, productsRes, ordersRes].filter(r => r.error);
-        if (criticalErrors.length > 0) {
-            console.error("Critical fetch errors during getStoreData:", criticalErrors);
-            throw new Error(`Failed to fetch critical store data: ${criticalErrors[0].error?.message}`);
-        }
-
-        if (!storeRes.data) {
+        if (storeRes.error || !storeRes.data) {
             console.log(`Store ${storeId} not found in relational DB, trying legacy...`);
             const legacyData = await fetchLegacyDocument(storeId);
             // Also check legacy data for products
@@ -166,28 +140,21 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
 
         // --- Reconstruct Data Types ---
 
-        // Mapping products with extra safety for details
         let products: Product[] = (productsRes.data || []).map((p: any) => ({
             id: p.id,
-            name: p.name || 'منتج بدون اسم',
-            sku: p.sku || `SKU-${p.id}`,
-            price: Number(p.price) || 0,
+            name: p.name,
+            sku: p.sku,
+            price: p.price,
             stockQuantity: p.stock_quantity,
-            ...(p.details || {})
+            ...p.details
         }));
-
-        console.log(`[databaseService] Fetched ${products.length} products from relational table for store ${storeId}`);
-
-        // Fallback: If relational table is empty but legacy settings had products, use legacy
-        const legacyProducts = (storeRes.data.settings?.products || []);
-        if (products.length === 0 && legacyProducts.length > 0) {
-            console.log(`[databaseService] Relational products table is empty, falling back to ${legacyProducts.length} legacy products from settings.`);
-            products = legacyProducts;
-        }
         
-        // REMOVED: Incomplete seeding logic that was causing data to "disappear" 
-        // when DB returned empty results. Seeding should only happen on store creation.
-
+        // If no products are found in the database, seed them from the initial settings.
+        // This acts as a one-time migration for existing stores.
+        if (products.length === 0 && INITIAL_SETTINGS.products.length > 0) {
+            console.log(`No products found in DB for store ${storeId}. Seeding from initial settings.`);
+            products = INITIAL_SETTINGS.products;
+        }
 
         const orders: Order[] = (ordersRes.data || []).map((o: any) => ({
             id: o.id,
@@ -208,22 +175,46 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
             ...t.details
         }));
 
-        const suppliers: Supplier[] = (suppliersRes.data || []).map((s: any) => ({
-            id: s.id,
-            name: s.name,
-            phone: s.phone,
-            address: s.address,
-            notes: s.notes
-        }));
+        const suppliers: Supplier[] = (suppliersRes.data || []).map((s: any) => {
+            let extraInfo = {};
+            try {
+                if (s.notes && s.notes.startsWith('{') && s.notes.endsWith('}')) {
+                    extraInfo = JSON.parse(s.notes);
+                }
+            } catch (e) {
+                // Not JSON, just regular notes
+            }
 
-        const supplyOrders: SupplyOrder[] = (supplyOrdersRes.data || []).map((s: any) => ({
-            id: s.id,
-            supplierId: s.supplier_id,
-            totalCost: s.total_cost,
-            date: s.date,
-            items: s.items,
-            status: s.status
-        }));
+            return {
+                id: s.id,
+                name: s.name,
+                phone: s.phone,
+                address: s.address,
+                notes: extraInfo && (extraInfo as any).notes !== undefined ? (extraInfo as any).notes : s.notes,
+                ...(extraInfo as any)
+            };
+        });
+
+        const supplyOrders: SupplyOrder[] = (supplyOrdersRes.data || []).map((s: any) => {
+            let itemsList = s.items || [];
+            let metadata = {};
+            
+            // Sync fallback: if items is packed with metadata (to bypass missing columns)
+            if (s.items && !Array.isArray(s.items) && s.items._is_packed) {
+                itemsList = s.items.data || [];
+                metadata = s.items.metadata || {};
+            }
+
+            return {
+                id: s.id,
+                supplierId: s.supplier_id,
+                totalCost: s.total_cost,
+                date: s.date,
+                items: itemsList,
+                status: s.status,
+                ...metadata
+            };
+        });
 
         const reviews: Review[] = (reviewsRes.data || []).map((r: any) => ({
             id: r.id,
@@ -377,34 +368,20 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         const { 
             products = [], suppliers = [], supplyOrders = [], reviews = [], abandonedCarts = [], activityLogs = [],
             employees = [], discountCodes = [], collections = [], customPages = [], paymentMethods = [],
-            globalOptions = [], shippingIntegrations = []
+            globalOptions = [], shippingIntegrations = [],
+            ...cleanSettings 
         } = data.settings;
         
         const { orders = [], wallet = { balance: 0, transactions: [] }, customers = [] } = data;
         
-        // DEBUG LOGGING: Track data volume
-        console.log(`[databaseService] [SAVE] Store ${store.id}: ${orders.length} orders, ${products.length} products found in state`);
-        
-        // Anti-Wipe Guard: If for some reason state is completely empty but DB has data, skip syncAndDelete to prevent accidental wipe
-        const isDataSuspiciouslyEmpty = orders.length === 0 && products.length === 0 && wallet.transactions.length === 0;
-        
-        if (isDataSuspiciouslyEmpty) {
-            const { count: dbOrdersCount } = await supabase.from('orders').select('*', { count: 'exact', head: true }).eq('store_id', store.id);
-            if ((dbOrdersCount || 0) > 0) {
-                console.warn(`[databaseService] [SAVE] Anti-Wipe Guard triggered: Local state is empty but DB has ${dbOrdersCount} orders. Aborting relational sync to protect data.`);
-                // We still save to stores_data settings as a low-risk operation, but skip the table syncs
-            }
-        }
-
-        // Keep all data in settings as a redundant backup (no more cleanSettings removal)
-        const settingsToSave = data.settings;
-
         // --- Handle Deletions by Syncing ---
         const syncAndDelete = async (tableName: string, stateItems: any[], dbIdColumn = 'id', stateIdColumn = 'id') => {
-            const { data: dbItems, error: fetchError } = await supabase
+            let query = supabase
                 .from(tableName)
-                .select(dbIdColumn)
+                .select(`${dbIdColumn}${tableName === 'orders' ? ', details' : ''}`)
                 .eq('store_id', store.id);
+            
+            const { data: dbItems, error: fetchError } = await query;
 
             if (fetchError) {
                 console.error(`Sync Fetch Error on table '${tableName}'. Deletion sync skipped. Error: ${fetchError.message}`);
@@ -414,16 +391,18 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             const dbIds = new Set(dbItems.map((item: any) => item[dbIdColumn]));
             const stateIds = new Set(stateItems.map(item => item[stateIdColumn]));
             
-            const idsToDelete = [...dbIds].filter(id => !stateIds.has(id));
+            // If it's the orders table, filter out synced ones that are NOT in state
+            const idsToDelete = [...dbItems]
+                .filter((item: any) => {
+                    if (tableName === 'orders') {
+                        // We previously protected synced orders here, but it caused issues with intentional deletions.
+                        // Now we allow any item missing from state to be deleted.
+                    }
+                    return !stateIds.has(item[dbIdColumn]);
+                })
+                .map((item: any) => item[dbIdColumn]);
 
             if (idsToDelete.length > 0) {
-                // SAFETY: If stateItems is empty but dB has more than 5 items, skip deletion to prevent accidental wipe
-                // (Unless it's a small table or intentional clear)
-                if (stateItems.length === 0 && dbIds.size > 5) {
-                    console.warn(`[SYNC] Skipping deletion for table '${tableName}' because local state is empty while DB has ${dbIds.size} items. Likely a stale/incomplete state.`, { storeId: store.id });
-                    return;
-                }
-
                 const { error: deleteError } = await supabase
                     .from(tableName)
                     .delete()
@@ -432,14 +411,13 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
 
                 if (deleteError) {
                     console.error(`Sync Delete Error on table '${tableName}'. Some items may not have been deleted. Error: ${deleteError.message}`);
-                    // Don't throw
                 }
             }
         };
 
         // Execute all sync operations sequentially to prevent fetch limits hitting AI Studio proxy
-        // await syncAndDelete('products', products); // REMOVED: Managed by explicit delete
-        // await syncAndDelete('orders', orders); // REMOVED: Managed by explicit delete
+        await syncAndDelete('products', products);
+        await syncAndDelete('orders', orders);
         await syncAndDelete('transactions', wallet.transactions);
         await syncAndDelete('suppliers', suppliers);
         await syncAndDelete('supply_orders', supplyOrders);
@@ -460,14 +438,8 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             if (payload && payload.length > 0) {
                 const uniquePayload = Array.from(new Map(payload.map(item => [String(item.id || `${item.store_id}_${item.phone}`), item])).values());
                 if (uniquePayload.length === 0) return;
-                
-                try {
-                    const { error } = await supabase.from(table).upsert(uniquePayload, { onConflict });
-                    if (error) throw new Error(`${table} save failed: ${error.message} - ${JSON.stringify(error.details)}`);
-                } catch (e: any) {
-                    console.error(`VERBOSE ERROR saving to table ${table}:`, e);
-                    throw e;
-                }
+                const { error } = await supabase.from(table).upsert(uniquePayload, { onConflict });
+                if (error) throw new Error(`${table} save failed: ${error.message} - ${JSON.stringify(error.details)}`);
             }
         };
 
@@ -481,8 +453,31 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             return { id, store_id: store.id, order_number: orderNumber, customer_name: customerName, status, date, total_price, details };
         });
         const transactionsPayload = wallet.transactions.map(t => ({ id: t.id, store_id: store.id, type: t.type, amount: t.amount, date: t.date, category: t.category, note: t.note }));
-        const suppliersPayload = suppliers.map(s => ({ ...s, store_id: store.id }));
-        const supplyOrdersPayload = supplyOrders.map(so => { const { supplierId, totalCost, ...rest } = so; return { ...rest, store_id: store.id, supplier_id: supplierId, total_cost: totalCost, date: so.date } });
+        const suppliersPayload = suppliers.map(s => {
+            const { id, name, phone, address, notes, ...extra } = s;
+            // Store extra fields (like balance) as a JSON string in notes if they exist
+            let finalNotes = notes;
+            if (Object.keys(extra).length > 0) {
+                finalNotes = JSON.stringify({ notes, ...extra });
+            }
+            return { id, store_id: store.id, name, phone, address, notes: finalNotes };
+        });
+        const supplyOrdersPayload = supplyOrders.map(so => { 
+            const { id, supplierId, totalCost, date, items, status, ...metadata } = so; 
+            return { 
+                id, 
+                store_id: store.id, 
+                supplier_id: supplierId, 
+                total_cost: totalCost, 
+                date, 
+                items: { 
+                    _is_packed: true, 
+                    data: items, 
+                    metadata 
+                }, 
+                status
+            };
+        });
         const reviewsPayload = reviews.map(r => { const { productId, customerName, ...rest } = r; return { ...rest, store_id: store.id, product_id: productId, customer_name: customerName }; });
         const abandonedCartsPayload = abandonedCarts.map(ac => ({ id: ac.id, store_id: store.id, customer_name: ac.customerName, customer_phone: ac.customerPhone, total_value: ac.totalValue, date: ac.date, items: ac.items }));
         const activityLogsPayload = activityLogs.map(al => ({ id: al.id, store_id: store.id, user_name: al.user, action: al.action, details: al.details, timestamp: al.timestamp, date: al.date }));
@@ -519,7 +514,7 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         
         const { error: storeError } = await supabase
             .from('stores_data')
-            .update({ settings: settingsToSave, name: store.name })
+            .update({ settings: cleanSettings, name: store.name })
             .eq('id', store.id);
         if (storeError) throw storeError;
 
@@ -636,6 +631,7 @@ export const clearStoreData = async (storeId: string, targets: string[]): Promis
     }
 };
 
+// FIX: Implement migrateAllLegacyDataToRelational to resolve export error.
 export const migrateAllLegacyDataToRelational = async (users: User[]): Promise<{ success: boolean, summary: string, error?: string }> => {
     let summaryLog: string[] = [];
     try {
@@ -674,20 +670,4 @@ export const migrateAllLegacyDataToRelational = async (users: User[]): Promise<{
         summaryLog.push(`\n** MIGRATION FAILED **: ${err.message}`);
         return { success: false, summary: summaryLog.join('\n'), error: err.message };
     }
-};
-
-// Re-adding databaseService object to avoid breaking imports
-export const databaseService = {
-  getStoreData,
-  saveStoreData,
-  getGlobalData,
-  saveGlobalData,
-  clearStoreData,
-  migrateAllLegacyDataToRelational,
-  upsertCustomer: async (data: any) => { return await supabase.from('customers').upsert(data); },
-  upsertOrder: async (data: any, status: string) => { return await supabase.from('orders').upsert({ ...data, status }); },
-  upsertProduct: async (data: any) => { return await supabase.from('products').upsert(data); },
-  deleteProduct: async (productId: string) => { return await supabase.from('products').delete().eq('id', productId); },
-  deleteOrder: async (orderId: string) => { return await supabase.from('orders').delete().eq('id', orderId); },
-  upsertShipment: async (data: any) => { return await supabase.from('shipments').upsert(data); },
 };

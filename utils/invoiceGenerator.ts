@@ -2,16 +2,43 @@
 import { Order, Settings, OrderItem } from '../types';
 
 export const generateInvoiceHTML = (order: Order, settings: Settings, storeName: string) => {
-  const totalAmount = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount);
+  const itemDiscounts = order.items.reduce((sum, item) => {
+    let discount = 0;
+    if (item.discountValue) {
+      if (item.discountType === 'percentage') {
+        discount = (item.price * item.quantity) * (item.discountValue / 100);
+      } else {
+        discount = item.discountValue * item.quantity;
+      }
+    }
+    return sum + discount;
+  }, 0);
+
+  const totalAmount = order.totalAmountOverride ?? (order.productPrice + order.shippingFee + (order.tax || 0) - order.discount - itemDiscounts);
   
-  const itemsHtml = order.items.map((item: OrderItem) => `
-    <tr style="border-bottom: 1px solid #eee;">
-      <td style="padding: 10px; text-align: right;">${item.name}</td>
-      <td style="padding: 10px; text-align: center;">${item.quantity}</td>
-      <td style="padding: 10px; text-align: center;">${item.price.toLocaleString()}</td>
-      <td style="padding: 10px; text-align: center; font-weight: bold;">${(item.price * item.quantity).toLocaleString()}</td>
-    </tr>
-  `).join('');
+  const itemsHtml = order.items.map((item: OrderItem) => {
+    let discountText = '';
+    let netPrice = item.price * item.quantity;
+    if (item.discountValue) {
+      const discountAmount = item.discountType === 'percentage' 
+        ? (item.price * item.quantity) * (item.discountValue / 100)
+        : item.discountValue * item.quantity;
+      discountText = `<br><span style="color: red; font-size: 10px;">خصم: -${discountAmount.toLocaleString()}</span>`;
+      netPrice -= discountAmount;
+    }
+
+    return `
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 10px; text-align: right;">
+          ${item.name}
+          ${discountText}
+        </td>
+        <td style="padding: 10px; text-align: center;">${item.quantity}</td>
+        <td style="padding: 10px; text-align: center;">${item.price.toLocaleString()}</td>
+        <td style="padding: 10px; text-align: center; font-weight: bold;">${(item.price * item.quantity).toLocaleString()}</td>
+      </tr>
+    `;
+  }).join('');
 
   return `
     <!DOCTYPE html>
@@ -50,8 +77,9 @@ export const generateInvoiceHTML = (order: Order, settings: Settings, storeName:
             <p style="margin:5px 0 0; font-size:12px; color:#777;">${settings.customization.footerText}</p>
           </div>
           <div style="text-align: left;">
-            <h2 style="margin: 0; color: #333;">فاتورة مبيعات</h2>
-            <p style="margin: 5px 0; font-family: monospace;">#${order.orderNumber}</p>
+            <h2 style="margin: 0; color: #333 text-align: left;">فاتورة مبيعات</h2>
+            <p style="margin: 5px 0; font-family: monospace;">الطلب: #${order.orderNumber}</p>
+            ${order.referenceNumber ? `<p style="margin: 5px 0; font-size: 14px; color: #555;">المرجع: ${order.referenceNumber}</p>` : ''}
             <p style="margin: 5px 0; font-size: 14px; color: #777;">${new Date().toLocaleDateString('ar-EG')}</p>
           </div>
         </div>
@@ -90,10 +118,20 @@ export const generateInvoiceHTML = (order: Order, settings: Settings, storeName:
             <span>المجموع الفرعي:</span>
             <span>${order.productPrice.toLocaleString()} ج.م</span>
           </div>
+          ${itemDiscounts > 0 ? `
+          <div class="total-row" style="color: red;">
+            <span>خصومات الأصناف:</span>
+            <span>-${itemDiscounts.toLocaleString()} ج.م</span>
+          </div>` : ''}
           <div class="total-row">
             <span>مصاريف الشحن:</span>
             <span>${order.shippingFee.toLocaleString()} ج.م</span>
           </div>
+          ${order.tax && order.tax > 0 ? `
+          <div class="total-row">
+            <span>الضريبة:</span>
+            <span>${order.tax.toLocaleString()} ج.م</span>
+          </div>` : ''}
           ${order.discount > 0 ? `
           <div class="total-row" style="color: red;">
             <span>خصم:</span>

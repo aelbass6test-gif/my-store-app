@@ -122,9 +122,9 @@ const CustomerHistory = ({ allOrders, customerPhone, currentOrderId }: { allOrde
         const duplicates = customerOrders.filter(o => o.id !== currentOrderId && o.status === 'في_انتظار_المكالمة');
         
         const totalOrders = customerOrders.length;
-        const successfulOrders = customerOrders.filter(o => ['تم_توصيلها', 'تم_التحصيل'].includes(o.status)).length;
-        const returnedOrders = customerOrders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام'].includes(o.status)).length;
-        const totalSpent = customerOrders.filter(o => ['تم_توصيلها', 'تم_التحصيل'].includes(o.status)).reduce((sum, o) => sum + (o.totalAmountOverride ?? (o.productPrice + o.shippingFee - (o.discount || 0))), 0);
+        const successfulOrders = customerOrders.filter(o => ['تم_توصيلها', 'تم_التحصيل', 'مدفوعة'].includes(o.status)).length;
+        const returnedOrders = customerOrders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status)).length;
+        const totalSpent = customerOrders.filter(o => ['تم_توصيلها', 'تم_التحصيل', 'مدفوعة'].includes(o.status)).reduce((sum, o) => sum + (o.totalAmountOverride ?? (o.productPrice + o.shippingFee - (o.discount || 0))), 0);
         const successRate = totalOrders > 0 ? (successfulOrders / totalOrders) * 100 : 0;
         
         let classification = { text: 'عميل جديد', color: 'blue', icon: <UserIcon size={14}/> };
@@ -308,8 +308,11 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         
         const isStoreOwner = currentUser?.stores?.some(s => s.id === activeStore?.id);
         
+        // Read only if from synced source (per user request)
+        if (activeOrder.source === 'synced' || activeOrder.platform === 'wuilt') return true;
+        
         // Read only if cancelled or returned
-        if (activeOrder.status === 'ملغي' || activeOrder.status === 'مرتجع' || activeOrder.status === 'مرتجع_جزئي' || activeOrder.status === 'فشل_التوصيل') return true;
+        if (activeOrder.status === 'ملغي' || activeOrder.status === 'مرتجع' || activeOrder.status === 'مرتجع_جزئي' || activeOrder.status === 'فشل_التوصيل' || activeOrder.status === 'تمت_الاعادة_لشركة_الشحن') return true;
         // Read only if assigned to someone else and not me
         if (activeOrder.assignedTo && activeOrder.assignedTo !== currentUser?.phone && !isStoreOwner) return true;
         
@@ -812,7 +815,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
     };
 
     const handleActionSubmit = (action: string) => {
-        if (!activeOrder || !currentUser) return;
+        if (!activeOrder || !currentUser || activeOrder.source === 'synced') return;
         
         if ((action === 'تم الإلغاء' || action === 'مؤجل') && !cancellationReason && !actionNotes) {
              alert('يرجى اختيار سبب الإلغاء/التأجيل أو كتابة ملاحظة.');
@@ -1418,9 +1421,11 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                             <div className="flex justify-between items-start">
                                                 <h4 className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
                                                     {order.customerName}
-                                                    {order.lockedBy && order.lockedBy !== currentUser?.phone && (
-                                                        <Lock size={12} className="text-red-500" />
-                                                    )}
+                                                    {(order.lockedBy && order.lockedBy !== currentUser?.phone) || order.source === 'synced' ? (
+                                                        <span title={order.source === 'synced' ? "طلب متزامن - للقراءة فقط" : "يتم إدارته من قِبل موظف آخر"}>
+                                                            <Lock size={12} className={order.source === 'synced' ? "text-indigo-500" : "text-red-500"} />
+                                                        </span>
+                                                    ) : null}
                                                     {order.status === 'في_انتظار_المكالمة' && (
                                                         <span className="bg-red-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
                                                             جديد

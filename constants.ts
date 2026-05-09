@@ -70,27 +70,35 @@ export const EGYPT_GOVERNORATES = [
 ];
 
 export const generateEgyptShippingOptions = (): ShippingOption[] => {
-  return EGYPT_GOVERNORATES.map((gov, index) => ({
-    id: `gov_${index + 1}`,
-    label: gov.name,
-    details: 'شحن محافظات',
-    price: 0, 
-    baseWeight: 1,
-    extraKgPrice: 0,
-    returnAfterPrice: 0,
-    returnWithoutPrice: 0,
-    exchangePrice: 0,
-    cities: gov.cities.map((city, cIndex) => ({
-      id: `city_${index + 1}_${cIndex + 1}`,
-      name: city,
-      shippingPrice: 0,
-      extraKgPrice: 0,
-      returnAfterPrice: 0,
-      returnWithoutPrice: 0,
-      exchangePrice: 0,
-      useParentFees: true
-    }))
-  }));
+  return EGYPT_GOVERNORATES.map((gov, index) => {
+    // Sensible defaults
+    let defaultPrice = 60;
+    if (["القاهرة", "الجيزة", "الإسكندرية"].includes(gov.name)) defaultPrice = 35;
+    else if (["القليوبية", "المنوفية", "الدقهلية", "الغربية", "الشرقية", "البحيرة", "دمياط", "كفر الشيخ"].includes(gov.name)) defaultPrice = 45;
+    else if (["بورسعيد", "الإسماعيلية", "السويس"].includes(gov.name)) defaultPrice = 50;
+
+    return {
+      id: `gov_${index + 1}`,
+      label: gov.name,
+      details: 'شحن محافظات',
+      price: defaultPrice, 
+      baseWeight: 1,
+      extraKgPrice: 10,
+      returnAfterPrice: 35,
+      returnWithoutPrice: 35,
+      exchangePrice: 35,
+      cities: gov.cities.map((city, cIndex) => ({
+        id: `city_${index + 1}_${cIndex + 1}`,
+        name: city,
+        shippingPrice: defaultPrice,
+        extraKgPrice: 10,
+        returnAfterPrice: 35,
+        returnWithoutPrice: 35,
+        exchangePrice: 35,
+        useParentFees: true
+      }))
+    };
+  });
 };
 
 export const DEFAULT_WHATSAPP_TEMPLATES = [
@@ -191,11 +199,15 @@ export const ORDER_STATUSES = [
   'قيد_الشحن', 
   'تم_توصيلها',
   'تم_التحصيل',
+  'مدفوعة',
   'مرتجع', 
   'مرتجع_بعد_الاستلام',
   'تم_الاستبدال',
   'مرتجع_جزئي', 
-  'فشل_التوصيل', 
+  'فشل_التوصيل',
+  'تمت_الاعادة_لشركة_الشحن',
+  'مؤجل',
+  'مجدول',
   'ملغي',
   'مؤرشف'
 ] as const;
@@ -208,11 +220,15 @@ export const ORDER_STATUS_METADATA: Record<string, { label: string, color: strin
   'قيد_الشحن': { label: 'قيد الشحن', color: 'bg-sky-500', icon: 'Truck' },
   'تم_توصيلها': { label: 'تم التوصيل', color: 'bg-emerald-500', icon: 'CheckCircle' },
   'تم_التحصيل': { label: 'تم التحصيل', color: 'bg-emerald-600', icon: 'Coins' },
+  'مدفوعة': { label: 'مدفوعة', color: 'bg-emerald-700', icon: 'CreditCard' },
   'مرتجع': { label: 'مرتجع', color: 'bg-rose-500', icon: 'RefreshCcw' },
   'مرتجع_بعد_الاستلام': { label: 'مرتجع بعد الاستلام', color: 'bg-rose-600', icon: 'RefreshCcw' },
   'تم_الاستبدال': { label: 'تم الاستبدال', color: 'bg-indigo-500', icon: 'RefreshCcw' },
   'مرتجع_جزئي': { label: 'مرتجع جزئي', color: 'bg-orange-500', icon: 'RefreshCcw' },
   'فشل_التوصيل': { label: 'فشل التوصيل', color: 'bg-red-500', icon: 'XCircle' },
+  'تمت_الاعادة_لشركة_الشحن': { label: 'عادت لشركة الشحن', color: 'bg-red-600', icon: 'XCircle' },
+  'مؤجل': { label: 'طلب مؤجل (هولد)', color: 'bg-orange-600', icon: 'AlertCircle' },
+  'مجدول': { label: 'طلب مجدول', color: 'bg-indigo-600', icon: 'Clock' },
   'ملغي': { label: 'ملغي', color: 'bg-slate-500', icon: 'XCircle' },
   'مؤرشف': { label: 'مؤرشف', color: 'bg-slate-400', icon: 'Archive' },
 };

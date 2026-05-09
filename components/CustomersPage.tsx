@@ -70,11 +70,11 @@ const CustomersPage: React.FC<CustomersPageProps> = ({ orders, loyaltyData, upda
           customer.firstOrderDate = order.date;
       }
 
-      if (order.status === 'تم_التحصيل' || order.status === 'تم_توصيلها') {
+      if (order.status === 'تم_التحصيل' || order.status === 'تم_توصيلها' || order.status === 'مدفوعة') {
           customer.successfulOrders += 1;
           const orderTotal = (order.productPrice + order.shippingFee) - (order.discount || 0);
           customer.totalSpent += orderTotal;
-      } else if (order.status === 'مرتجع' || order.status === 'فشل_التوصيل') {
+      } else if (order.status === 'مرتجع' || order.status === 'فشل_التوصيل' || order.status === 'تمت_الاعادة_لشركة_الشحن') {
           customer.returnedOrders += 1;
       }
     });

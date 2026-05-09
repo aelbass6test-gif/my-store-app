@@ -21,11 +21,12 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": [
-        "./src/*"
+        "./*"
       ]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["node_modules", "dist", "supabase"]
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["supabase/**/*", "my-store-app-main/**/*", "node_modules"]
 }

@@ -91,8 +91,17 @@ create table if not exists public.supply_orders (
   date timestamp with time zone,
   items jsonb default '[]',
   status text,
+  details jsonb default '{}',
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
+
+-- Add details column if not exists (for existing tables)
+do $$ 
+begin 
+  if not exists (select 1 from information_schema.columns where table_name='supply_orders' and column_name='details') then
+    alter table public.supply_orders add column details jsonb default '{}';
+  end if;
+end $$;
 
 -- 7. Reviews (Linked to Products)
 create table if not exists public.reviews (

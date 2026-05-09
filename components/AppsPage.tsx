@@ -1,15 +1,12 @@
 import React, { useState } from 'react';
 import { StoreData, Product } from '../types';
 import { CheckCircle2, ChevronLeft, Cable, HardDriveDownload, Search, Shapes, X, RefreshCw, ListChecks, CheckCircle, Package, ImageIcon, Save, XCircle } from 'lucide-react';
-import { apiCall } from '../services/apiService';
-import { browserSyncPlatform, fetchWuiltProducts } from '../services/platformService';
-import { supabase } from '../services/supabaseClient';
 
 interface AppsPageProps {
   storeId: string;
   storeData: StoreData | null;
-  onUpdateStoreData: (data: StoreData) => void;
-  onRefresh?: () => void;
+  onUpdateSettings: (settings: any) => void;
+  onRefresh?: () => Promise<void>;
   hostUrl: string;
 }
 
@@ -77,7 +74,7 @@ const AVAILABLE_APPS = [
   }
 ];
 
-export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefresh, hostUrl }: AppsPageProps) {
+export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefresh, hostUrl }: AppsPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -85,20 +82,12 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
   const [config, setConfig] = useState<Partial<PlatformConfig>>({});
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncingProducts, setSyncingProducts] = useState<string | null>(null);
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{success: boolean, message: string} | null>(null);
 
   // Selective Sync State
   const [showSelectiveModal, setShowSelectiveModal] = useState(false);
   const [selectableProducts, setSelectableProducts] = useState<Product[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [isFetchingSelectable, setIsFetchingSelectable] = useState(false);
-  const [notification, setNotification] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-
-  const showLocalNotification = (type: 'success' | 'error', text: string) => {
-      setNotification({ type, text });
-      setTimeout(() => setNotification(null), 3000);
-  };
 
   const connectedPlatforms = storeData?.settings?.connectedPlatforms || [];
   const platformConfigs: Record<string, PlatformConfig> = (storeData?.settings as any)?.platformConfigs || {};
@@ -123,17 +112,14 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
             }
         }
     };
-    onUpdateStoreData({ ...storeData, settings: updatedSettings as any });
+    onUpdateSettings(updatedSettings);
     setIsModalOpen(false);
     setConfig({});
   };
 
   const handleUninstallApp = (appId: string) => {
-      console.log('Attempting to uninstall app:', appId);
-      if (!storeData) {
-          console.error('No store data available during uninstall');
-          return;
-      }
+      if (!storeData) return;
+      if (!window.confirm('هل أنت متأكد من رغبتك في إيقاف الربط؟ سيؤدي هذا إلى تعطيل التحديثات اللحظية للسلة والطلبات.')) return;
 
       const currentPlatforms = storeData.settings.connectedPlatforms || [];
       const currentConfigs = (storeData.settings as any).platformConfigs || {};
@@ -144,14 +130,9 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
       const updatedSettings = {
           ...storeData.settings,
           connectedPlatforms: currentPlatforms.filter(id => id !== appId),
-          platformConfigs: newConfigs,
-          // If we are disconnecting the main integration, we should also clear the legacy integration field
-          integration: storeData.settings.integration?.platform === appId ? null : storeData.settings.integration
+          platformConfigs: newConfigs
       };
-      
-      console.log('Updating store settings for uninstall:', updatedSettings);
-      onUpdateStoreData({ ...storeData, settings: updatedSettings as any });
-      showLocalNotification('success', 'تم إيقاف الربط بنجاح.');
+      onUpdateSettings(updatedSettings);
   };
 
   const updateSyncTime = (appId: string, syncType: 'orders' | 'products') => {
@@ -169,43 +150,29 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
             }
         }
     };
-    onUpdateStoreData({ ...storeData, settings: updatedSettings as any });
+    onUpdateSettings(updatedSettings);
   };
 
   const handleSyncOrders = async (appId: string) => {
     setSyncing(appId);
     try {
-        console.log(`[AppsPage] Attempting server sync for ${appId}...`);
-        const response = await apiCall(`/api/sync/platform/${appId}/${storeId}?type=orders`, {
+        const response = await fetch(`/api/sync/platform/${appId}/${storeId}?type=orders`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
 
+        const data = await response.json();
+
         if (response.ok) {
-            const data = await response.json();
+            if (onRefresh) await onRefresh();
             updateSyncTime(appId, 'orders');
-            if (onRefresh) onRefresh();
-            showLocalNotification('success', `نجحت المزامنة! تم استيراد ${data.inserted || data.count || 0} طلب جديد.`);
-            return;
+            alert(`نجحت المزامنة! تم استيراد ${data.inserted} طلب جديد.`);
+        } else {
+            alert(`خطأ في المزامنة: ${data.error}`);
         }
-        
-        // Fallback or explicit browser sync if server isn't ready
-        console.warn(`[AppsPage] Server sync failed (Status: ${response.status}). Falling back to Browser Sync...`);
-        const result = await browserSyncPlatform(appId, storeId, 'orders');
-        updateSyncTime(appId, 'orders');
-        if (onRefresh) onRefresh();
-        showLocalNotification('success', `نجحت المزامنة (محلياً)! تم استيراد ${result.count} طلب جديد.`);
-    } catch (error: any) {
-        console.warn('[AppsPage] Server sync failed with error, trying direct browser sync...', error.message);
-        try {
-            const result = await browserSyncPlatform(appId, storeId, 'orders');
-            updateSyncTime(appId, 'orders');
-            if (onRefresh) onRefresh();
-            showLocalNotification('success', `نجحت المزامنة (محلياً)! تم استيراد ${result.count} طلب جديد.`);
-        } catch (innerError: any) {
-            console.error('Browser sync failed:', innerError);
-            alert(`خطأ في المزامنة: ${innerError.message}`);
-        }
+    } catch (error) {
+        console.error('Sync error:', error);
+        alert('حدث خطأ أثناء محاولة الاتصال بالسيرفر للمزامنة.');
     } finally {
         setSyncing(null);
     }
@@ -213,44 +180,29 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
 
   const handleSyncProducts = async (appId: string, selectedIds?: string[]) => {
     const isSelective = !!selectedIds;
-    if (isSelective) setSyncingProducts(appId); 
+    if (isSelective) setSyncingProducts(appId); // Use local state for modal button
     else setSyncing(appId + '-products');
 
     try {
-        console.log(`[AppsPage] Attempting server product sync for ${appId}...`);
-        const response = await apiCall(`/api/sync/platform/${appId}/${storeId}?type=products`, {
+        const response = await fetch(`/api/sync/platform/${appId}/${storeId}?type=products`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: selectedIds ? JSON.stringify({ selectedIds }) : undefined
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            updateSyncTime(appId, 'products');
-            if (onRefresh) onRefresh();
-            showLocalNotification('success', isSelective ? `تم استيراد ${data.inserted || data.count || 0} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.inserted || data.count || 0} منتج.`);
-            if (isSelective) setShowSelectiveModal(false);
-            return;
-        }
+        const data = await response.json();
 
-        console.warn(`[AppsPage] Server product sync failed (Status: ${response.status}). Falling back to Browser Sync...`);
-        const result = await browserSyncPlatform(appId, storeId, 'products', selectedIds);
-        updateSyncTime(appId, 'products');
-        if (onRefresh) onRefresh();
-        showLocalNotification('success', `نجحت المزامنة (محلياً)! تم تحديث ${result.count} منتج.`);
-        if (isSelective) setShowSelectiveModal(false);
-    } catch (error: any) {
-        console.warn('[AppsPage] Server product sync failed, trying direct browser sync...', error.message);
-        try {
-            const result = await browserSyncPlatform(appId, storeId, 'products', selectedIds);
+        if (response.ok) {
+            if (onRefresh) await onRefresh();
             updateSyncTime(appId, 'products');
-            if (onRefresh) onRefresh();
-            showLocalNotification('success', `نجحت المزامنة (محلياً)! تم تحديث ${result.count} منتج.`);
+            alert(isSelective ? `تم استيراد ${data.inserted} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.inserted} منتج.`);
             if (isSelective) setShowSelectiveModal(false);
-        } catch (innerError: any) {
-            console.error('Browser product sync failed:', innerError);
-            showLocalNotification('error', `خطأ في المزامنة: ${innerError.message}`);
+        } else {
+            alert(`خطأ في مزامنة المنتجات: ${data.error}`);
         }
+    } catch (error) {
+        console.error('Product sync error:', error);
+        alert('حدث خطأ أثناء محاولة التزامن للمنتجات.');
     } finally {
         setSyncingProducts(null);
         setSyncing(null);
@@ -259,45 +211,20 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
 
   const handleFetchSelectable = async (appId: string) => {
      setIsFetchingSelectable(true);
+     console.log(`[DEBUG] Fetching selectable products for ${appId}, storeId: ${storeId}`);
      try {
-         console.log(`[AppsPage] Attempting server preview for ${appId}...`);
-         const response = await apiCall(`/api/sync/platform/${appId}/${storeId}/preview?type=products`);
-         
+         const response = await fetch(`/api/sync/platform/${appId}/${storeId}/preview?type=products`);
+         const data = await response.json();
+         console.log(`[DEBUG] Preview response status: ${response.status}, data:`, data);
          if (response.ok) {
-             const data = await response.json();
              setSelectableProducts(data.items || []);
              setShowSelectiveModal(true);
-             return;
+         } else {
+             alert(`فشل جلب المنتجات: ${data.error}`);
          }
-
-         console.warn(`[AppsPage] Server preview failed (Status: ${response.status}). Falling back to Direct Fetch...`);
-         if (appId === 'wuilt') {
-            const config = storeData?.settings?.platformConfigs?.[appId] || (storeData?.settings?.integration?.platform === appId ? storeData.settings.integration : null);
-            if (config?.apiKey) {
-                const products = await fetchWuiltProducts(config.apiKey, config.shopId);
-                setSelectableProducts(products);
-                setShowSelectiveModal(true);
-                return;
-            }
-         }
-         
-         throw new Error(`تعذر جلب البيانات من السيرفر (Status: ${response.status})`);
-     } catch (error: any) {
-         console.warn('[AppsPage] Server preview failed, trying direct fetch...', error.message);
-         try {
-            if (appId === 'wuilt') {
-                const config = storeData?.settings?.platformConfigs?.[appId] || (storeData?.settings?.integration?.platform === appId ? storeData.settings.integration : null);
-                if (config?.apiKey) {
-                    const products = await fetchWuiltProducts(config.apiKey, config.shopId);
-                    setSelectableProducts(products);
-                    setShowSelectiveModal(true);
-                    return;
-                }
-            }
-            alert(`خطأ: ${error.message}`);
-         } catch (innerError: any) {
-            alert(`خطأ في جلب البيانات: ${innerError.message}`);
-         }
+     } catch (error) {
+         console.error('[DEBUG] Fetch error:', error);
+         alert('حدث خطأ أثناء محاولة الاتصال بالسيرفر.');
      } finally {
          setIsFetchingSelectable(false);
      }
@@ -306,54 +233,7 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
   const openSettings = (app) => {
       setSelectedApp(app);
       setConfig(platformConfigs[app.id] || {});
-      setTestResult(null);
       setIsModalOpen(true);
-  };
-
-  const handleTestConnection = async () => {
-    if (!config.apiKey || !selectedApp) {
-        setTestResult({ success: false, message: 'يرجى إدخال مفتاح الـ API أولاً.' });
-        return;
-    }
-    
-    setIsTesting(true);
-    setTestResult(null);
-    
-    try {
-        console.log(`[AppsPage] Testing preview for ${selectedApp.id}...`);
-        const response = await apiCall(`/api/sync/platform/${selectedApp.id}/${storeId}/preview?type=products&apiKey=${config.apiKey}&shopId=${config.shopId || ''}`);
-        
-        if (response.ok) {
-            const data = await response.json();
-            if (data.items) {
-                setTestResult({ success: true, message: 'تم الاتصال بنجاح! تم العثور على المنتجات.' });
-                return;
-            }
-        }
-
-        console.warn(`[AppsPage] Server test failed (Status: ${response.status}). Falling back to browser-direct check...`);
-        if (selectedApp.id === 'wuilt') {
-            const products = await fetchWuiltProducts(config.apiKey!, config.shopId);
-            setTestResult({ success: true, message: `تم الاتصال (مباشر) بنجاح! تم العثور على ${products.length} منتج.` });
-            return;
-        }
-
-        throw new Error(`فشل اختبار الاتصال (Status: ${response.status})`);
-    } catch (error: any) {
-        console.warn('[AppsPage] Server test failed, trying browser-direct...', error.message);
-        try {
-            if (selectedApp.id === 'wuilt') {
-                const products = await fetchWuiltProducts(config.apiKey!, config.shopId);
-                setTestResult({ success: true, message: `تم الاتصال (مباشر) بنجاح! تم العثور على ${products.length} منتج.` });
-                return;
-            }
-            setTestResult({ success: false, message: `فشل الاتصال: ${error.message}` });
-        } catch (innerError: any) {
-            setTestResult({ success: false, message: `خطأ في الاتصال: ${innerError.message}` });
-        }
-    } finally {
-        setIsTesting(false);
-    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -370,13 +250,6 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
 
   return (
     <div className="space-y-6">
-      {/* Notifications Area */}
-      {notification && (
-          <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 rounded-xl shadow-2xl animate-in slide-in-from-bottom-5 duration-300 font-bold flex items-center gap-3 ${notification.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
-              {notification.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-              {notification.text}
-          </div>
-      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">مركز التحكم والربط (Integrations)</h2>
@@ -452,12 +325,12 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
                                 {syncing === app.id ? 'جاري...' : 'مزامنة الطلبات'}
                             </button>
                             <button 
-                                onClick={() => app.supportedFeatures?.includes('products') ? handleFetchSelectable(app.id) : alert('هذه الميزة غير متوفرة لهذه المنصة حالياً.')}
+                                onClick={() => handleFetchSelectable(app.id)}
                                 disabled={syncing === app.id + '-products' || isFetchingSelectable}
                                 className={`py-2 text-[11px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${syncing === app.id + '-products' ? 'bg-indigo-100 text-indigo-400' : 'bg-slate-900 text-white dark:bg-slate-700 hover:bg-black dark:hover:bg-slate-600'}`}
                              >
                                 {syncing === app.id + '-products' || isFetchingSelectable ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <HardDriveDownload className="w-3.5 h-3.5" />}
-                                {isFetchingSelectable ? 'جلب...' : 'مزامنة المنتجات'}
+                                {isFetchingSelectable ? 'جاري...' : 'مزامنة المنتجات'}
                             </button>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
@@ -547,71 +420,40 @@ export default function AppsPage({ storeId, storeData, onUpdateStoreData, onRefr
                                 type="password"
                                 placeholder="أدخل مفتاح الربط هنا"
                                 value={config.apiKey || ''}
-                                onChange={(e) => {
-                                 setConfig({...config, apiKey: e.target.value});
-                                 if (setTestResult) setTestResult(null);
-                               }}
+                                onChange={(e) => setConfig({...config, apiKey: e.target.value})}
                                 className="w-full px-4 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                                 dir="ltr"
                               />
                            </div>
-                           
-                           <button 
-                             onClick={handleTestConnection}
-                             disabled={isTesting}
-                             type="button"
-                             className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${isTesting ? 'bg-slate-100 text-slate-400' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'}`}
-                           >
-                             {isTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Cable className="w-4 h-4" />}
-                             {isTesting ? 'جاري فحص الاتصال...' : 'اختبار الاتصال بالمتجر'}
-                           </button>
-
-                           {testResult && (
-                             <div className={`p-3 rounded-xl text-[11px] font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2 ${testResult.success ? 'bg-green-50 text-green-700 border border-green-100 dark:bg-green-900/20 dark:text-green-400 dark:border-green-900/30' : 'bg-red-50 text-red-700 border border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900/30'}`}>
-                               {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                               {testResult.message}
-                             </div>
-                           )}
                         </div>
                      </div>
 
-                      {/* Webhook Configuration Section */}
-                      <div className={`space-y-4 pt-4 border-t border-slate-100 dark:border-slate-700 ${config.isActive === false ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
-                         <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 ">
-                            <Webhook className="w-4 h-4" />
-                            <h4 className="font-bold text-sm uppercase tracking-wider">إعدادات الـ Webhook (للاستقبال اللحظي)</h4>
-                         </div>
-                         
-                         <div className="space-y-4">
-                            <div className="bg-blue-50 dark:bg-blue-900/10 p-3 rounded-xl border border-blue-100 dark:border-blue-900/20">
-                               <p className="text-[11px] text-blue-800 dark:text-blue-300 leading-relaxed font-medium">
-                                  <strong>مهم جداً:</strong> لكي تصل الطلبات لمتجرك لحظة حدوثها، انسخ الرابط أدناه وضعه في لوحة تحكم ويلت (إعدادات Webhook) واختر حدث (Order Created).
-                               </p>
-                            </div>
-
-                            <div className="space-y-3">
-                               <div className="space-y-1">
-                                  <label className="text-[10px] font-bold text-slate-400 mr-1">رابط المزامنة السحابية (Cloud Proxy - مستحسن):</label>
-                                  <div className="flex border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900 group">
-                                    <input 
-                                      type="text"
-                                      readOnly 
-                                      value={`https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/${selectedApp.id}-webhook?storeId=${storeId}`} 
-                                      className="w-full px-4 py-3 text-[11px] font-mono bg-transparent text-left focus:outline-none overflow-x-auto"
-                                      dir="ltr"
-                                    />
-                                    <button 
-                                      onClick={() => copyToClipboard(`https://keqmlcqymkohxzcouxfi.supabase.co/functions/v1/${selectedApp.id}-webhook?storeId=${storeId}`)} 
-                                      className={`px-4 flex items-center justify-center transition-all border-r dark:border-slate-700 min-w-[70px] font-bold text-[10px] ${copied ? 'bg-green-500 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}
-                                    >
-                                      {copied ? 'تم!' : 'نسخ'}
-                                    </button>
-                                  </div>
-                                  <p className="text-[9px] text-slate-400 mr-1">هذا الرابط أكثر استقراراً ويضمن وصول الطلبات حتى لو كان التطبيق مغلقاً.</p>
-                               </div>
-                            </div>
-                         </div>
-                      </div>
+                     {/* Webhook Configuration Section */}
+                     <div className={`space-y-4 pt-2 border-t border-slate-100 dark:border-slate-700 ${config.isActive === false ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
+                        <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 ">
+                           <Webhook className="w-4 h-4" />
+                           <h4 className="font-bold text-sm uppercase tracking-wider">إعدادات الـ Webhook (للاستقبال اللحظي)</h4>
+                        </div>
+                        
+                        <div className="space-y-3">
+                           <p className="text-[11px] text-slate-500 mr-1 leading-relaxed">انسخ الرابط التالي وضعه في إعدادات الـ Webhook في لوحة تحكم {selectedApp.name} لاستقبال الطلبات والسلات بمجرد حدوثها.</p>
+                           <div className="flex border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900 group">
+                             <input 
+                               type="text"
+                               readOnly 
+                               value={getWebhookUrl(selectedApp.id)} 
+                               className="w-full px-4 py-3 text-xs font-mono bg-transparent text-left focus:outline-none"
+                               dir="ltr"
+                             />
+                             <button 
+                               onClick={() => copyToClipboard(getWebhookUrl(selectedApp.id))} 
+                               className={`px-6 flex items-center justify-center transition-all border-r dark:border-slate-700 min-w-[80px] font-bold text-xs ${copied ? 'bg-green-500 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'}`}
+                             >
+                               {copied ? 'تم النسخ!' : 'نسخ الرابط'}
+                             </button>
+                           </div>
+                        </div>
+                     </div>
 
                      <div className="bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-400 p-4 rounded-xl text-xs leading-relaxed border border-amber-100 dark:border-amber-900/20">
                          <strong>توصية:</strong> الربط عبر الـ API يضمن جلب البيانات السابقة، بينما الـ Webhook يضمن استمرارية العمل اللحظي دون تدخل منك.

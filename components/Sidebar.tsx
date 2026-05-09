@@ -97,7 +97,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
                 { to: '/design-templates', label: 'القوالب', icon: <LayoutGrid size={20} /> },
                 { to: '/customize-store', label: 'المظهر', icon: <Brush size={20} /> },
                 { to: '/apps', label: 'الربط والتطبيقات', icon: <AppWindow size={20} /> },
-                { to: '/webhook-logs', label: 'سجل الـ Webhooks', icon: <Code size={20} /> },
                 { to: '/pages', label: 'الصفحات', icon: <FileText size={20} /> },
                 { to: '/domain', label: 'النطاق', icon: <Globe size={20} /> },
             ]
@@ -126,8 +125,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
     ];
 
     const SidebarContent = () => (
-        <div className="h-full flex flex-col p-4 bg-transparent no-scrollbar">
-            <div className="py-2 px-2 mb-6 flex justify-between items-center">
+        <div className="h-full flex flex-col p-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
+            <div className="py-6 px-2 mb-2 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/20">
                         <ShoppingCart size={22} />
@@ -189,7 +188,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
     return (
         <>
             {/* Desktop Sidebar */}
-            <div className="hidden md:flex w-[260px] bg-transparent h-full flex-col sticky top-0 transition-all">
+            <div className="hidden md:flex w-72 bg-white dark:bg-slate-900 border-l border-slate-200/60 dark:border-slate-800/60 h-full flex-col sticky top-0">
                 <SidebarContent />
             </div>
 
@@ -200,7 +199,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
             >
                 <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} tabIndex={-1}></div>
                 <div 
-                    className={`absolute top-0 right-0 h-full w-[280px] bg-white dark:bg-[#09090b] shadow-2xl transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+                    className={`absolute top-0 right-0 h-full w-72 bg-white dark:bg-slate-900 shadow-2xl transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
                 >
                     {isOpen && <SidebarContent />}
                 </div>

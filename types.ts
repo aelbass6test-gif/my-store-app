@@ -14,7 +14,7 @@ declare global {
   };
 }
 
-export type OrderStatus = 'في_انتظار_المكالمة' | 'جاري_المراجعة' | 'قيد_التنفيذ' | 'تم_الارسال' | 'قيد_الشحن' | 'تم_توصيلها' | 'تم_التحصيل' | 'مرتجع' | 'مرتجع_جزئي' | 'فشل_التوصيل' | 'ملغي' | 'مؤرشف' | 'مرتجع_بعد_الاستلام' | 'تم_الاستبدال';
+export type OrderStatus = 'في_انتظار_المكالمة' | 'جاري_المراجعة' | 'قيد_التنفيذ' | 'تم_الارسال' | 'قيد_الشحن' | 'تم_توصيلها' | 'تم_التحصيل' | 'مرتجع' | 'مرتجع_جزئي' | 'فشل_التوصيل' | 'ملغي' | 'مؤرشف' | 'مرتجع_بعد_الاستلام' | 'تم_الاستبدال' | 'تمت_الاعادة_لشركة_الشحن' | 'مدفوعة' | 'مؤجل' | 'مجدول';
 export type PaymentStatus = 'بانتظار الدفع' | 'مدفوع' | 'مدفوع جزئياً' | 'مرتجع';
 export type PreparationStatus = 'بانتظار التجهيز' | 'جاهز';
 
@@ -60,16 +60,6 @@ export interface ShippingCarrierIntegration {
   isConnected: boolean;
 }
 
-export interface CompositeCategory {
-  id: string;
-  name: string;
-  image?: string;
-  selectionType: 'single' | 'multiple';
-  isRequired: boolean;
-  allowSameItemMultipleTimes: boolean;
-  productIds: string[];
-}
-
 export interface ProductVariant {
   id: string;
   sku: string;
@@ -86,17 +76,11 @@ export interface Product {
   sku: string;
   name: string;
   description?: string;
-  shortDescription?: string;
   price: number;
-  discountPrice?: number;
   weight: number;
-  length?: number;
-  width?: number;
-  height?: number;
   costPrice: number;
   thumbnail?: string;
   images?: string[];
-  isActive?: boolean;
   inStock?: boolean;
   stock?: number;
   stockQuantity: number | null;
@@ -105,17 +89,6 @@ export interface Product {
   options: string[];
   variants: ProductVariant[];
   
-  productType?: 'standard' | 'composite';
-  compositeCategories?: CompositeCategory[];
-  compositeDiscountType?: 'percentage' | 'fixed';
-  compositeDiscountValue?: number;
-  enableCompositeDiscount?: boolean;
-
-  // SEO
-  seoTitle?: string;
-  seoDescription?: string;
-  slug?: string;
-
   // For profit calculation
   useProfitPercentage?: boolean; // Legacy, will be phased out
   profitPercentage?: number;     // For margin mode
@@ -274,15 +247,30 @@ export interface Supplier {
   phone: string;
   address?: string;
   notes?: string;
+  balance?: number; // Zero or Positive means debt to them
+}
+
+export interface SupplyOrderItem {
+  productId: string;
+  name?: string;
+  quantity: number;
+  bonusQuantity?: number;
+  cost: number;
+  discountValue?: number;
+  discountType?: 'amount' | 'percentage';
 }
 
 export interface SupplyOrder {
   id: string;
   supplierId: string;
   date: string;
-  items: { productId: string; quantity: number; cost: number }[];
+  orderNumber?: string;
+  referenceNumber?: string;
+  items: SupplyOrderItem[];
   totalCost: number;
-  status: 'completed';
+  status: 'completed' | 'draft' | 'cancelled';
+  notes?: string;
+  paymentMethod?: 'cash' | 'credit';
 }
 
 export interface ActivityLog {
@@ -292,20 +280,6 @@ export interface ActivityLog {
   details: string;
   date: string;
   timestamp: number;
-  type?: 'order' | 'stock' | 'system' | 'sync' | 'financial';
-  metadata?: any;
-}
-
-export interface BackgroundTask {
-  id: string;
-  name: string;
-  description: string;
-  progress: number; // 0 to 100
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  startTime: string;
-  endTime?: string;
-  error?: string;
-  type: 'sync_orders' | 'sync_products' | 'bulk_edit' | 'export' | 'report';
 }
 
 export interface CustomPage {
@@ -337,9 +311,6 @@ export interface Collection {
   name: string;
   image?: string;
   description?: string;
-  seoTitle?: string;
-  seoDescription?: string;
-  slug?: string;
 }
 
 export interface WhatsAppTemplate {
@@ -415,7 +386,6 @@ export interface Settings {
   suppliers: Supplier[];
   supplyOrders: SupplyOrder[];
   activityLogs: ActivityLog[];
-  backgroundTasks?: BackgroundTask[];
   customPages: CustomPage[];
   paymentMethods: PaymentMethod[];
   globalOptions: GlobalOption[]; 
@@ -436,6 +406,8 @@ export interface OrderItem {
   thumbnail?: string;
   variantId?: string;
   variantDescription?: string;
+  discountValue?: number;
+  discountType?: 'amount' | 'percentage';
 }
 
 export interface ConfirmationLog {
@@ -472,8 +444,14 @@ export interface AuditLog {
 
 export interface Order {
   id: string;
+  store_id?: string;
+  source?: 'manual' | 'synced' | 'saas';
+  platform?: string;
   orderNumber: string;
+  referenceNumber?: string;
   waybillNumber?: string;
+  trackingUrl?: string;
+  platformOrderId?: string;
   date: string;
   shippingCompany: string;
   shippingArea: string;
@@ -482,37 +460,37 @@ export interface Order {
   customerPhone2?: string;
   customerAddress: string;
   city?: string;
-  totalAmount?: number;
-  taxAmount?: number;
-  insuranceFee?: number;
-  inspectionFee?: number;
-  isTaxed?: boolean;
   governorate?: string;
   notes?: string;
   items: OrderItem[];
   shippingFee: number;
+  tax?: number;
   status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  paymentMethod?: string;
   productName: string; 
   productPrice: number; 
   productCost: number; 
+  totalPrice?: number;
+  insuranceFee?: number;
+  inspectionFee?: number;
   weight: number; 
   discount: number;
   totalAmountOverride?: number;
   totalAmountOverrideReason?: string;
-  includeInspectionFee: boolean; 
-  isInsured: boolean; 
+  includeInspectionFee?: boolean; 
+  isInsured?: boolean; 
   inspectionFeeDeducted?: boolean;
   inspectionFeePaidByCustomer?: boolean;
   shippingAndInsuranceDeducted?: boolean;
   returnFeeDeducted?: boolean;
   collectionProcessed?: boolean;
-  paymentStatus: PaymentStatus;
   preparationStatus: PreparationStatus;
   classification?: string;
-  paymentMethod?: string;
   redeemedPoints?: number;
   pointsDiscount?: number;
   loyaltyPointsAwarded?: boolean;
+  stockDeducted?: boolean;
   orderType?: 'standard' | 'exchange';
   originalOrderId?: string;
   confirmationLogs?: ConfirmationLog[];
@@ -529,14 +507,6 @@ export interface Order {
   auditLogs?: AuditLog[];
   callAttempts?: CallAttempt[];
   sentiment?: string;
-  sourcePlatform?: string;
-  sourceStatus?: string;
-  
-  // Specific for Wuilt/Advanced Profit
-  shippingCost?: number;
-  taxAmountReal?: number;
-  feesAmount?: number;
-  netProfit?: number;
 }
 
 export interface StoreData {
@@ -566,8 +536,6 @@ export interface Store {
   language: string;
   currency: string;
   url: string;
-  customDomain?: string;
-  subdomain?: string;
   creationDate: string;
 }
 

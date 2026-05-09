@@ -12,9 +12,8 @@
   },
   "dependencies": {
     "@google/genai": "^0.15.0",
-    "@supabase/supabase-js": "^2.103.3",
+    "@supabase/supabase-js": "^2.45.4",
     "@tailwindcss/vite": "^4.2.1",
-    "axios": "^1.15.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "firebase": "^12.10.0",

@@ -33,32 +33,29 @@ export const calculateOrderProfitLoss = (order: Order, settings: Settings): { pr
   const inspectionCost = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
   
   const isInsured = order.isInsured ?? true;
-  const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
+  // Use order.insuranceFee if available (synced from platform), otherwise calculate
+  const insuranceFee = order.insuranceFee ?? (isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0);
+  const effectiveInspectionCost = order.inspectionFee ?? inspectionCost;
 
-  if (order.status === 'تم_التحصيل') {
-    const codFee = calculateCodFee(order, settings);
-    const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : inspectionCost;
-    
-    const platformTaxes = order.taxAmountReal || order.taxAmount || 0;
-    const platformFees = order.feesAmount || 0;
-    const platformShippingCost = order.shippingCost || 0;
-    
-    profit = (order.productPrice - order.productCost - insuranceFee - inspectionAdjustment - codFee - platformTaxes - platformFees - platformShippingCost);
-  } else if (order.status === 'مرتجع' || order.status === 'فشل_التوصيل') {
+  if (order.status === 'تم_التحصيل' || order.status === 'مدفوعة') {
+    const codFee = order.status === 'مدفوعة' ? 0 : calculateCodFee(order, settings);
+    const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : effectiveInspectionCost;
+    profit = (order.productPrice - order.productCost - insuranceFee - inspectionAdjustment - codFee);
+  } else if (order.status === 'مرتجع' || order.status === 'فشل_التوصيل' || order.status === 'تمت_الاعادة_لشركة_الشحن') {
     const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;
     const returnFeeAmount = applyReturnFee ? (useCustom ? (compFees?.returnShippingFee ?? 0) : settings.returnShippingFee) : 0;
-    const inspectionFeeCollected = order.inspectionFeePaidByCustomer ? inspectionCost : 0;
-    loss = (insuranceFee + order.shippingFee + inspectionCost + returnFeeAmount - inspectionFeeCollected);
+    const inspectionFeeCollected = order.inspectionFeePaidByCustomer ? effectiveInspectionCost : 0;
+    loss = (insuranceFee + order.shippingFee + effectiveInspectionCost + returnFeeAmount - inspectionFeeCollected);
   } else if (order.status === 'مرتجع_جزئي') {
-    loss = (insuranceFee + inspectionCost);
+    loss = (insuranceFee + effectiveInspectionCost);
   } else if (order.status === 'مرتجع_بعد_الاستلام') {
     const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;
     const returnFeeAmount = applyReturnFee ? (useCustom ? (compFees?.returnShippingFee ?? 0) : settings.returnShippingFee) : 0;
     
-    const inspectionFeeCollected = order.inspectionFeePaidByCustomer ? inspectionCost : 0;
+    const inspectionFeeCollected = order.inspectionFeePaidByCustomer ? effectiveInspectionCost : 0;
     const codFee = calculateCodFee(order, settings);
     
-    loss = (insuranceFee + order.shippingFee + inspectionCost + returnFeeAmount + codFee - inspectionFeeCollected);
+    loss = (insuranceFee + order.shippingFee + effectiveInspectionCost + returnFeeAmount + codFee - inspectionFeeCollected);
   }
   
   return { profit, loss, net: profit - loss };

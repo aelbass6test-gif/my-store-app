@@ -18,6 +18,10 @@ const statusInfo: Record<OrderStatusType, { label: string; color: string; icon: 
   مؤرشف: { label: 'مؤرشف', color: 'slate', icon: <Archive size={12}/> },
   مرتجع_بعد_الاستلام: { label: 'مرتجع بعد الاستلام', color: 'orange', icon: <RefreshCcw size={12}/> },
   تم_الاستبدال: { label: 'تم الاستبدال', color: 'slate', icon: <ArrowRightLeft size={12}/> },
+  تمت_الاعادة_لشركة_الشحن: { label: 'عادت لشركة الشحن', color: 'red', icon: <XCircle size={12}/> },
+  مدفوعة: { label: 'مدفوعة', color: 'emerald', icon: <CheckCircle size={12}/> },
+  مؤجل: { label: 'مؤجل', color: 'orange', icon: <Clock size={12}/> },
+  مجدول: { label: 'مجدول', color: 'blue', icon: <Clock size={12}/> },
 };
 
 const StatusBadge = ({ status }: { status: OrderStatusType }) => {

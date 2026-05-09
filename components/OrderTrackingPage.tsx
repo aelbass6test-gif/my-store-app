@@ -46,7 +46,7 @@ const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orders }) => {
   };
 
   const activeStepIndex = foundOrder ? statusSteps.findIndex(step => step.status === foundOrder.status) : -1;
-  const isFailed = foundOrder && ['ملغي', 'مرتجع', 'فشل_التوصيل'].includes(foundOrder.status);
+  const isFailed = foundOrder && ['ملغي', 'مرتجع', 'فشل_التوصيل', 'تمت_الاعادة_لشركة_الشحن'].includes(foundOrder.status);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 text-right" dir="rtl">
