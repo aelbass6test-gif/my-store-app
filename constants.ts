@@ -188,7 +188,9 @@ export const INITIAL_SETTINGS: Settings = {
     showAssignedOrders: true,
     showOrderStatuses: ['في_انتظار_المكالمة', 'قيد_التنفيذ', 'جاري_المراجعة'],
     showFollowUpReminders: true,
-  }
+  },
+  partners: [],
+  partnerTransactions: [],
 };
 
 export const ORDER_STATUSES = [

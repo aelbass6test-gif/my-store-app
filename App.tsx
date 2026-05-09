@@ -46,6 +46,8 @@ import AccountSettingsPage from './components/AccountSettingsPage';
 import CollectionsReportPage from './components/CollectionsReportPage';
 import ActivityLogsPage from './components/ActivityLogsPage';
 import SuppliersPage from './components/SuppliersPage';
+import PartnersPage from './components/PartnersPage';
+import PartnerProfilePage from './components/PartnerProfilePage';
 import PagesManager from './components/PagesManager';
 import PaymentSettingsPage from './components/PaymentSettingsPage';
 import DeveloperSettingsPage from './components/DeveloperSettingsPage';
@@ -1020,7 +1022,7 @@ export const AppComponent = () => {
                     <Route path="reviews" element={<ReviewsPage {...pageProps} />} />
                     <Route path="collections" element={<CollectionsPage {...pageProps} />} />
                     <Route path="product-options" element={<ProductOptionsPage {...pageProps} />} />
-                    <Route path="expenses" element={<ExpensesPage {...pageProps} />} />
+                    <Route path="expenses" element={<ExpensesPage {...pageProps} settings={pageProps.settings} updateSettings={pageProps.setSettings} />} />
                     <Route path="marketing" element={<MarketingPage {...pageProps} />} />
                     <Route path="ai-assistant" element={<ChatBot {...pageProps} />} />
                     <Route path="reports" element={<AnalyticsPage {...pageProps} />} />
@@ -1028,6 +1030,8 @@ export const AppComponent = () => {
                     <Route path="collections-report" element={<CollectionsReportPage {...pageProps} />} />
                     <Route path="activity-logs" element={<ActivityLogsPage logs={pageProps.settings.activityLogs || []} />} />
                     <Route path="suppliers" element={<SuppliersPage {...pageProps} />} />
+                    <Route path="partners" element={<PartnersPage settings={pageProps.settings} updateSettings={pageProps.setSettings} wallet={pageProps.wallet} setWallet={pageProps.setWallet} orders={pageProps.orders} />} />
+                    <Route path="partners/:partnerId" element={<PartnerProfilePage settings={pageProps.settings} updateSettings={pageProps.setSettings} wallet={pageProps.wallet} setWallet={pageProps.setWallet} orders={pageProps.orders} />} />
                     <Route path="pages" element={<PagesManager {...pageProps} />} />
                     <Route path="settings/payment" element={<PaymentSettingsPage {...pageProps} />} />
                     <Route path="settings/employees" element={<EmployeesPage {...pageProps} activeStoreId={activeStoreId} />} />
@@ -1059,7 +1063,7 @@ export const AppComponent = () => {
                     message="تم تفعيل المتجر الخاص بك بنجاح. يمكنك الآن البدء في استقبال الطلبات وإدارة منتجاتك بسهولة."
                 />
             )}
-            <GlobalSaveIndicator status={saveStatus} message={saveMessage} />
+            <GlobalSaveIndicator status={saveStatus} message={saveMessage} onRetry={forceSync} />
         </>
     );
 };
