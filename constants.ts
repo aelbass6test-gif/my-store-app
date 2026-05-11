@@ -191,6 +191,16 @@ export const INITIAL_SETTINGS: Settings = {
   },
   partners: [],
   partnerTransactions: [],
+  // Wallet Fees Defaults
+  depositFeePercent: 1,
+  withdrawalFeeType: 'flat',
+  withdrawalFeePercent: 1,
+  withdrawalFlatFee: 10,
+  sameDayWithdrawalFeeType: 'percent',
+  sameDayWithdrawalFeePercent: 1.5,
+  sameDayWithdrawalFlatFee: 50,
+  minWithdrawalFee: 25,
+  feeApplicableMethods: ['card', 'instapay', 'wallet'],
 };
 
 export const ORDER_STATUSES = [
