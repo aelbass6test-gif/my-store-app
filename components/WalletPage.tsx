@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Wallet as WalletIcon, Plus, Minus, ArrowUpRight, ArrowDownLeft, Trash2, Calendar, Shield, Eye, Truck, TrendingUp, Info, AlertTriangle, Coins, Receipt, X, Layers } from 'lucide-react';
-import { Wallet, Transaction, Order, Settings, TransactionCategory } from '../types';
-import { motion, Variants } from 'framer-motion';
+import { Wallet as WalletIcon, Plus, Minus, ArrowUpRight, ArrowDownLeft, Trash2, Calendar, Shield, Eye, Truck, TrendingUp, Info, AlertTriangle, AlertCircle, Coins, Receipt, X, Layers, CreditCard, Smartphone, Banknote, Settings as SettingsIcon, ChevronRight, Check, History, Search, Filter, CheckCircle, Clock } from 'lucide-react';
+import { Wallet, Transaction, Order, Settings, TransactionCategory, WithdrawRequest, WalletSettings, BankAccount } from '../types';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -11,7 +11,7 @@ const containerVariants = {
   }
 };
 
-const itemVariants: Variants = {
+const itemVariants = {
   hidden: { y: 20, opacity: 0 },
   visible: {
     y: 0,
@@ -20,518 +20,1692 @@ const itemVariants: Variants = {
   }
 };
 
-interface GroupedTransaction {
-    type: 'grouped';
-    orderNumber: string;
-    customerName: string;
-    transactions: Transaction[];
-    netAmount: number;
-    lastTransactionDate: string;
-    order: Order | undefined;
-}
-
-interface ManualTransaction {
-    type: 'manual';
-    transaction: Transaction;
-}
-
-type ProcessedTransaction = GroupedTransaction | ManualTransaction;
-
 interface WalletPageProps {
   wallet: Wallet;
   setWallet: React.Dispatch<React.SetStateAction<Wallet>>;
+  setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   orders: Order[];
   settings: Settings;
 }
 
-const TransactionDetailsModal: React.FC<{
-  transaction: ProcessedTransaction;
-  onClose: () => void;
-  onDelete: (id: string) => void;
-}> = ({ transaction, onClose, onDelete }) => {
-    const isGrouped = transaction.type === 'grouped';
-    const groupedTransaction = isGrouped ? transaction : {
-        type: 'grouped' as const,
-        orderNumber: 'يدوية',
-        customerName: 'معاملة يدوية',
-        transactions: [transaction.transaction],
-        netAmount: transaction.transaction.type === 'إيداع' ? transaction.transaction.amount : -transaction.transaction.amount,
-        lastTransactionDate: transaction.transaction.date,
-        order: undefined
-    };
-
-    const summary = useMemo(() => {
-        const deposits = groupedTransaction.transactions.filter(t => t.type === 'إيداع').reduce((sum, t) => sum + t.amount, 0);
-        const withdrawals = groupedTransaction.transactions.filter(t => t.type === 'سحب').reduce((sum, t) => sum + t.amount, 0);
-        return { deposits, withdrawals, net: deposits - withdrawals };
-    }, [groupedTransaction]);
-
-    return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
-                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
-                    <h3 className="font-black dark:text-white flex items-center gap-2">
-                        <Receipt className="text-blue-600" />
-                        {isGrouped ? `تفاصيل عمليات الأوردر #${groupedTransaction.orderNumber}` : 'تفاصيل المعاملة'}
-                    </h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-red-500"><X size={20}/></button>
-                </div>
-                <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-                    {groupedTransaction.transactions.map(t => (
-                        <div key={t.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg group">
-                            <div>
-                                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{t.note}</p>
-                                <p className="text-xs text-slate-400 font-mono">{new Date(t.date).toLocaleString('ar-EG')}</p>
-                            </div>
-                            <div className="flex items-center gap-4">
-                               <span className={`font-bold ${t.type === 'إيداع' ? 'text-emerald-500' : 'text-red-500'}`}>
-                                  {t.type === 'إيداع' ? '+' : '-'}{t.amount.toLocaleString()} ج.م
-                               </span>
-                               <button onClick={() => onDelete(t.id)} className="p-1 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                 <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 grid grid-cols-3 gap-4 text-center">
-                    <div>
-                        <p className="text-xs font-bold text-slate-400">إجمالي الإيداعات</p>
-                        <p className="font-black text-lg text-emerald-500">+{summary.deposits.toLocaleString()} ج.م</p>
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-slate-400">إجمالي السحوبات</p>
-                        <p className="font-black text-lg text-red-500">-{summary.withdrawals.toLocaleString()} ج.م</p>
-                    </div>
-                     <div>
-                        <p className="text-xs font-bold text-slate-400">الصافي</p>
-                        <p className={`font-black text-lg ${summary.net >= 0 ? 'text-blue-600' : 'text-orange-500'}`}>{summary.net.toLocaleString()} ج.م</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-interface DetailCardProps {
-  title: string;
-  value: number;
-  icon: React.ReactNode;
-  color: 'amber' | 'blue' | 'purple' | 'emerald' | 'red';
-  label: string;
-}
-
-const DetailCard: React.FC<DetailCardProps> = ({ title, value, icon, color, label }) => {
-  const colorClasses = {
-    amber: { bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-600' },
-    blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600' },
-    purple: { bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-600' },
-    emerald: { bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-600' },
-    red: { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-600' },
-  };
-  const currentColors = colorClasses[color];
-
-  return (
-    <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-      <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${currentColors.bg} ${currentColors.text}`}>
-          {icon}
-        </div>
-        <p className="text-xs font-bold text-slate-500">{title}</p>
-      </div>
-      <p className="text-2xl font-black text-slate-800 dark:text-white">{value.toLocaleString()} <span className="text-base font-bold text-slate-400">ج.م</span></p>
-      <p className="text-[10px] text-slate-400 font-bold">{label}</p>
-    </div>
-  );
-};
-
-
-const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, orders, settings }) => {
-  const [showModal, setShowModal] = useState(false);
-  const [modalType, setModalType] = useState<'إيداع' | 'سحب'>('إيداع');
+const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings, orders, settings }) => {
+  const [modalMode, setModalMode] = useState<'none' | 'charge' | 'withdraw' | 'settings' | 'history' | 'bank' | 'cod_history' | 'withdraw_confirm' | 'error'>('none');
+  const [errorConfig, setErrorConfig] = useState({ title: '', message: '' });
+  const [chargeMethod, setChargeMethod] = useState<'card' | 'wallet' | 'instapay'>('card');
+  const [withdrawMode, setWithdrawMode] = useState<'normal' | 'same_day'>('normal');
   const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  
-  // Custom dialog states
-  const [dialog, setDialog] = useState<{
-      isOpen: boolean;
-      title: string;
-      message: string;
-      onConfirm: () => void;
-  } | null>(null);
-
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
-
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-      setToast({message, type});
-      setTimeout(() => setToast(null), 3000);
-  };
-  const [activeTab, setActiveTab] = useState<'all' | 'orders' | 'returns' | 'collected' | 'manual'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'orders' | 'withdrawals' | 'manual'>('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
-  const [selectedTransaction, setSelectedTransaction] = useState<ProcessedTransaction | null>(null);
+  const [settingsScreen, setSettingsScreen] = useState<'main' | 'payment_methods' | 'withdraw_settings'>('main');
+  
+  // Local state for bank account editing
+  const [localBankDetails, setLocalBankDetails] = useState<BankAccount>(
+    wallet.settings?.bankAccount || { accountHolder: '', bankName: '', iban: '', accountNumber: '' }
+  );
+  const [localMobileWallet, setLocalMobileWallet] = useState(wallet.settings?.mobileWallet || '');
+  const [preferredMethod, setPreferredMethod] = useState<'bank' | 'wallet' | 'instapay'>(
+    (wallet.settings?.preferredWithdrawMethod as 'bank' | 'wallet' | 'instapay') || 'bank'
+  );
+  
+  const itemsPerPage = 10;
 
   const walletStats = useMemo(() => {
-    const liveBalance = wallet.transactions.reduce((sum, t) => t.type === 'إيداع' ? sum + t.amount : sum - t.amount, 0);
-    const totalOutboundShipping = wallet.transactions.filter(t => t.category === 'shipping').reduce((sum, t) => sum + t.amount, 0);
-    const totalInsuranceDeducted = wallet.transactions.filter(t => t.category === 'insurance').reduce((sum, t) => sum + t.amount, 0);
-    const totalInspectionFeesDeducted = wallet.transactions.filter(t => t.category === 'inspection').reduce((sum, t) => sum + t.amount, 0);
-    const totalCollectedGross = wallet.transactions.filter(t => t.category === 'collection').reduce((sum, t) => sum + t.amount, 0);
-    const totalCodFees = wallet.transactions.filter(t => t.category === 'cod').reduce((sum, t) => sum + t.amount, 0);
-    const totalReturnLoss = wallet.transactions.filter(t => t.category === 'return').reduce((sum, t) => sum + t.amount, 0);
-    return { liveBalance, totalOutboundShipping, totalInsuranceDeducted, totalInspectionFeesDeducted, totalCollectedGross, totalCodFees, totalReturnLoss };
-  }, [wallet.transactions]);
-  
-  const processedTransactions = useMemo((): ProcessedTransaction[] => {
-    const groupedByOrder: Record<string, { transactions: Transaction[], order: Order | undefined }> = {};
-    const manualTransactions: ManualTransaction[] = [];
-    const orderNumberRegex = /#(\S+)/;
-
-    wallet.transactions.forEach(t => {
-        const match = t.note.match(orderNumberRegex);
-        if (match && match[1]) {
-            const orderNumber = match[1];
-            if (!groupedByOrder[orderNumber]) {
-                groupedByOrder[orderNumber] = {
-                    transactions: [],
-                    order: orders.find(o => o.orderNumber === orderNumber)
-                };
-            }
-            groupedByOrder[orderNumber].transactions.push(t);
-        } else {
-            manualTransactions.push({ type: 'manual', transaction: t });
-        }
-    });
-
-    const groupedList: GroupedTransaction[] = Object.entries(groupedByOrder).map(([orderNumber, data]) => {
-        const netAmount = data.transactions.reduce((sum, t) => sum + (t.type === 'إيداع' ? t.amount : -t.amount), 0);
-        const sortedTransactions = data.transactions.sort((a, b) => new Date(b.id).getTime() - new Date(a.id).getTime());
+    // Current calculation is sum of transactions, ensuring amounts are numbers
+    // Deposits and Withdrawals in 'pending' status do NOT affect the live balance
+    // This satisfies the requirement that the balance doesn't drop/increase until approval
+    const liveBalance = wallet.transactions.reduce((sum, t) => {
+        const amount = Number(t.amount) || 0;
         
-        return {
-            type: 'grouped' as const,
-            orderNumber,
-            customerName: data.order?.customerName || 'عميل غير معروف',
-            transactions: sortedTransactions,
-            netAmount,
-            lastTransactionDate: sortedTransactions[0].date,
-            order: data.order
-        };
-    });
+        // Deposits: only include when completed
+        if (t.type === 'إيداع') {
+             return t.status === 'completed' ? sum + amount : sum;
+        }
+        
+        // Withdrawals: include both completed AND pending (reserve them)
+        if (t.type === 'سحب') {
+             return (t.status === 'rejected' || t.status === 'cancelled') ? sum : sum - amount;
+        }
+        
+        return sum;
+    }, 0);
 
-    const combinedList: ProcessedTransaction[] = [...groupedList, ...manualTransactions];
-    
-    return combinedList.sort((a, b) => {
-        const dateA = new Date(a.type === 'grouped' ? a.transactions[0].date : a.transaction.date).getTime();
-        const dateB = new Date(b.type === 'grouped' ? b.transactions[0].date : b.transaction.date).getTime();
-        return dateB - dateA;
-    });
-}, [wallet.transactions, orders]);
+    // Calculate sum of pending withdrawals for UI display
+    const pendingWithdrawalsSum = wallet.transactions.reduce((sum, t) => {
+        if (t.type === 'سحب' && t.status === 'pending') {
+            return sum + (Number(t.amount) || 0);
+        }
+        return sum;
+    }, 0);
 
-  const filteredData = useMemo(() => {
-      let data: ProcessedTransaction[] = [];
-      if (activeTab === 'all') {
-          data = processedTransactions;
-      } else if (activeTab === 'orders') {
-          data = processedTransactions.filter(t => t.type === 'grouped');
-      } else if (activeTab === 'manual') {
-          data = processedTransactions.filter(t => t.type === 'manual');
-      } else if (activeTab === 'returns') {
-          // Show individual return transactions even if they were part of a group
-          data = wallet.transactions
-              .filter(t => t.category === 'return')
-              .map(t => ({ type: 'manual' as const, transaction: t }))
-              .sort((a, b) => new Date(b.transaction.date).getTime() - new Date(a.transaction.date).getTime());
-      } else if (activeTab === 'collected') {
-          // Show individual collection transactions even if they were part of a group
-          data = wallet.transactions
-              .filter(t => t.category === 'collection')
-              .map(t => ({ type: 'manual' as const, transaction: t }))
-              .sort((a, b) => new Date(b.transaction.date).getTime() - new Date(a.transaction.date).getTime());
-      }
-      return data;
-  }, [activeTab, processedTransactions, wallet.transactions]);
-
-  const paginatedData = useMemo(() => {
-      const startIndex = (currentPage - 1) * itemsPerPage;
-      return filteredData.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredData, currentPage]);
-
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-  
-  const getCategoryDetails = (category?: string) => {
-    const defaultDetails = { label: category || 'عملية يدوية', bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-500' };
-    if (!category) return defaultDetails;
-
-    const mapping: Record<string, { label: string, bg: string, text: string }> = {
-      'manual_deposit': { label: 'إيداع يدوي', bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-400' },
-      'manual_withdrawal': { label: 'سحب يدوي', bg: 'bg-rose-100 dark:bg-rose-900/30', text: 'text-rose-600 dark:text-rose-400' },
-      'inventory_purchase': { label: 'شراء مخزون', bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-600 dark:text-amber-400' },
-      'shipping': { label: 'مصاريف شحن', bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400' },
-      'insurance': { label: 'تأمين شحنات', bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-400' },
-      'inspection': { label: 'رسوم معاينة', bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-600 dark:text-purple-400' },
-      'collection': { label: 'تحصيل نقدية', bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-400' },
-      'cod': { label: 'رسوم COD', bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-600 dark:text-orange-400' },
-      'return': { label: 'مصاريف مرتجع', bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-400' }
-    };
-
-    if (mapping[category]) return mapping[category];
-    
-    // For custom expense categories
     return { 
-      label: category.startsWith('expense_') ? category.replace('expense_', '') : category, 
-      bg: 'bg-slate-100 dark:bg-slate-800', 
-      text: 'text-slate-600 dark:text-slate-300' 
+        liveBalance, 
+        pendingWithdrawals: pendingWithdrawalsSum,
+        availableToWithdraw: liveBalance
     };
+  }, [wallet.transactions]);
+
+  // Derived settings or defaults
+  const walletSettings: WalletSettings = useMemo(() => {
+    const base = wallet.settings || {
+      preferredWithdrawMethod: 'bank',
+      autoWithdrawal: false,
+      autoWithdrawalDays: [],
+      minAutoWithdrawAmount: 100
+    };
+    return {
+      ...base,
+      bankAccount: localBankDetails,
+      mobileWallet: localMobileWallet,
+      preferredWithdrawMethod: preferredMethod
+    };
+  }, [wallet.settings, localBankDetails, localMobileWallet, preferredMethod]);
+
+  const handleUpdateWalletSettings = () => {
+    setWallet(prev => ({
+        ...prev,
+        settings: {
+            ...walletSettings,
+            bankAccount: localBankDetails,
+            mobileWallet: localMobileWallet,
+            preferredWithdrawMethod: preferredMethod
+        }
+    }));
+    setModalMode('settings');
+    setSettingsScreen('main');
   };
 
-  const handleTransaction = (e: React.FormEvent) => {
+  const handleCharge = (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) return;
 
+    const applicableMethods = settings.feeApplicableMethods || [];
+    const feePercent = applicableMethods.includes(chargeMethod) ? (settings.depositFeePercent || 0) : 0;
+    const fee = (numAmount * feePercent) / 100;
+    const finalChargeAmount = numAmount - fee;
+
     const newTransaction: Transaction = {
       id: Date.now().toString(),
-      type: modalType,
-      amount: numAmount,
+      type: 'إيداع',
+      amount: finalChargeAmount,
+      fees: fee,
       date: new Date().toISOString(),
-      note: note,
-      category: note as TransactionCategory // Using the selected category as the category
+      note: `شحن محفظة عبر ${chargeMethod === 'card' ? 'بطاقة دفع' : chargeMethod === 'wallet' ? 'محفظة هاتف' : 'إنستاباي'} (بانتظار موافقة الإدارة)`,
+      category: 'wallet_charge',
+      status: 'pending'
     };
 
-    setWallet(prev => ({ ...prev, transactions: [newTransaction, ...prev.transactions] }));
-    setShowModal(false);
+    setWallet(prev => ({
+      ...prev,
+      transactions: [newTransaction, ...prev.transactions],
+      // Balance is NOT updated here anymore, wait for approval
+      balance: prev.balance
+    }));
+    setModalMode('none');
     setAmount('');
-    setNote('');
   };
 
-  const deleteTransaction = (id: string) => {
-    setDialog({
-        isOpen: true,
-        title: 'تأكيد الحذف',
-        message: 'هل أنت متأكد من حذف هذه المعاملة؟ سيتم التراجع عن تأثيرها المالي.',
-        onConfirm: () => {
-            setWallet(prev => ({ ...prev, transactions: prev.transactions.filter(t => t.id !== id) }));
-            setSelectedTransaction(null);
-            setDialog(null);
-            showToast('تم حذف المعاملة بنجاح');
+  const currentWithdrawFee = useMemo(() => {
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) return 0;
+
+    let fee = 0;
+    if (withdrawMode === 'same_day') {
+      const type = settings.sameDayWithdrawalFeeType || 'percent';
+      if (type === 'percent') {
+        const percent = parseFloat(settings.sameDayWithdrawalFeePercent as any) || 0;
+        fee = (numAmount * percent) / 100;
+        // Minimum fee for small amounts as requested
+        if (numAmount < 2500) {
+          fee = Math.max(fee, 25);
         }
-    });
+      } else {
+        fee = parseFloat(settings.sameDayWithdrawalFlatFee as any) || 0;
+      }
+    } else {
+      const type = settings.withdrawalFeeType || 'flat';
+      if (type === 'flat') {
+        fee = parseFloat(settings.withdrawalFlatFee as any) || 0;
+      } else {
+        const percent = parseFloat(settings.withdrawalFeePercent as any) || 0;
+        fee = (numAmount * percent) / 100;
+      }
+    }
+    return fee;
+  }, [amount, withdrawMode, settings]);
+
+  const handleWithdrawRequest = (e: React.FormEvent) => {
+    e.preventDefault();
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) return; 
+    
+    const fee = currentWithdrawFee;
+    const totalDeduction = numAmount + fee;
+
+    if (totalDeduction > walletStats.availableToWithdraw) {
+      setErrorConfig({
+        title: 'رصيدك غير كافٍ',
+        message: `الرصيد المتاح للسحب هو: ${walletStats.availableToWithdraw.toLocaleString()} ج.م. لا يُسمح بأرصدة سالبة.`
+      });
+      setModalMode('error');
+      return;
+    }
+    
+    setModalMode('withdraw_confirm');
   };
+
+  const confirmWithdraw = () => {
+    const numAmount = parseFloat(amount);
+    const fee = currentWithdrawFee;
+    const totalDeduction = numAmount + fee;
+    const netAmount = numAmount; 
+
+    const newRequest: WithdrawRequest = {
+      id: Math.random().toString(36).substr(2, 9).toUpperCase(),
+      amount: numAmount,
+      date: new Date().toISOString(),
+      status: 'pending',
+      method: preferredMethod,
+      details: preferredMethod === 'bank' 
+        ? `${localBankDetails.bankName} - ${localBankDetails.accountHolder} - ${localBankDetails.accountNumber}`
+        : localMobileWallet || '',
+      fee,
+      netAmount,
+      isSameDay: withdrawMode === 'same_day'
+    };
+
+    const newTransaction: Transaction = {
+      id: `W-${newRequest.id}`,
+      type: 'سحب',
+      amount: totalDeduction,
+      fees: fee, 
+      date: new Date().toISOString(),
+      status: 'pending',
+      note: `طلب سحب رصيد (${withdrawMode === 'same_day' ? 'فوري' : 'عادي'}) لمبلغ ${numAmount} - الرسوم: ${fee.toLocaleString()} ج.م (إجمالي الخصم: ${totalDeduction.toLocaleString()} ج.م)`,
+      category: 'wallet_withdrawal'
+    };
+
+    setWallet(prev => ({
+      ...prev,
+      transactions: [newTransaction, ...prev.transactions],
+      withdrawRequests: [newRequest, ...(prev.withdrawRequests || [])],
+      // Deduct immediately on pending request
+      balance: prev.balance - totalDeduction 
+    }));
+    setModalMode('none');
+    setAmount('');
+  };
+
+  const filteredHistory = useMemo(() => {
+    if (activeTab === 'withdrawals') {
+        return (wallet.withdrawRequests || []).map(r => ({
+            id: r.id,
+            type: 'سحب' as const,
+            amount: r.amount,
+            date: r.date,
+            note: `طلب سحب - ${r.status === 'accepted' ? 'تم قبولها' : r.status === 'pending' ? 'قيد المراجعة' : 'مرفوضة'}`,
+            isWithdraw: true,
+            status: r.status,
+            category: 'wallet_withdrawal' as TransactionCategory
+        }));
+    }
+    
+    let base = wallet.transactions.map(t => ({ ...t, isWithdraw: t.type === 'سحب' }));
+    
+    if (activeTab === 'orders') {
+        base = base.filter(t => t.note.includes('#') || t.orderNumber || t.orderId);
+    } else if (activeTab === 'manual') {
+        base = base.filter(t => !t.note.includes('#') && !t.orderNumber && !t.orderId && t.category !== 'wallet_withdrawal' && t.category !== 'wallet_charge');
+    } else if (activeTab === 'all') {
+        // filter out withdraw requests from transactions since they are shown in withdrawals tab
+        // Or keep them? Usually withdrawals tab is dedicated, but "all" shows them anyway.
+    }
+    
+    return base;
+  }, [wallet, activeTab]);
+
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+
+  const groupedHistory = useMemo(() => {
+    if (activeTab === 'withdrawals' || activeTab === 'manual') return filteredHistory;
+
+    const groups: Record<string, any[]> = {};
+    const ungrouped: any[] = [];
+
+    filteredHistory.forEach(t => {
+      const orderNumMatch = t.note.match(/#(\w+)/);
+      const orderKey = t.orderNumber || t.orderId || (orderNumMatch ? orderNumMatch[1] : null);
+
+      if (orderKey) {
+        if (!groups[orderKey]) groups[orderKey] = [];
+        groups[orderKey].push(t);
+      } else {
+        ungrouped.push(t);
+      }
+    });
+
+    const result: any[] = [...ungrouped];
+    
+    Object.entries(groups).forEach(([key, items]) => {
+      if (items.length === 1) {
+        result.push(items[0]);
+      } else {
+        const sortedItems = [...items].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const first = sortedItems[0];
+        const totalAmount = items.reduce((sum, i) => i.type === 'إيداع' ? sum + i.amount : sum - i.amount, 0);
+        
+        result.push({
+          ...first,
+          id: `group-${key}`,
+          isGroup: true,
+          items: sortedItems,
+          amount: Math.abs(totalAmount),
+          type: totalAmount >= 0 ? 'إيداع' : 'سحب',
+          note: `إجمالي تسويات الأوردر #${key}`,
+          orderNumber: key
+        });
+      }
+    });
+
+    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [filteredHistory, activeTab]);
+
+  const paginatedHistory = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return groupedHistory.slice(start, start + itemsPerPage);
+  }, [groupedHistory, currentPage]);
+
+  const totalPages = Math.ceil(groupedHistory.length / itemsPerPage);
 
   return (
-    <div className="space-y-6">
-      {dialog && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-xl">
-            <h3 className="font-bold text-lg">{dialog.title}</h3>
-            <p className="text-slate-600">{dialog.message}</p>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setDialog(null)} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200">إلغاء</button>
-              <button onClick={dialog.onConfirm} className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">تأكيد</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {toast && (
-        <div className={`fixed bottom-4 right-4 z-50 px-6 py-3 rounded-xl shadow-lg text-white font-bold ${toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
-          {toast.message}
-        </div>
-      )}
-
+    <div className="min-h-[80vh] p-4 md:p-8">
       <motion.div
-        className="space-y-6"
         variants={containerVariants}
         initial="hidden"
         animate="visible"
+        className="max-w-6xl mx-auto space-y-10"
       >
-      <motion.div variants={itemVariants} className="bg-gradient-to-l from-indigo-700 via-blue-700 to-blue-600 p-8 rounded-3xl text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-12 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-        <div className="relative z-10 flex items-center gap-4">
-          <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-md border border-white/20 shadow-inner">
-            <WalletIcon size={32} />
-          </div>
-          <div>
-            <h2 className="text-white/80 text-sm font-black mb-1 flex items-center gap-2">كاش المحفظة الحي <Info size={14} className="opacity-50" /></h2>
-            <p className="text-5xl font-black tracking-tighter">{walletStats.liveBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-lg font-normal">ج.م</span></p>
-          </div>
-        </div>
-        <div className="relative z-10 flex gap-3 w-full md:w-auto">
-          <button onClick={() => { setModalType('إيداع'); setShowModal(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white text-blue-700 px-6 py-3.5 rounded-2xl font-black hover:bg-blue-50 transition-all shadow-lg active:scale-95"><Plus size={20} /> إيداع رأس مال</button>
-          <button onClick={() => { setModalType('سحب'); setShowModal(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-900/50 text-white px-6 py-3.5 rounded-2xl font-black hover:bg-blue-900 transition-all shadow-lg active:scale-95 border border-white/10"><Minus size={20} /> سحب مصاريف</button>
-        </div>
-      </motion.div>
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-6">
+          <motion.div variants={itemVariants} className="space-y-1 text-right">
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">المحفظة المالية</h1>
+            <p className="text-slate-500 text-sm font-medium">نظرة شاملة على نشاطك المالي وأرصدتك</p>
+          </motion.div>
 
-      <motion.div variants={itemVariants} className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 p-4 rounded-2xl flex items-start gap-3">
-        <Receipt className="text-blue-600 shrink-0 mt-1" size={20} />
-        <div className="text-xs font-bold text-blue-800 dark:text-blue-300 leading-relaxed">
-          <p className="mb-1 uppercase tracking-tighter">نظام المحفظة الجديد:</p>
-          <p>أصبحت المحفظة الآن تسجل كل حركة مالية (شحن، تأمين، تحصيل...) كمعاملة مستقلة لضمان أقصى درجات الدقة والشفافية.</p>
+          <motion.div variants={itemVariants} className="flex gap-3">
+            <button
+              onClick={() => setModalMode('settings')}
+              className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-600 dark:text-slate-400 hover:text-indigo-600 transition-all shadow-sm flex items-center justify-center"
+              title="إعدادات المحفظة"
+            >
+              <SettingsIcon size={20} />
+            </button>
+            <button
+              className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-600 dark:text-slate-400 hover:text-indigo-600 transition-all shadow-sm flex items-center justify-center"
+              title="تصدير التقارير"
+            >
+              <History size={20} />
+            </button>
+          </motion.div>
         </div>
-      </motion.div>
 
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <DetailCard title="تكاليف شحن صادرة" value={walletStats.totalOutboundShipping} icon={<Truck />} color="amber" label="مصاريف الشحن للأوردرات" />
-        <DetailCard title="رسوم تأمين مخصومة" value={walletStats.totalInsuranceDeducted} icon={<Shield />} color="blue" label="تأمين على الشحنات" />
-        <DetailCard title="رسوم معاينة مخصومة" value={walletStats.totalInspectionFeesDeducted} icon={<Eye />} color="purple" label="تم خصمها من المحفظة" />
-        <DetailCard title="إجمالي التحصيلات" value={walletStats.totalCollectedGross} icon={<TrendingUp />} color="emerald" label="إجمالي المبلغ المحصّل" />
-        <DetailCard title="خصومات ومصاريف" value={walletStats.totalCodFees + walletStats.totalReturnLoss} icon={<Coins />} color="red" label="COD + مرتجع ثابت" />
-      </motion.div>
+        {/* Top Cards Section */}
+        <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-[1.4fr,2fr] gap-8">
+          {/* Main Balance Card - Premium Glassmorphism */}
+          <div className="relative group perspective-1000">
+            <div className="absolute -inset-1 bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-600 rounded-[3rem] opacity-30 blur-2xl group-hover:opacity-50 transition duration-1000 animate-pulse"></div>
+            <div className="relative overflow-hidden bg-slate-900 dark:bg-black rounded-[3rem] p-10 text-white shadow-2xl flex flex-col justify-between min-h-[380px] border border-white/10">
+                {/* Background effects */}
+                <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
+                    <div className="absolute -top-24 -left-24 w-96 h-96 bg-emerald-500/20 rounded-full blur-[100px]"></div>
+                    <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-teal-500/10 rounded-full blur-[100px]"></div>
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.1) 1px, transparent 0)', backgroundSize: '32px 32px' }}></div>
+                    <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-b from-white/[0.03] to-transparent"></div>
+                </div>
 
-      <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
-          <h3 className="text-lg font-black dark:text-white">سجل عمليات المحفظة</h3>
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full md:w-auto overflow-x-auto no-scrollbar">
-            {[
-              { id: 'all', label: 'الكل' },
-              { id: 'orders', label: 'الأوردرات' },
-              { id: 'returns', label: 'المرتجعات' },
-              { id: 'collected', label: 'المحصل' },
-              { id: 'manual', label: 'يدوي/أخرى' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => { setActiveTab(tab.id as any); setCurrentPage(1); }}
-                className={`px-4 py-2 text-xs font-black rounded-lg transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-right">
-            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-wider">
-              <tr>
-                <th className="px-6 py-4">البيان</th>
-                <th className="px-6 py-4">النوع</th>
-                <th className="px-6 py-4">التاريخ</th>
-                <th className="px-6 py-4 text-center">المبلغ</th>
-                <th className="px-6 py-4"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {paginatedData.map((item, index) => {
-                if (item.type === 'grouped') {
-                  return (
-                    <tr key={item.orderNumber} onClick={() => setSelectedTransaction(item)} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group cursor-pointer">
-                      <td className="px-6 py-4">
-                        <div className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                            <Layers size={16} className="text-slate-400"/>
-                            حركات أوردر #{item.orderNumber}
+                <div className="relative z-10">
+                    <div className="flex justify-between items-start flex-row-reverse mb-8">
+                        <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10">
+                            <WalletIcon size={24} className="text-emerald-400" />
                         </div>
-                        <div className="text-xs text-slate-500">{item.customerName}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        {(() => {
-                           const details = getCategoryDetails(item.type === 'grouped' ? 'grouped' : (item as any).transaction?.category);
-                           return (
-                             <span className={`text-[10px] sm:text-xs font-bold px-2 py-1 rounded-lg ${details.bg} ${details.text}`}>
-                               {item.type === 'grouped' ? 'عملية مجمعة' : details.label}
-                             </span>
-                           );
-                        })()}
-                      </td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-mono"><Calendar size={12} className="inline ml-1"/>{new Date(item.lastTransactionDate).toLocaleString('ar-EG')}</td>
-                      <td className="px-6 py-4 text-center">
-                          <span className={`font-black text-lg ${item.netAmount >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                             {item.netAmount >= 0 ? '+' : ''}{item.netAmount.toLocaleString()} ج.م
-                          </span>
-                      </td>
-                      <td className="px-6 py-4 text-left">
-                        <button onClick={(e) => { e.stopPropagation(); setSelectedTransaction(item); }} className="p-2 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 rounded-lg transition-all"><Info size={18}/></button>
-                      </td>
-                    </tr>
-                  );
-                } else {
-                  const t = item.transaction;
-                  return (
-                    <tr key={t.id} onClick={() => setSelectedTransaction(item)} className="group hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer">
-                      <td className="px-6 py-4">
-                          <div className="font-bold text-slate-700 dark:text-slate-300">{t.note}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        {(() => {
-                           const details = getCategoryDetails(t.category);
-                           return (
-                             <span className={`text-[10px] sm:text-xs font-bold px-2 py-1 rounded-lg ${details.bg} ${details.text}`}>
-                               {details.label}
-                             </span>
-                           );
-                        })()}
-                      </td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-mono"><Calendar size={12} className="inline ml-1"/>{new Date(t.date).toLocaleString('ar-EG')}</td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`flex items-center justify-center gap-1 font-bold ${t.type === 'إيداع' ? 'text-emerald-500' : 'text-red-500'}`}>
-                           {t.type === 'إيداع' ? <ArrowUpRight size={14}/> : <ArrowDownLeft size={14}/>} {t.amount.toLocaleString()} ج.م
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-left">
-                         <button onClick={(e) => { e.stopPropagation(); deleteTransaction(t.id); }} className="p-2 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-red-600 rounded-lg transition-all"><Trash2 size={18}/></button>
-                      </td>
-                    </tr>
-                  )
-                }
-              })}
-              {paginatedData.length === 0 && <tr><td colSpan={5} className="text-center py-12 text-slate-400">لا توجد عمليات مسجلة.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        
-        {totalPages > 1 && (
-            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
-                <button
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    className="p-2 px-4 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-50 hover:bg-white dark:hover:bg-slate-800 transition-all dark:text-white"
-                >
-                    السابق
-                </button>
-                <span className="text-xs font-black text-slate-500">صفحة {currentPage} من {totalPages}</span>
-                <button
-                    disabled={currentPage === totalPages}
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    className="p-2 px-4 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-50 hover:bg-white dark:hover:bg-slate-800 transition-all dark:text-white"
-                >
-                    التالي
+                        <div className="text-right">
+                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400/80 mb-2">السيولة المتاحة</p>
+                            <div className="flex items-baseline gap-2 flex-row-reverse">
+                                <h2 className="text-6xl font-black tracking-tighter drop-shadow-2xl">
+                                    {walletStats.liveBalance.toLocaleString('ar-EG', { minimumFractionDigits: 0 })}
+                                </h2>
+                                <span className="text-2xl font-bold text-emerald-400">ج.م</span>
+                            </div>
+                            {walletStats.pendingWithdrawals > 0 && (
+                                <div className="flex justify-end mt-2">
+                                    <span className="text-[11px] font-bold text-amber-400/90 flex items-center gap-1 bg-amber-400/10 px-3 py-1 rounded-full border border-amber-400/20">
+                                        <Clock size={12} />
+                                        قيد المراجعة: {walletStats.pendingWithdrawals.toLocaleString()} ج.م
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="relative z-10 grid grid-cols-2 gap-4">
+                    <motion.button
+                        whileHover={{ scale: 1.02, y: -2 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => { setAmount(''); setModalMode('withdraw'); }}
+                        className="group/btn relative py-6 bg-white/5 border border-white/10 hover:bg-white/10 rounded-[2rem] text-white font-black text-sm transition-all overflow-hidden backdrop-blur-md"
+                    >
+                        <div className="relative z-10 flex items-center justify-center gap-3">
+                            <span className="tracking-wide">سحب الأموال</span>
+                            <div className="p-1.5 bg-white/10 rounded-lg group-hover/btn:bg-white/20 transition-colors">
+                                <ArrowDownLeft size={16} className="group-hover/btn:-translate-x-1 group-hover/btn:translate-y-1 transition-transform" />
+                            </div>
+                        </div>
+                    </motion.button>
+                    <motion.button
+                        whileHover={{ scale: 1.02, y: -2 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => { setAmount(''); setModalMode('charge'); }}
+                        className="group/btn relative py-6 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-[#051C1A] rounded-[2rem] font-black text-sm transition-all shadow-2xl shadow-emerald-500/30 overflow-hidden"
+                    >
+                        <div className="relative z-10 flex items-center justify-center gap-3">
+                            <span className="tracking-wide">إيداع رصيد</span>
+                            <div className="p-1.5 bg-black/10 rounded-lg group-hover/btn:rotate-90 transition-transform">
+                                <Plus size={16} />
+                            </div>
+                        </div>
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-1000"></div>
+                    </motion.button>
+                </div>
+            </div>
+          </div>
+
+          {/* Stats Grid - Bento Style */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Coming Revenue Card */}
+              <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-slate-800 p-8 shadow-sm hover:shadow-xl transition-all flex flex-col group">
+                  <div className="flex items-center justify-between flex-row-reverse mb-8">
+                      <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl group-hover:rotate-12 transition-transform shadow-sm">
+                          <Truck size={24} />
+                      </div>
+                      <div className="text-right">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">في الطريق إليك</p>
+                          <h4 className="text-3xl font-black text-slate-800 dark:text-white">٠ <span className="text-sm font-bold opacity-30">ج.م</span></h4>
+                      </div>
+                  </div>
+                  
+                  <div className="space-y-5">
+                      {[
+                        { label: 'اليوم (10/5)', value: '٠', progress: 40, color: 'bg-emerald-500' },
+                        { label: 'غداً (11/5)', value: '٠', progress: 20, color: 'bg-blue-500' },
+                        { label: 'الثلاثاء (12/5)', value: '٠', progress: 10, color: 'bg-indigo-500' }
+                      ].map((item, idx) => (
+                        <div key={idx} className="space-y-2 flex flex-col">
+                           <div className="flex justify-between flex-row-reverse text-[11px] font-bold">
+                               <span className="text-slate-500">{item.label}</span>
+                               <span className="text-slate-900 dark:text-slate-100">{item.value} ج.م</span>
+                           </div>
+                           <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-full overflow-hidden">
+                               <motion.div 
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${item.progress}%` }}
+                                    className={`h-full ${item.color} shadow-[0_0_8px_rgba(0,0,0,0.1)]`}
+                                />
+                           </div>
+                        </div>
+                      ))}
+                  </div>
+                  
+                  <div className="mt-auto pt-6 flex justify-center">
+                    <button 
+                      onClick={() => setModalMode('cod_history')}
+                      className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 group/link"
+                    >
+                        عرض تفاصيل التسويات <ChevronRight size={12} className="rotate-180 group-hover/link:-translate-x-1 transition-transform" />
+                    </button>
+                  </div>
+              </div>
+
+              {/* Transactions Summary Card */}
+          <div className="bg-slate-900 dark:bg-slate-800/50 rounded-[3rem] p-8 text-white flex flex-col shadow-2xl relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+                      <TrendingUp size={140} />
+                  </div>
+                  <div className="flex justify-between items-start flex-row-reverse relative z-10">
+                    <div className="text-right">
+                        <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">إجمالي ما تم سحبه</p>
+                        <h4 className="text-4xl font-black tracking-tight">{(wallet.withdrawRequests || []).reduce((sum, r) => r.status === 'accepted' ? sum + r.amount : sum, 0).toLocaleString()} <span className="text-lg opacity-30">ج.م</span></h4>
+                    </div>
+                    <button 
+                      onClick={() => setModalMode('history')}
+                      className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl transition-all border border-white/10"
+                      title="عرض سجل السحوبات"
+                    >
+                      <History size={18} />
+                    </button>
+                  </div>
+
+                  <div className="relative z-10 grid grid-cols-2 gap-4 mt-8">
+                      <div className="p-5 bg-white/5 rounded-[2rem] border border-white/10 hover:bg-white/10 transition-colors">
+                          <p className="text-[10px] font-bold text-white/40 mb-1">طلبات السحب</p>
+                          <p className="text-2xl font-black text-emerald-400">{wallet.withdrawRequests?.length || 0}</p>
+                      </div>
+                      <div className="p-5 bg-white/5 rounded-[2rem] border border-white/10 hover:bg-white/10 transition-colors">
+                          <p className="text-[10px] font-bold text-white/40 mb-1">متوسط السحب</p>
+                          <p className="text-2xl font-black text-emerald-400">٠ <span className="text-[10px] opacity-40">ج.م</span></p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+        </motion.div>
+
+        {/* Interactive List Section */}
+        <motion.div variants={itemVariants} className="space-y-8">
+          <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-6">
+            <div className="flex flex-row-reverse p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl border border-slate-200/50 dark:border-slate-700/50">
+                {[
+                    { id: 'all', label: 'الجميع' },
+                    { id: 'orders', label: 'طلبات' },
+                    { id: 'withdrawals', label: 'سحوبات' },
+                    { id: 'manual', label: 'يدوي' }
+                ].map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={`px-8 py-2.5 rounded-xl text-xs font-black transition-all duration-300 ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+            
+            <div className="flex gap-3 w-full md:w-auto">
+                <div className="relative flex-1 md:w-80">
+                    <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input 
+                        type="text" 
+                        placeholder="ابحث برقم الطلب أو الملاحظة..." 
+                        className="w-full pl-4 pr-12 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[1.5rem] text-sm font-bold outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500/50 transition-all dark:text-white shadow-sm"
+                    />
+                </div>
+                <button className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[1.5rem] text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all shadow-sm" title="تصفية">
+                    <Filter size={20} />
                 </button>
             </div>
-        )}
+          </div>
+
+          {/* Transactions List */}
+          {activeTab === 'withdrawals' ? (
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 overflow-hidden shadow-2xl">
+                  <table className="w-full text-right border-collapse">
+                      <thead>
+                          <tr className="bg-slate-50 dark:bg-slate-800/50 text-[11px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
+                              <th className="p-8">تفاصيل السحب</th>
+                              <th className="p-8 text-center">الحالة</th>
+                              <th className="p-8 text-center">المبلغ</th>
+                              <th className="p-8 text-center">الرسوم</th>
+                              <th className="p-8 text-center">إجمالي المخصوم</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                          {(wallet.withdrawRequests || []).length > 0 ? (
+                              (wallet.withdrawRequests || []).map((r, idx) => (
+                                  <motion.tr 
+                                      key={r.id}
+                                      initial={{ opacity: 0, x: 20 }}
+                                      animate={{ opacity: 1, x: 0 }}
+                                      transition={{ delay: idx * 0.05 }}
+                                      className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-all cursor-default group"
+                                  >
+                                      <td className="p-8">
+                                          <div className="flex flex-col text-right">
+                                              <span className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider mb-1">
+                                                  {r.method === 'bank' ? 'تحويل بنكي' : 'محفظة إلكترونية'}
+                                              </span>
+                                              <span className="text-[10px] font-bold text-slate-400">
+                                                  {new Date(r.date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
+                                              </span>
+                                              <span className="text-[9px] font-mono text-slate-400 mt-1 opacity-60 group-hover:opacity-100 transition-opacity">ID: {r.id}</span>
+                                          </div>
+                                      </td>
+                                      <td className="p-8 text-center">
+                                          <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black border tracking-wide ${
+                                              r.status === 'accepted' ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' :
+                                              r.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20' : 
+                                              'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20'
+                                          }`}>
+                                              <div className={`w-1.5 h-1.5 rounded-full ${
+                                                  r.status === 'accepted' ? 'bg-emerald-500' : 
+                                                  r.status === 'pending' ? 'bg-amber-500 animate-pulse' : 'bg-rose-500'
+                                              }`}></div>
+                                              {r.status === 'accepted' ? 'تم قبولها' : r.status === 'pending' ? 'قيد المراجعة' : 'عملية مرفوضة'}
+                                          </div>
+                                      </td>
+                                      <td className="p-8 text-center">
+                                          <div className="flex items-baseline justify-center gap-1">
+                                              <span className="text-sm font-black text-slate-900 dark:text-white">{r.amount.toLocaleString('ar-EG')}</span>
+                                              <span className="text-[10px] font-bold text-slate-400 opacity-60">ج.م</span>
+                                          </div>
+                                      </td>
+                                      <td className="p-8 text-center">
+                                          <div className="flex items-baseline justify-center gap-1">
+                                              <span className="text-sm font-black text-rose-500">{(r.fee || 0).toLocaleString('ar-EG')}</span>
+                                              <span className="text-[10px] font-bold text-slate-400 opacity-60">ج.م</span>
+                                          </div>
+                                      </td>
+                                      <td className="p-8 text-center">
+                                          <div className="flex items-baseline justify-center gap-1">
+                                              <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">{(r.amount + (r.fee || 0)).toLocaleString('ar-EG')}</span>
+                                              <span className="text-[10px] font-bold text-slate-400 opacity-60">ج.م</span>
+                                          </div>
+                                      </td>
+                                  </motion.tr>
+                              ))
+                          ) : (
+                              <tr>
+                                  <td colSpan={5} className="p-32 text-center text-slate-400 font-bold">لا توجد سجلات سحب حالياً</td>
+                              </tr>
+                          )}
+                      </tbody>
+                  </table>
+              </div>
+          ) : (
+          <>
+          <div className="grid grid-cols-1 gap-4">
+              <AnimatePresence mode="popLayout">
+                {paginatedHistory.map((item: any, idx) => (
+                    <div key={item.id} className="space-y-4">
+                      <motion.div
+                        layout
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ duration: 0.3, delay: idx * 0.03 }}
+                        onClick={() => {
+                          if (item.isGroup) {
+                            setExpandedGroups(prev => ({ ...prev, [item.id]: !prev[item.id] }));
+                          } else {
+                            setExpandedItems(prev => ({ ...prev, [item.id]: !prev[item.id] }));
+                          }
+                        }}
+                        className={`group p-5 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-xl hover:border-indigo-200/50 dark:hover:border-indigo-500/30 transition-all cursor-pointer relative overflow-hidden ${item.isGroup || expandedItems[item.id] ? 'border-r-8 border-r-indigo-500' : ''}`}
+                      >
+                          {/* Status dynamic border */}
+                          {!item.isGroup && <div className={`absolute top-0 right-0 w-1 h-full ${item.type === 'إيداع' ? 'bg-emerald-500' : 'bg-rose-500'} opacity-0 group-hover:opacity-100 transition-opacity`}/>}
+                          
+                          <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                              <div className="flex items-center gap-5 w-full md:w-auto flex-row-reverse">
+                                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${
+                                      item.type === 'إيداع' 
+                                      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100/50 dark:border-emerald-500/10' 
+                                      : 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400 border border-rose-100/50 dark:border-rose-500/10'
+                                  }`}>
+                                      {item.isGroup ? <Layers size={24} className="text-indigo-600" /> : (item.type === 'إيداع' ? <ArrowUpRight size={24} /> : <ArrowDownLeft size={24} />)}
+                                  </div>
+                                  <div className="text-right">
+                                      <h5 className="text-base font-black text-slate-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors tracking-tight">
+                                          {item.note || item.type}
+                                      </h5>
+                                      <div className="flex items-center gap-3 flex-row-reverse mt-1.5">
+                                          <span className="text-[11px] font-black text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-100 dark:border-slate-700">#{item.orderNumber || item.id.slice(-6)}</span>
+                                          <span className="w-1 h-1 bg-slate-300 dark:bg-slate-600 rounded-full"></span>
+                                          <div className="flex items-center gap-1.5 flex-row-reverse">
+                                              <Calendar size={12} className="text-slate-400"/>
+                                              <span className="text-[11px] text-slate-400 font-bold">{new Date(item.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                                          </div>
+                                          {item.isGroup && (
+                                            <>
+                                              <span className="w-1 h-1 bg-slate-300 dark:bg-slate-600 rounded-full"></span>
+                                              <span className="text-[11px] text-indigo-500 font-black">{item.items.length} عمليات</span>
+                                            </>
+                                          )}
+                                      </div>
+                                  </div>
+                              </div>
+
+                              <div className="flex items-center gap-8 w-full md:w-auto justify-between md:justify-end flex-row-reverse">
+                                  <div className="text-right">
+                                      <div className="flex items-baseline gap-1 flex-row-reverse">
+                                          <p className={`text-2xl font-black ${item.type === 'إيداع' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                              {item.type === 'إيداع' ? '+' : '-'}{item.amount.toLocaleString()}
+                                          </p>
+                                          <span className={`text-xs font-bold ${item.type === 'إيداع' ? 'text-emerald-600/60' : 'text-rose-600/60'}`}>ج.م</span>
+                                      </div>
+                                      {item.fees > 0 && (
+                                          <div className="flex items-center gap-1 justify-end mt-1">
+                                              <p className="text-[10px] text-slate-400 font-black">رسوم: {item.fees} ج.م</p>
+                                              <Info size={10} className="text-slate-300"/>
+                                          </div>
+                                      )}
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-4">
+                                      <span className={`px-5 py-2 rounded-xl text-[11px] font-black border tracking-wide ${
+                                          item.status === 'pending'
+                                          ? 'bg-amber-50 text-amber-600 border-amber-200/50 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
+                                          : item.status === 'completed'
+                                          ? 'bg-emerald-50 text-emerald-600 border-emerald-200/50 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+                                          : 'bg-rose-50 text-rose-600 border-rose-200/50 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20'
+                                      }`}>
+                                          {item.status === 'pending' ? 'قيد المراجعة' : item.status === 'completed' ? 'عملية ناجحة' : 'عملية مرفوضة'}
+                                      </span>
+                                      <motion.div 
+                                          animate={{ rotate: item.isGroup && expandedGroups[item.id] ? 90 : 0 }}
+                                          className={`p-3 rounded-2xl transition-all duration-300 shadow-sm ${item.isGroup && expandedGroups[item.id] ? 'bg-indigo-600 text-white' : 'bg-slate-50 dark:bg-slate-800 text-slate-400'}`}
+                                      >
+                                          <ChevronRight size={18} className="rotate-180" />
+                                      </motion.div>
+                                  </div>
+                              </div>
+                          </div>
+                      </motion.div>
+
+                      {/* Expanded Sub-transactions */}
+                      <AnimatePresence>
+                        {item.isGroup && expandedGroups[item.id] && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="mr-12 overflow-hidden space-y-2"
+                          >
+                            {item.items.map((sub: any) => (
+                              <div 
+                                key={sub.id} 
+                                className="flex items-center justify-between p-4 bg-slate-50/50 dark:bg-slate-800/20 rounded-2xl border border-slate-100 dark:border-slate-800"
+                              >
+                                <div className="flex items-center gap-3 flex-row-reverse">
+                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${sub.type === 'إيداع' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                                    {sub.type === 'إيداع' ? <ArrowUpRight size={14}/> : <ArrowDownLeft size={14}/>}
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{sub.note}</p>
+                                    <p className="text-[10px] text-slate-400">{new Date(sub.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-baseline gap-1 flex-row-reverse">
+                                  <span className={`text-sm font-black ${sub.type === 'إيداع' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                    {sub.type === 'إيداع' ? '+' : '-'}{sub.amount.toLocaleString()}
+                                  </span>
+                                  <span className="text-[10px] opacity-40">ج.م</span>
+                                </div>
+                              </div>
+                            ))}
+                          </motion.div>
+                        )}
+                        {!item.isGroup && expandedItems[item.id] && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="mt-2 p-6 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border border-slate-100 dark:border-slate-800 space-y-4">
+                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-right">
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">رقم العملية</p>
+                                        <p className="font-mono text-xs font-black text-slate-700 dark:text-slate-300">{item.id}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">التصنيف</p>
+                                        <p className="text-xs font-black text-slate-700 dark:text-slate-300">{item.category === 'wallet_charge' ? 'شحن محفظة' : item.category === 'wallet_withdrawal' ? 'سحب رصيد' : item.category === 'cod' ? 'تحصيل COD' : item.category || 'أخرى'}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">تاريخ التنفيذ</p>
+                                        <p className="text-xs font-black text-slate-700 dark:text-slate-300">{new Date(item.date).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">المبلغ</p>
+                                        <p className={`text-xs font-black ${item.type === 'إيداع' ? 'text-emerald-600' : 'text-rose-600'}`}>{item.amount.toLocaleString()} ج.م</p>
+                                    </div>
+                                </div>
+                                <div className="h-px bg-slate-200 dark:bg-slate-700 w-full" />
+                                <div className="text-right space-y-1">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">تفاصيل / ملاحظات</p>
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{item.note}</p>
+                                </div>
+                                {item.orderId && (
+                                    <>
+                                        <div className="h-px bg-slate-200 dark:bg-slate-700 w-full" />
+                                        <div className="text-right space-y-1">
+                                            <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">مرتبط بطلب رقم</p>
+                                            <p className="text-sm font-black text-indigo-600 dark:text-indigo-400">#{item.orderNumber || item.orderId}</p>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                ))}
+              </AnimatePresence>
+
+              {paginatedHistory.length === 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-center py-32 bg-white dark:bg-slate-900 rounded-[3rem] border-2 border-dashed border-slate-200 dark:border-slate-800/50"
+                  >
+                      <div className="w-24 h-24 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                          <History size={48} className="text-slate-200 dark:text-slate-700" />
+                      </div>
+                      <h4 className="text-xl font-black text-slate-800 dark:text-white">لا توجد سجلات حالياً</h4>
+                      <p className="text-sm text-slate-400 font-bold max-w-sm mx-auto mt-3 leading-relaxed">عند قيامك بأي عمليات مالية جديدة ستظهر تفاصيلها هنا بشكل فورى وتلقائى</p>
+                  </motion.div>
+              )}
+          </div>
+
+          {/* Pagination Modern */}
+          <div className="flex justify-center pt-4">
+              <div className="flex items-center gap-2 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[1.5rem] shadow-xl">
+                  <button className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 transition-all rotate-180 bg-slate-50 dark:bg-slate-800 rounded-xl"><ChevronRight size={20}/></button>
+                  <div className="flex items-center gap-1">
+                      <button className="w-10 h-10 rounded-xl bg-indigo-600 text-white font-black text-xs shadow-lg shadow-indigo-500/30">1</button>
+                      <button className="w-10 h-10 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 font-black text-xs text-slate-600 dark:text-slate-400 transition-all">2</button>
+                      <button className="w-10 h-10 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 font-black text-xs text-slate-600 dark:text-slate-400 transition-all">3</button>
+                  </div>
+                  <button className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 transition-all bg-slate-50 dark:bg-slate-800 rounded-xl"><ChevronRight size={20}/></button>
+              </div>
+          </div>
+          </>
+          )}
+        </motion.div>
       </motion.div>
 
-      {showModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in zoom-in duration-300">
-            <h2 className="text-xl font-black text-slate-800 dark:text-white mb-6">
-              {modalType === 'إيداع' ? 'إضافة رصيد (إيداع)' : 'خصم رصيد (سحب مصروفات)'}
-            </h2>
-            <form onSubmit={handleTransaction} className="space-y-4">
-              <div>
-                <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">المبلغ</label>
-                <div className="relative">
-                  <input type="number" required autoFocus value={amount} onChange={e => setAmount(e.target.value)} className="w-full pl-4 pr-10 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold dark:text-white" placeholder="0.00" />
-                  <WalletIcon className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+
+      {/* Charge Modal */}
+      <AnimatePresence>
+        {modalMode === 'charge' && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 40 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-10 space-y-8">
+                <div className="flex justify-between items-center flex-row-reverse">
+                  <div className="flex items-center gap-5 text-right">
+                    <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center shadow-inner">
+                      <CreditCard size={28} />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-black text-slate-800 dark:text-white">إيداع رصيد</h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1 text-emerald-500">Add funds to your wallet</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setModalMode('none')} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl transition-all">
+                    <X size={24}/>
+                  </button>
+                </div>
+
+                <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-[2rem] flex items-center justify-between flex-row-reverse border border-slate-100 dark:border-slate-800 shadow-inner">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
+                          <WalletIcon size={16} className="text-slate-400"/>
+                        </div>
+                        <p className="text-xs font-bold text-slate-400">الرصيد المتاح</p>
+                    </div>
+                    <div className="flex items-baseline gap-1.5 flex-row-reverse">
+                      <h4 className="text-2xl font-black text-slate-800 dark:text-white">
+                        {walletStats.liveBalance.toLocaleString()}
+                      </h4>
+                      <span className="text-[10px] font-bold text-slate-400">ج.م</span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { id: 'card', label: 'بطاقة دفع', icon: CreditCard },
+                    { id: 'wallet', label: 'محفظة الهاتف', icon: Smartphone },
+                    { id: 'instapay', label: 'إنستاباي', icon: Banknote }
+                  ].map(method => (
+                    <button
+                      key={method.id}
+                      onClick={() => setChargeMethod(method.id as any)}
+                      className={`p-5 rounded-[2rem] border-2 transition-all flex flex-col items-center gap-3 font-black text-[11px] relative overflow-hidden ${
+                        chargeMethod === method.id 
+                        ? 'border-emerald-500 bg-emerald-50/20 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' 
+                        : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 text-slate-400 bg-slate-50/20'
+                      }`}
+                    >
+                      {chargeMethod === method.id && (
+                        <motion.div layoutId="charge-bg" className="absolute inset-0 bg-emerald-500/5 dark:bg-emerald-500/10 pointer-events-none"/>
+                      )}
+                      <method.icon size={24} className={chargeMethod === method.id ? 'text-emerald-500' : 'text-slate-400'} />
+                      <span className="relative z-10">{method.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <form onSubmit={handleCharge} className="space-y-8">
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center flex-row-reverse px-2">
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">المبلغ المراد شحنه</label>
+                        <div className="flex items-center gap-1.5">
+                            <Info size={12} className="text-slate-300"/>
+                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-wide">الرسوم تطبق حسب الطريقة</label>
+                        </div>
+                    </div>
+                    <div className="relative group">
+                        <input
+                          type="number"
+                          placeholder="0.00"
+                          value={amount}
+                          onChange={e => setAmount(e.target.value)}
+                          className="w-full text-6xl font-black text-center py-10 bg-slate-50 dark:bg-slate-800/80 rounded-[2.5rem] border-2 border-transparent focus:border-emerald-500/20 outline-none focus:ring-8 focus:ring-emerald-500/5 placeholder:opacity-5 dark:text-white transition-all shadow-inner"
+                          autoFocus
+                        />
+                        <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col items-center">
+                            <span className="text-xs font-black text-slate-300 uppercase tracking-tighter">ج.م</span>
+                        </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <button type="button" onClick={() => setModalMode('none')} className="flex-1 py-5 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-3xl font-black hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-xs tracking-wide">إلغاء العملية</button>
+                    <button type="submit" className="flex-[2] py-5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-3xl font-black hover:from-emerald-500 hover:to-teal-500 shadow-2xl shadow-emerald-500/30 transition-all text-sm tracking-wide">تأكيد عملية الشحن</button>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Withdraw Modal */}
+      <AnimatePresence>
+        {modalMode === 'withdraw' && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 40 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-10 space-y-8">
+               <div className="flex justify-between items-center flex-row-reverse">
+                  <div className="flex items-center gap-5 text-right">
+                    <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center shadow-inner">
+                      <ArrowDownLeft size={28} />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-black text-slate-800 dark:text-white">سحب رصيد</h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1 text-indigo-500">Withdraw your funds</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setModalMode('none')} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl transition-all">
+                    <X size={24}/>
+                  </button>
+                </div>
+
+                <div className="flex p-2 bg-slate-100 dark:bg-slate-800 rounded-[2rem] relative border border-slate-200/50 dark:border-slate-700/50 shadow-inner">
+                  <button
+                    onClick={() => setWithdrawMode('normal')}
+                    className={`flex-1 py-3.5 text-xs font-black rounded-[1.5rem] transition-all relative z-10 ${withdrawMode === 'normal' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xl' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    السحب العادي
+                  </button>
+                  <button
+                    onClick={() => setWithdrawMode('same_day')}
+                    className={`flex-1 py-3.5 text-xs font-black rounded-[1.5rem] transition-all relative z-10 flex items-center justify-center gap-2 ${withdrawMode === 'same_day' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xl' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    <span>سحب فوري</span>
+                    <div className="px-2 py-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-[8px] font-black rounded-lg shadow-sm border border-white/10 italic">EXPRESS</div>
+                  </button>
+                </div>
+
+                {withdrawMode === 'normal' && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-[1.8rem] space-y-2 text-right relative overflow-hidden"
+                  >
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold leading-relaxed pr-1">
+                      يتم تحويل المبالغ في غضون ٣-٥ أيام عمل. تطبق رسوم {
+                        settings.withdrawalFeeType === 'percent'
+                        ? `بنسبة ${settings.withdrawalFeePercent || 0}%`
+                        : `ثابتة بقيمة ${settings.withdrawalFlatFee || 0} ج.م`
+                      } على كل عملية سحب.
+                    </p>
+                  </motion.div>
+                )}
+
+                {withdrawMode === 'same_day' && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-5 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 dark:from-indigo-500/10 dark:to-purple-500/10 border border-indigo-100/50 dark:border-indigo-500/20 rounded-[1.8rem] space-y-2 text-right relative overflow-hidden"
+                  >
+                    <div className="absolute -top-6 -right-6 w-20 h-20 bg-indigo-500/5 rounded-full blur-xl"></div>
+                    <div className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center justify-end gap-2">
+                        خدمة السحب الفوري مفعلة
+                        <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"/>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold leading-relaxed pr-1">
+                      الطلبات المقدمة قبل ١:٠٠ ظهراً سيتم تحويلها في نفس اليوم. تطبق رسوم {
+                        settings.sameDayWithdrawalFeeType === 'percent' 
+                        ? `بنسبة ${settings.sameDayWithdrawalFeePercent || 0}% (بحد أدنى ٢٥ ج.م للمبالغ أقل من ٢٥٠٠ ج.م)`
+                        : `بمقدار ثابت ${settings.sameDayWithdrawalFlatFee || 0} ج.م`
+                      }.
+                    </p>
+                  </motion.div>
+                )}
+
+                <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-[2rem] flex items-center justify-between flex-row-reverse border border-slate-100 dark:border-slate-800 shadow-inner">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
+                          <WalletIcon size={16} className="text-slate-400"/>
+                        </div>
+                        <p className="text-xs font-bold text-slate-400">الرصيد المتاح</p>
+                    </div>
+                    <div className="flex items-baseline gap-1.5 flex-row-reverse">
+                      <h4 className="text-2xl font-black text-slate-800 dark:text-white">
+                        {walletStats.liveBalance.toLocaleString()}
+                      </h4>
+                      <span className="text-[10px] font-bold text-slate-400">ج.م</span>
+                    </div>
+                </div>
+
+                <form onSubmit={handleWithdrawRequest} className="space-y-8">
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center flex-row-reverse px-4">
+                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] block text-right">أدخل مبلغ السحب</label>
+                      {currentWithdrawFee > 0 && (
+                        <div className="flex items-center gap-2 flex-row-reverse">
+                          <span className="text-[10px] font-black text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded-lg">سيتم خصم {currentWithdrawFee.toLocaleString()} ج.م رسوم</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="relative group">
+                        <input
+                          type="number"
+                          placeholder="0.00"
+                          value={amount}
+                          onChange={e => setAmount(e.target.value)}
+                          className="w-full text-6xl font-black text-center py-10 bg-slate-50 dark:bg-slate-800/80 rounded-[2.5rem] border-2 border-transparent focus:border-indigo-500/20 outline-none focus:ring-8 focus:ring-indigo-500/5 placeholder:opacity-5 dark:text-white transition-all shadow-inner"
+                          autoFocus
+                        />
+                        <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col items-center">
+                            <span className="text-xs font-black text-slate-300 uppercase tracking-tighter">ج.م</span>
+                        </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 text-right">
+                      <div className="flex justify-between items-center flex-row-reverse px-4">
+                         <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">يتم التحويل إلى</label>
+                         <button type="button" onClick={() => setModalMode('settings')} className="text-indigo-600 text-[10px] font-black hover:underline px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">تعديل الطريقة</button>
+                      </div>
+                      <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-[1.8rem] border border-slate-100 dark:border-slate-800 flex justify-between items-center flex-row-reverse group transition-all hover:bg-slate-100/50 dark:hover:bg-slate-800 cursor-pointer" onClick={() => setPreferredMethod(preferredMethod === 'bank' ? 'wallet' : 'bank')}>
+                         <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white dark:bg-slate-900 rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-800">
+                                {preferredMethod === 'bank' ? <Banknote size={20} className="text-indigo-500" /> : <Smartphone size={20} className="text-emerald-500" />}
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs font-black text-slate-800 dark:text-white">{preferredMethod === 'bank' ? 'الحساب البنكي' : 'المحفظة الإلكترونية'}</p>
+                                <p className="text-[10px] font-mono text-slate-400 mt-0.5 tracking-widest font-black">
+                                    {preferredMethod === 'bank' ? (localBankDetails.iban || localBankDetails.accountNumber || 'لم يتم الضبط') : (localMobileWallet || 'لم يتم الضبط')}
+                                </p>
+                            </div>
+                         </div>
+                         <div className="flex flex-col items-center gap-1">
+                            <CheckCircle size={20} className="text-emerald-500" />
+                            <span className="text-[8px] font-bold text-slate-400">اضغط للتغيير</span>
+                         </div>
+                      </div>
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <button type="button" onClick={() => setModalMode('none')} className="flex-1 py-5 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-3xl font-black hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-xs tracking-wide">إلغاء العملية</button>
+                    <button type="submit" className="flex-[2] py-5 bg-indigo-600 text-white rounded-3xl font-black hover:bg-indigo-700 shadow-2xl shadow-indigo-500/30 transition-all text-sm tracking-wide">تأكيد طلب السحب</button>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Settings Modal (Methods Selector) */}
+      <AnimatePresence>
+        {modalMode === 'settings' && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm" onClick={() => setModalMode('none')}>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 40 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-10 space-y-10">
+                <div className="flex justify-between items-center flex-row-reverse">
+                  <div className="flex items-center gap-5 text-right">
+                    <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-2xl flex items-center justify-center shadow-inner group-hover:rotate-12 transition-transform">
+                      <SettingsIcon size={28} />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-black text-slate-800 dark:text-white">
+                        {settingsScreen === 'main' ? 'إعدادات المحفظة' : 
+                         settingsScreen === 'payment_methods' ? 'وسائل الدفع' : 'إعدادات سحب الأرباح'}
+                      </h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1 text-indigo-500">
+                        {settingsScreen === 'main' ? 'Finance & Payout Settings' :
+                         settingsScreen === 'payment_methods' ? 'Payment Methods' : 'Update Payout Methods'}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                        if (settingsScreen === 'main') setModalMode('none');
+                        else setSettingsScreen('main');
+                    }} 
+                    className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl transition-all"
+                  >
+                    {settingsScreen === 'main' ? <X size={24}/> : <ChevronRight size={24} className="rotate-180"/>}
+                  </button>
+                </div>
+
+                <AnimatePresence mode="wait">
+                    {settingsScreen === 'main' && (
+                        <motion.div 
+                            key="main"
+                            initial={{ x: 20, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: -20, opacity: 0 }}
+                            className="space-y-4"
+                        >
+                            <button 
+                                onClick={() => setSettingsScreen('payment_methods')} 
+                                className="w-full p-8 bg-slate-50 dark:bg-slate-800/40 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 flex items-center justify-between group hover:bg-white dark:hover:bg-slate-900 hover:border-indigo-200/50 dark:hover:border-indigo-500/30 transition-all shadow-sm hover:shadow-xl"
+                            >
+                                <ChevronRight size={20} className="text-slate-300 group-hover:text-indigo-500 transition-all rotate-180"/>
+                                <div className="flex items-center gap-6 text-right">
+                                    <div>
+                                        <p className="text-lg font-black text-slate-800 dark:text-white">وسائل الدفع</p>
+                                        <p className="text-xs text-slate-400 font-bold mt-1">إضافة وحذف البطاقات والمحافظ الإلكترونية</p>
+                                    </div>
+                                    <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                        <CreditCard size={28} className="text-slate-400 group-hover:text-indigo-500 transition-colors"/>
+                                    </div>
+                                </div>
+                            </button>
+
+                            <button 
+                                onClick={() => setSettingsScreen('withdraw_settings')} 
+                                className="w-full p-8 bg-slate-50 dark:bg-slate-800/40 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 flex items-center justify-between group hover:bg-white dark:hover:bg-slate-900 hover:border-indigo-200/50 dark:hover:border-indigo-500/30 transition-all shadow-sm hover:shadow-xl"
+                            >
+                                <ChevronRight size={20} className="text-slate-300 group-hover:text-indigo-500 transition-all rotate-180"/>
+                                <div className="flex items-center gap-6 text-right">
+                                    <div>
+                                        <p className="text-lg font-black text-slate-800 dark:text-white">إعدادات سحب الأرباح</p>
+                                        <p className="text-xs text-slate-400 font-bold mt-1">تحديد مواعيد السحب الفوري والتلقائي</p>
+                                    </div>
+                                    <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                        <Banknote size={28} className="text-slate-400 group-hover:text-emerald-500 transition-colors"/>
+                                    </div>
+                                </div>
+                            </button>
+                        </motion.div>
+                    )}
+
+                    {settingsScreen === 'payment_methods' && (
+                        <motion.div 
+                            key="payments"
+                            initial={{ x: 20, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: -20, opacity: 0 }}
+                            className="space-y-10 flex flex-col items-center py-16"
+                        >
+                            <div className="relative">
+                                <div className="absolute -inset-10 bg-indigo-500/10 rounded-full blur-3xl animate-pulse"></div>
+                                <div className="w-32 h-32 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center shadow-inner relative">
+                                    <CreditCard size={64} className="text-slate-200 dark:text-slate-700"/>
+                                    <div className="absolute top-0 right-0 p-2 bg-white dark:bg-slate-900 rounded-full shadow-md">
+                                        <Plus size={20} className="text-indigo-500" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-center space-y-3">
+                                <h4 className="text-xl font-black text-slate-800 dark:text-white">لا توجد وسائل دفع محفوظة</h4>
+                                <p className="text-sm text-slate-400 font-bold max-w-xs mx-auto leading-relaxed">بإمكانك إضافة وسيلة دفع جديدة عند قيامك بأول عملية شحن لمحفظتك.</p>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {settingsScreen === 'withdraw_settings' && (
+                        <motion.div 
+                            key="withdraw"
+                            initial={{ x: 20, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: -20, opacity: 0 }}
+                            className="space-y-8"
+                        >
+                            <div className="flex gap-4">
+                                <button 
+                                    onClick={() => setWallet(prev => ({ 
+                                        ...prev, 
+                                        settings: { ...(prev.settings || walletSettings), autoWithdrawal: false } 
+                                    }))}
+                                    className={`flex-1 p-6 rounded-[2rem] border-2 transition-all flex flex-col items-center gap-4 font-black text-xs relative overflow-hidden ${!walletSettings.autoWithdrawal ? 'border-emerald-500 bg-emerald-50/20 text-emerald-700 dark:text-emerald-400' : 'border-slate-100 dark:border-slate-800 text-slate-400'}`}
+                                >
+                                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${!walletSettings.autoWithdrawal ? 'border-emerald-500' : 'border-slate-300 dark:border-slate-700'}`}>
+                                        {!walletSettings.autoWithdrawal && <motion.div layoutId="check" className="w-3 h-3 rounded-full bg-emerald-500" />}
+                                    </div>
+                                    السحب اليدوي
+                                </button>
+                                <button 
+                                    onClick={() => setWallet(prev => ({ 
+                                        ...prev, 
+                                        settings: { ...(prev.settings || walletSettings), autoWithdrawal: true } 
+                                    }))}
+                                    className={`flex-1 p-6 rounded-[2rem] border-2 transition-all flex flex-col items-center gap-4 font-black text-xs relative overflow-hidden ${walletSettings.autoWithdrawal ? 'border-emerald-500 bg-emerald-50/20 text-emerald-700 dark:text-emerald-400' : 'border-slate-100 dark:border-slate-800 text-slate-400'}`}
+                                >
+                                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${walletSettings.autoWithdrawal ? 'border-emerald-500' : 'border-slate-300 dark:border-slate-700'}`}>
+                                        {walletSettings.autoWithdrawal && <motion.div layoutId="check" className="w-3 h-3 rounded-full bg-emerald-500" />}
+                                    </div>
+                                    السحب التلقائي
+                                </button>
+                            </div>
+
+                            {walletSettings.autoWithdrawal && (
+                                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                                    <div className="text-right space-y-3">
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-4">أيام التحويل الدوري</label>
+                                        <div className="flex flex-wrap justify-end gap-2 px-2">
+                                            {['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'].map((day) => (
+                                                <button 
+                                                    key={day}
+                                                    className="px-5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-[10px] font-black text-slate-600 dark:text-slate-300 hover:border-indigo-500/30 transition-all"
+                                                >
+                                                    {day}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+
+
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center flex-row-reverse px-4">
+                                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">بيانات الحساب البنكي</p>
+                                    <button 
+                                        onClick={() => setModalMode('bank')}
+                                        className="text-indigo-600 text-[10px] font-black hover:underline px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg"
+                                    >
+                                        تعديل البيانات
+                                    </button>
+                                </div>
+                                <div className="p-8 bg-slate-50 dark:bg-slate-800/40 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 text-right space-y-5 shadow-inner">
+                                    <div className="flex justify-between items-start flex-row-reverse">
+                                        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                                            <Banknote className="text-indigo-500" size={28} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">المصرف المعتمد</p>
+                                            <h4 className="text-base font-black text-slate-800 dark:text-white">{walletSettings.bankAccount?.bankName || 'لم يتم تحديد البنك'}</h4>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2 pt-2 border-t border-slate-200/50 dark:border-slate-700/50">
+                                        <p className="text-sm text-slate-700 dark:text-slate-300 font-black">{walletSettings.bankAccount?.accountHolder || 'اسم صاحب الحساب'}</p>
+                                        <div className="space-y-1">
+                                            <p className="text-[11px] text-slate-400 font-mono tracking-[0.2em]">{walletSettings.bankAccount?.accountNumber || 'رقم الحساب'}</p>
+                                            {walletSettings.bankAccount?.iban && (
+                                              <p className="text-[10px] text-slate-400 font-mono tracking-[0.1em] break-all">{walletSettings.bankAccount.iban}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={() => {
+                                    setModalMode('none');
+                                    setSettingsScreen('main');
+                                }}
+                                className="w-full py-5 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-[1.8rem] font-black hover:bg-black dark:hover:bg-slate-100 shadow-2xl transition-all text-sm tracking-widest mt-6"
+                            >
+                                حفظ الإعدادات المالية
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bank Account Modal - Modernized */}
+      <AnimatePresence>
+        {modalMode === 'bank' && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md" onClick={() => setModalMode('settings')}>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 40 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-10 space-y-10">
+                <div className="flex justify-between items-center flex-row-reverse">
+                  <div className="flex items-center gap-5 text-right">
+                    <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center shadow-inner">
+                        <Banknote size={28} />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-black text-slate-800 dark:text-white">حساب البنك</h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1 text-indigo-500">Update Bank Details</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setModalMode('settings')} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl transition-all">
+                    <X size={24}/>
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                    <div className="text-right space-y-3">
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-4">اسم صاحب الحساب</label>
+                        <input 
+                            type="text" 
+                            value={localBankDetails.accountHolder}
+                            onChange={(e) => setLocalBankDetails(prev => ({ ...prev, accountHolder: e.target.value }))}
+                            className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500/20 rounded-[1.8rem] px-8 py-5 text-right text-sm font-black outline-none focus:ring-8 focus:ring-indigo-500/5 transition-all dark:text-white shadow-inner"
+                        />
+                    </div>
+                    
+                    <div className="text-right space-y-3">
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-4">البنك</label>
+                        <div className="relative group">
+                            <select 
+                                value={localBankDetails.bankName}
+                                onChange={(e) => setLocalBankDetails(prev => ({ ...prev, bankName: e.target.value }))}
+                                className="w-full appearance-none bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500/20 rounded-[1.8rem] px-12 py-5 text-right text-sm font-black outline-none focus:ring-8 focus:ring-indigo-500/5 transition-all dark:text-white shadow-inner"
+                            >
+                                <option value="">اختر البنك...</option>
+                                <option value="National Bank of Egypt (NBE)">National Bank of Egypt (NBE)</option>
+                                <option value="Banque Misr">Banque Misr</option>
+                                <option value="CIB">CIB</option>
+                                <option value="QNB">QNB</option>
+                                <option value="HSBC">HSBC</option>
+                            </select>
+                            <ChevronRight size={20} className="absolute left-6 top-1/2 -translate-y-1/2 rotate-90 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+                        </div>
+                    </div>
+
+                    <div className="text-right space-y-3">
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-4">رقم الحساب</label>
+                        <input 
+                            type="text" 
+                            value={localBankDetails.accountNumber}
+                            onChange={(e) => setLocalBankDetails(prev => ({ ...prev, accountNumber: e.target.value }))}
+                            placeholder="أدخل رقم الحساب"
+                            className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500/20 rounded-[1.8rem] px-8 py-5 text-right text-sm font-black outline-none focus:ring-8 focus:ring-indigo-500/5 transition-all dark:text-white font-mono shadow-inner"
+                        />
+                    </div>
+
+                    <div className="text-right space-y-3">
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-4">رقم IBAN (اختياري)</label>
+                        <input 
+                            type="text" 
+                            value={localBankDetails.iban || ''}
+                            onChange={(e) => setLocalBankDetails(prev => ({ ...prev, iban: e.target.value }))}
+                            placeholder="أدخل رقم الـ IBAN إن وجد"
+                            className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500/20 rounded-[1.8rem] px-8 py-5 text-right text-sm font-black outline-none focus:ring-8 focus:ring-indigo-500/5 transition-all dark:text-white font-mono shadow-inner"
+                        />
+                    </div>
+                </div>
+
+                <div className="flex gap-4 pt-6">
+                    <button onClick={() => setModalMode('settings')} className="flex-1 py-5 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-3xl font-black hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-xs tracking-wide">إلغاء</button>
+                    <button onClick={handleUpdateWalletSettings} className="flex-[2] py-5 bg-indigo-600 text-white rounded-3xl font-black hover:bg-indigo-700 shadow-2xl shadow-indigo-500/30 transition-all text-sm tracking-widest">تأكيد البيانات</button>
                 </div>
               </div>
-              <div>
-                <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">تصنيف المعاملة</label>
-                <select 
-                    value={note} 
-                    onChange={e => setNote(e.target.value)} 
-                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
-                >
-                    <option value="">-- اختر التصنيف --</option>
-                    {(settings.expenseCategories || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">تأكيد</button>
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700">إلغاء</button>
-              </div>
-            </form>
+            </motion.div>
           </div>
-        </div>
-      )}
-      
-      {selectedTransaction && <TransactionDetailsModal transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} onDelete={deleteTransaction} />}
-    </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* History Detail Modal - Modernized Full screen list */}
+      <AnimatePresence>
+        {modalMode === 'history' && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-8 bg-slate-950/40 backdrop-blur-xl" onClick={() => setModalMode('none')}>
+             <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white dark:bg-slate-900 w-full h-full max-w-6xl rounded-none md:rounded-[3.5rem] shadow-2xl flex flex-col overflow-hidden border border-slate-100 dark:border-slate-800"
+                onClick={e => e.stopPropagation()}
+             >
+                {/* Header */}
+                <div className="px-10 py-8 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 flex justify-between items-center flex-row-reverse shrink-0">
+                    <div className="flex items-center gap-6 flex-row-reverse">
+                        <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-3xl flex items-center justify-center shadow-inner">
+                            <ArrowDownLeft size={32} className="text-slate-900 dark:text-white" />
+                        </div>
+                        <div className="text-right">
+                            <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight">عمليات السحب</h2>
+                            <p className="text-xs text-indigo-500 font-black mt-1 uppercase tracking-widest">Withdrawal Operations</p>
+                        </div>
+                    </div>
+                    <button onClick={() => setModalMode('none')} className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all group">
+                        <X size={28} className="group-hover:rotate-90 transition-transform"/>
+                    </button>
+                </div>
+
+                {/* Filters */}
+                <div className="px-10 py-6 bg-slate-50/50 dark:bg-slate-800/30 flex gap-4 overflow-x-auto no-scrollbar flex-row-reverse border-b border-slate-100 dark:border-slate-800 shrink-0">
+                    <div className="relative min-w-[240px]">
+                        <ChevronRight size={16} className="absolute left-4 top-1/2 -translate-y-1/2 rotate-90 text-slate-400" />
+                        <select className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 font-black text-xs outline-none text-right appearance-none shadow-sm cursor-pointer hover:border-indigo-500/30 transition-all">
+                            <option>حالة عمليات السحب</option>
+                            <option>تم قبولها</option>
+                            <option>قيد المراجعة</option>
+                            <option>مرفوضة</option>
+                        </select>
+                    </div>
+                    <div className="relative min-w-[240px]">
+                        <Calendar size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400"/>
+                        <input type="text" placeholder="اختر التاريخ" className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-6 pr-12 py-4 font-black text-xs outline-none text-right shadow-sm focus:ring-4 focus:ring-indigo-500/5 transition-all" />
+                    </div>
+                </div>
+
+                {/* Content Table */}
+                <div className="flex-1 overflow-y-auto no-scrollbar p-6 md:p-10">
+                    <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 overflow-hidden shadow-2xl">
+                        <table className="w-full text-right border-collapse">
+                            <thead>
+                                <tr className="bg-slate-50 dark:bg-slate-800/50 text-[11px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
+                                    <th className="p-8">تفاصيل السحب</th>
+                                    <th className="p-8 text-center">الحالة</th>
+                                    <th className="p-8 text-center">المبلغ</th>
+                                    <th className="p-8 text-center">الرسوم</th>
+                                    <th className="p-8 text-center">إجمالي المخصوم</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                                {(wallet.withdrawRequests || []).length > 0 ? (
+                                    (wallet.withdrawRequests || []).map((r, idx) => (
+                                        <motion.tr 
+                                            key={r.id}
+                                            initial={{ opacity: 0, x: 20 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ delay: idx * 0.05 }}
+                                            className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-all cursor-default group"
+                                        >
+                                            <td className="p-8">
+                                                <div className="flex flex-col text-right">
+                                                    <span className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider mb-1">
+                                                        {r.method === 'bank' ? 'تحويل بنكي' : 'محفظة إلكترونية'}
+                                                    </span>
+                                                    <span className="text-[10px] font-bold text-slate-400">
+                                                        {new Date(r.date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                    <span className="text-[9px] font-mono text-slate-400 mt-1 opacity-60 group-hover:opacity-100 transition-opacity">ID: {r.id}</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-8 text-center">
+                                                <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black border tracking-wide ${
+                                                    r.status === 'accepted' ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' :
+                                                    r.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20' : 
+                                                    'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20'
+                                                }`}>
+                                                    <div className={`w-1.5 h-1.5 rounded-full ${
+                                                        r.status === 'accepted' ? 'bg-emerald-500' : 
+                                                        r.status === 'pending' ? 'bg-amber-500 animate-pulse' : 'bg-rose-500'
+                                                    }`}></div>
+                                                    {r.status === 'accepted' ? 'تم قبولها' : r.status === 'pending' ? 'قيد المراجعة' : 'عملية مرفوضة'}
+                                                </div>
+                                            </td>
+                                            <td className="p-8 text-center">
+                                                <div className="flex items-baseline justify-center gap-1">
+                                                    <span className="text-sm font-black text-slate-900 dark:text-white">{r.amount.toLocaleString('ar-EG')}</span>
+                                                    <span className="text-[10px] font-bold text-slate-400 opacity-60">ج.م</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-8 text-center">
+                                                <div className="flex items-baseline justify-center gap-1">
+                                                    <span className="text-sm font-black text-rose-500">{(r.fee || 0).toLocaleString('ar-EG')}</span>
+                                                    <span className="text-[10px] font-bold text-slate-400 opacity-60">ج.م</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-8 text-center">
+                                                <div className="flex items-baseline justify-center gap-1">
+                                                    <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">{(r.amount + (r.fee || 0)).toLocaleString('ar-EG')}</span>
+                                                    <span className="text-[10px] font-bold text-slate-400 opacity-60">ج.م</span>
+                                                </div>
+                                            </td>
+                                        </motion.tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={5} className="p-32 text-center text-slate-400 font-bold">لا توجد سجلات حالياً</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Footer / Summary Stats */}
+                <div className="px-10 py-8 bg-slate-50/50 dark:bg-slate-800/80 backdrop-blur-xl border-t border-slate-100 dark:border-slate-800 flex justify-between items-center flex-row-reverse shrink-0">
+                    <div className="flex gap-10 flex-row-reverse">
+                        <div className="text-right">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">إجمالي ما تم سحبه</p>
+                            <p className="text-3xl font-black text-slate-900 dark:text-white">{(wallet.withdrawRequests || []).reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()} <span className="text-sm font-bold opacity-30 tracking-tight">ج.م</span></p>
+                        </div>
+                        <div className="w-px h-12 bg-slate-200 dark:bg-slate-700 mx-4"></div>
+                        <div className="text-right">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">عدد العمليات الناجحة</p>
+                            <p className="text-3xl font-black text-emerald-500">{(wallet.withdrawRequests || []).filter(r => r.status === 'accepted').length}</p>
+                        </div>
+                    </div>
+                    <div>
+                        <button onClick={() => setModalMode('none')} className="px-10 py-5 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-[1.8rem] font-black shadow-2xl transition-all hover:scale-105 active:scale-95 text-xs tracking-widest">إغلاق المجلد</button>
+                    </div>
+                </div>
+             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Withdrawal Confirmation Modal */}
+      <AnimatePresence>
+        {modalMode === 'withdraw_confirm' && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md" onClick={() => setModalMode('withdraw')}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-10 space-y-8">
+                {/* Yellow Icon Container */}
+                <div className="relative mx-auto w-24 h-24">
+                  <div className="absolute inset-0 bg-amber-400/10 rounded-full animate-ping"></div>
+                  <div className="relative w-full h-full bg-amber-50 dark:bg-amber-500/10 rounded-full flex items-center justify-center border-4 border-white dark:border-slate-900 shadow-lg">
+                    <AlertCircle size={48} className="text-amber-500" />
+                  </div>
+                </div>
+                
+                <div className="text-center space-y-2">
+                  <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">تأكيد عملية السحب</h3>
+                  <p className="text-xs text-slate-400 font-bold">يرجى مراجعة تفاصيل العملية قبل التأكيد</p>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-[2.5rem] p-8 space-y-6 border border-slate-100 dark:border-slate-800">
+                  <div className="flex justify-between items-center flex-row-reverse border-b border-slate-200/50 dark:border-slate-700/50 pb-4">
+                    <span className="text-xs text-slate-500 font-bold">المبلغ المسحوب</span>
+                    <span className="text-sm font-black text-slate-800 dark:text-white">{parseFloat(amount).toLocaleString()} ج.م</span>
+                  </div>
+                  <div className="flex justify-between items-center flex-row-reverse border-b border-slate-200/50 dark:border-slate-700/50 pb-4">
+                    <span className="text-xs text-slate-500 font-bold text-rose-500">رسوم العملية</span>
+                    <span className="text-sm font-black text-rose-500">+{currentWithdrawFee.toLocaleString()} ج.م</span>
+                  </div>
+                  <div className="flex justify-between items-center flex-row-reverse pt-2">
+                    <span className="text-xs text-slate-800 dark:text-slate-200 font-black">إجمالي الخصم من المحفظة</span>
+                    <span className="text-xl font-black text-indigo-600 dark:text-indigo-400">{(parseFloat(amount) + currentWithdrawFee).toLocaleString()} ج.م</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <motion.button 
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={confirmWithdraw}
+                    className="flex-[2] py-5 bg-indigo-600 text-white rounded-[1.8rem] font-black hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 text-sm"
+                  >
+                    تأكيد السحب الآن
+                  </motion.button>
+                  <motion.button 
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setModalMode('withdraw')}
+                    className="flex-1 py-5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-[1.8rem] font-black hover:bg-slate-200 dark:hover:bg-slate-700 transition-all text-sm"
+                  >
+                    إلغاء
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Error / Alert Modal */}
+      <AnimatePresence>
+        {modalMode === 'error' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md" onClick={() => setModalMode('none')}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-10 text-center space-y-8">
+                <div className="w-24 h-24 bg-rose-50 dark:bg-rose-500/10 rounded-full flex items-center justify-center mx-auto border-4 border-white dark:border-slate-900 shadow-xl">
+                    <AlertTriangle size={48} className="text-rose-500" />
+                </div>
+                
+                <div className="space-y-3">
+                  <h3 className="text-2xl font-black text-slate-800 dark:text-white">{errorConfig.title}</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-bold leading-relaxed">{errorConfig.message}</p>
+                </div>
+
+                <button 
+                  onClick={() => setModalMode('none')}
+                  className="w-full py-5 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-[2rem] font-black shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] text-sm"
+                >
+                  فهمت ذلك
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* COD History Modal */}
+      <AnimatePresence>
+        {modalMode === 'cod_history' && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-8 bg-slate-950/40 backdrop-blur-xl" onClick={() => setModalMode('none')}>
+             <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white dark:bg-slate-900 w-full h-full max-w-7xl rounded-none md:rounded-[3.5rem] shadow-2xl flex flex-col overflow-hidden border border-slate-100 dark:border-slate-800"
+                onClick={e => e.stopPropagation()}
+             >
+                {/* Header */}
+                <div className="px-10 py-8 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 flex justify-between items-center flex-row-reverse shrink-0">
+                    <div className="flex items-center gap-6 flex-row-reverse">
+                        <div className="text-right">
+                            <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">المدفوعات من الدفع عند الاستلام</h2>
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-400 text-xs font-bold">
+                            <span>المحفظة</span>
+                            <ChevronRight size={14} className="rotate-180" />
+                        </div>
+                    </div>
+                    <button onClick={() => setModalMode('none')} className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all group">
+                        <X size={28} className="group-hover:rotate-90 transition-transform"/>
+                    </button>
+                </div>
+
+                {/* Filters */}
+                <div className="px-10 py-6 bg-slate-50/50 dark:bg-slate-800/30 flex gap-4 overflow-x-auto no-scrollbar flex-row-reverse border-b border-slate-100 dark:border-slate-800 shrink-0">
+                    <div className="relative min-w-[280px]">
+                        <ChevronRight size={16} className="absolute left-4 top-1/2 -translate-y-1/2 rotate-90 text-slate-300" />
+                        <select className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 font-bold text-xs outline-none text-right appearance-none shadow-sm cursor-pointer text-slate-500">
+                            <option>حالة عمليات الدفع عند الاستلام</option>
+                            <option>تمت إضافتها للمحفظة</option>
+                            <option>قيد التوصيل</option>
+                        </select>
+                    </div>
+                    <div className="relative min-w-[280px]">
+                        <Calendar size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300"/>
+                        <input type="text" placeholder="اختر التاريخ" className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-6 pr-12 py-4 font-bold text-xs outline-none text-right shadow-sm text-slate-500" />
+                    </div>
+                </div>
+
+                {/* Content Table */}
+                <div className="flex-1 overflow-y-auto no-scrollbar p-10">
+                    <div className="bg-white dark:bg-slate-900 rounded-lg overflow-hidden border border-slate-50 dark:border-slate-800/50">
+                        <table className="w-full text-right border-collapse text-[11px] font-bold">
+                            <thead>
+                                <tr className="bg-slate-50/50 dark:bg-slate-800/20 text-slate-400">
+                                    <th className="p-6 font-bold">رقم الطلب</th>
+                                    <th className="p-6 font-bold">تاريخ التوصيل</th>
+                                    <th className="p-6 font-bold">الشركة</th>
+                                    <th className="p-6 font-bold">الحالة</th>
+                                    <th className="p-6 font-bold">مبلغ الدفع عند الاستلام</th>
+                                    <th className="p-6 font-bold">رسوم تحصيل الدفع عند الاستلام</th>
+                                    <th className="p-6 font-bold text-center">الرسوم</th>
+                                    <th className="p-6 font-bold text-center">المجموع</th>
+                                    <th className="p-6 font-bold text-center">متاح في</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                                {orders.filter(o => o.paymentMethod === 'cod').map((o, idx) => {
+                                    const total = o.totalAmountOverride ?? (o.productPrice + o.shippingFee - (o.discount || 0));
+                                    return (
+                                        <tr key={o.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/10 transition-all">
+                                            <td className="p-6 text-indigo-600 font-bold">#{o.orderNumber}</td>
+                                            <td className="p-6 text-slate-500">{new Date(o.date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</td>
+                                            <td className="p-6">
+                                                <div className="flex items-center gap-2 justify-end">
+                                                    <span className="text-slate-600">{o.shippingCompany || 'آرامكس'}</span>
+                                                    <div className="w-6 h-6 bg-rose-600 rounded-full flex items-center justify-center text-[8px] text-white font-bold">A</div>
+                                                </div>
+                                            </td>
+                                            <td className="p-6">
+                                                <div className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20">
+                                                    <div className="w-1 h-1 bg-emerald-500 rounded-full" />
+                                                    تمت إضافتها للمحفظة
+                                                </div>
+                                            </td>
+                                            <td className="p-6 text-slate-800 dark:text-slate-100">{total.toLocaleString()} ج.م</td>
+                                            <td className="p-6 text-slate-400 text-center">-</td>
+                                            <td className="p-6 text-slate-400 text-center">-</td>
+                                            <td className="p-6 text-slate-800 dark:text-slate-100 font-black">{total.toLocaleString()} ج.م</td>
+                                            <td className="p-6 text-slate-600 text-center">{new Date(new Date(o.date).getTime() + 3*24*60*60*1000).toLocaleDateString('en-GB')}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

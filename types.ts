@@ -99,7 +99,38 @@ export interface Product {
   stockThreshold?: number;
 }
 
-export type TransactionCategory = 'shipping' | 'insurance' | 'inspection' | 'collection' | 'cod' | 'return' | 'manual_deposit' | 'manual_withdrawal' | 'expense_ads' | 'expense_salary' | 'expense_rent' | 'expense_other' | 'inventory_purchase';
+export type TransactionCategory = 'shipping' | 'insurance' | 'inspection' | 'collection' | 'cod' | 'return' | 'manual_deposit' | 'manual_withdrawal' | 'expense_ads' | 'expense_salary' | 'expense_rent' | 'expense_other' | 'inventory_purchase' | 'capital_addition' | 'profit_withdrawal' | 'loan' | 'repayment' | 'wallet_charge' | 'wallet_withdrawal';
+
+export type WithdrawStatus = 'pending' | 'accepted' | 'rejected' | 'processing';
+
+export interface WithdrawRequest {
+  id: string;
+  amount: number;
+  date: string;
+  status: WithdrawStatus;
+  method: 'bank' | 'wallet' | 'instapay';
+  details: string; // JSON or formatted string of bank/wallet details
+  fee: number;
+  netAmount: number;
+  isSameDay?: boolean;
+}
+
+export interface BankAccount {
+  bankName: string;
+  accountHolder: string;
+  accountNumber: string;
+  iban?: string;
+}
+
+export interface WalletSettings {
+  preferredWithdrawMethod: 'bank' | 'wallet' | 'instapay';
+  bankAccount?: BankAccount;
+  mobileWallet?: string;
+  instapayAddress?: string;
+  autoWithdrawal: boolean;
+  autoWithdrawalDays: ('Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday')[];
+  minAutoWithdrawAmount: number;
+}
 
 export interface Transaction {
   id: string;
@@ -108,11 +139,19 @@ export interface Transaction {
   date: string;
   note: string;
   category?: TransactionCategory;
+  status: 'pending' | 'completed' | 'cancelled';
+  fees?: number;
+  orderId?: string;
+  orderNumber?: string;
+  service?: string;
+  details?: any; // Keep details for generic extra data
 }
 
 export interface Wallet {
   balance: number;
   transactions: Transaction[];
+  withdrawRequests?: WithdrawRequest[];
+  settings?: WalletSettings;
 }
 
 export interface CompanyFees {
@@ -415,6 +454,17 @@ export interface Settings {
   partners?: Partner[];
   partnerTransactions?: PartnerTransaction[];
   expenseCategories?: string[]; // Added expense categories
+  
+  // Wallet & Payment Fees
+  depositFeePercent?: number;
+  withdrawalFeeType?: 'flat' | 'percent';
+  withdrawalFeePercent?: number;
+  withdrawalFlatFee?: number;
+  sameDayWithdrawalFeeType?: 'flat' | 'percent';
+  sameDayWithdrawalFeePercent?: number;
+  sameDayWithdrawalFlatFee?: number;
+  minWithdrawalFee?: number;
+  feeApplicableMethods?: string[]; // e.g. ['card', 'instapay', 'wallet']
 }
 
 export interface OrderItem {
@@ -427,6 +477,7 @@ export interface OrderItem {
   thumbnail?: string;
   variantId?: string;
   variantDescription?: string;
+  description?: string;
   discountValue?: number;
   discountType?: 'amount' | 'percentage';
 }
@@ -529,6 +580,7 @@ export interface Order {
   auditLogs?: AuditLog[];
   callAttempts?: CallAttempt[];
   sentiment?: string;
+  images?: string[];
 }
 
 export interface StoreData {

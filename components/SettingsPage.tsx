@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Settings, PlatformIntegration, Store } from '../types';
-import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe } from 'lucide-react';
+import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe, CreditCard, Smartphone, Banknote } from 'lucide-react';
 import { clearStoreData } from '../services/databaseService';
 
 interface SettingsPageProps {
@@ -39,6 +39,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
       )}
       <DomainSettingsCard settings={settings} setSettings={setSettings} />
       <ExpenseCategoriesSettingsCard settings={settings} setSettings={setSettings} />
+      <WalletFeesSettingsCard settings={settings} setSettings={setSettings} />
       <CommunicationSettingsCard settings={settings} setSettings={setSettings} />
       <EmployeeDashboardSettingsCard settings={settings} setSettings={setSettings} />
       <PlatformIntegrationCard 
@@ -47,7 +48,6 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
         isEnabled={settings.enablePlatformIntegration}
         onToggle={togglePlatformIntegration}
       />
-      <DangerZone activeStore={activeStore} />
     </div>
   );
 };
@@ -576,6 +576,119 @@ const DangerZone: React.FC<{ activeStore?: Store }> = ({ activeStore }) => {
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+const WalletFeesSettingsCard: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
+
+    const applicableMethods = settings.feeApplicableMethods || [];
+    
+    const methods = [
+        { id: 'card', label: 'بطاقة دفع', icon: CreditCard },
+        { id: 'wallet', label: 'محفظة هاتف', icon: Smartphone },
+        { id: 'instapay', label: 'إنستاباي', icon: Banknote }
+    ];
+
+    const toggleMethod = (id: string) => {
+        setSettings(prev => ({
+            ...prev,
+            feeApplicableMethods: applicableMethods.includes(id) 
+                ? applicableMethods.filter(m => m !== id) 
+                : [...applicableMethods, id]
+        }));
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center gap-3 text-emerald-600 dark:text-emerald-400 mb-6 border-b border-slate-200 dark:border-slate-800 pb-6">
+                <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg"><Wallet size={24}/></div>
+                <div>
+                    <h2 className="text-xl font-black dark:text-white">إعدادات رسوم المحفظة</h2>
+                    <p className="text-xs text-slate-500">تحديد النسب المئوية لرسوم السحب والإيداع والطرق المطبق عليها.</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                    <h3 className="font-bold text-slate-800 dark:text-white text-sm">رسوم الإيداع (الشحن)</h3>
+                    <div className="flex items-center gap-3">
+                        <div className="relative flex-1">
+                            <input 
+                                type="number" 
+                                value={settings.depositFeePercent || 0}
+                                onChange={e => setSettings(prev => ({ ...prev, depositFeePercent: parseFloat(e.target.value) }))}
+                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500 text-center"
+                            />
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                        </div>
+                        <span className="text-xs text-slate-500 font-bold">نسبة رسوم الإيداع</span>
+                    </div>
+
+                    <div className="space-y-2">
+                        <p className="text-xs font-bold text-slate-600 dark:text-slate-400 mb-2">تطبيق الرسوم على الطرق التالية:</p>
+                        <div className="flex flex-wrap gap-2">
+                            {methods.map(method => (
+                                <button 
+                                    key={method.id}
+                                    onClick={() => toggleMethod(method.id)}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all text-[10px] font-bold ${
+                                        applicableMethods.includes(method.id)
+                                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
+                                        : 'border-slate-100 dark:border-slate-800 text-slate-400 bg-slate-50 dark:bg-slate-900'
+                                    }`}
+                                >
+                                    <method.icon size={14} />
+                                    {method.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <h3 className="font-bold text-slate-800 dark:text-white text-sm">رسوم السحب</h3>
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="relative flex-1">
+                                <input 
+                                    type="number" 
+                                    value={settings.withdrawalFeePercent || 0}
+                                    onChange={e => setSettings(prev => ({ ...prev, withdrawalFeePercent: parseFloat(e.target.value) }))}
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500 text-center"
+                                />
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                            </div>
+                            <span className="text-xs text-slate-500 font-bold">نسبة السحب العادي</span>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="relative flex-1">
+                                <input 
+                                    type="number" 
+                                    value={settings.sameDayWithdrawalFeePercent || 0}
+                                    onChange={e => setSettings(prev => ({ ...prev, sameDayWithdrawalFeePercent: parseFloat(e.target.value) }))}
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500 text-center"
+                                />
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                            </div>
+                            <span className="text-xs text-slate-500 font-bold">نسبة السحب الفوري (Same Day)</span>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="relative flex-1">
+                                <input 
+                                    type="number" 
+                                    value={settings.minWithdrawalFee || 0}
+                                    onChange={e => setSettings(prev => ({ ...prev, minWithdrawalFee: parseFloat(e.target.value) }))}
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500 text-center"
+                                />
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">ج.م</span>
+                            </div>
+                            <span className="text-xs text-slate-500 font-bold">الحد الأدنى لرسوم السحب</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };

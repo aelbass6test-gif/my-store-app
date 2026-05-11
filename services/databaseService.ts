@@ -172,6 +172,7 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
             date: t.date,
             category: t.category,
             note: t.note,
+            status: t.details?.status || t.status, // Fallback to t.status if exists, else from details
             ...t.details
         }));
 
@@ -318,6 +319,9 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
             isConnected: s.is_connected
         }));
 
+        const walletSettingsObj = storeRes.data?.settings?.wallet_settings;
+        const withdrawRequestsArr = storeRes.data?.settings?.withdraw_requests || [];
+
         const fullData: StoreData = {
             settings: {
                 ...storeRes.data.settings,
@@ -338,7 +342,9 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
             orders: orders,
             wallet: { 
                 balance: 0,
-                transactions: transactions 
+                transactions: transactions,
+                settings: walletSettingsObj,
+                withdrawRequests: withdrawRequestsArr
             },
             cart: [],
             customers: customers
@@ -373,6 +379,13 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         } = data.settings;
         
         const { orders = [], wallet = { balance: 0, transactions: [] }, customers = [] } = data;
+
+        const cleanSettingsFinal = {
+            ...cleanSettings,
+            wallet_settings: wallet.settings,
+            withdraw_requests: wallet.withdrawRequests
+        };
+
         
         // --- Handle Deletions by Syncing ---
         const syncAndDelete = async (tableName: string, stateItems: any[], dbIdColumn = 'id', stateIdColumn = 'id') => {
@@ -452,7 +465,19 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             const total_price = o.totalAmountOverride ?? (o.productPrice + o.shippingFee - (o.discount || 0));
             return { id, store_id: store.id, order_number: orderNumber, customer_name: customerName, status, date, total_price, details };
         });
-        const transactionsPayload = wallet.transactions.map(t => ({ id: t.id, store_id: store.id, type: t.type, amount: t.amount, date: t.date, category: t.category, note: t.note }));
+        const transactionsPayload = wallet.transactions.map(t => {
+            const { status, ...rest } = t;
+            return { 
+                id: t.id, 
+                store_id: store.id, 
+                type: t.type, 
+                amount: t.amount, 
+                date: t.date, 
+                category: t.category, 
+                note: t.note, 
+                details: { ...t.details, status } // Put status inside details to avoid database column error
+            };
+        });
         const suppliersPayload = suppliers.map(s => {
             const { id, name, phone, address, notes, ...extra } = s;
             // Store extra fields (like balance) as a JSON string in notes if they exist
@@ -514,7 +539,7 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         
         const { error: storeError } = await supabase
             .from('stores_data')
-            .update({ settings: cleanSettings, name: store.name })
+            .update({ settings: cleanSettingsFinal, name: store.name })
             .eq('id', store.id);
         if (storeError) throw storeError;
 
@@ -604,7 +629,18 @@ export const clearStoreData = async (storeId: string, targets: string[]): Promis
                 case 'customers': return 'customers';
                 case 'wallet': return 'transactions';
                 case 'activity': return 'activity_logs';
-                case 'settings': return ['discount_codes', 'reviews', 'abandoned_carts', 'global_options', 'custom_pages', 'payment_methods', 'collections'];
+                case 'coupons': return 'discount_codes';
+                case 'reviews': return 'reviews';
+                case 'abandoned_carts': return 'abandoned_carts';
+                case 'shipping': return 'shipping_integrations';
+                case 'pages': return 'custom_pages';
+                case 'suppliers': return 'suppliers';
+                case 'supply_orders': return 'supply_orders';
+                case 'global_options': return 'global_options';
+                case 'payment_methods': return 'payment_methods';
+                case 'collections': return 'collections';
+                case 'employees': return 'employees';
+                case 'settings': return ['discount_codes', 'reviews', 'abandoned_carts', 'global_options', 'custom_pages', 'payment_methods', 'collections', 'suppliers', 'supply_orders', 'shipping_integrations'];
                 default: return null;
             }
         }).flat().filter(Boolean) as string[];

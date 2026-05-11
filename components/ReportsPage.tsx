@@ -1237,7 +1237,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
     );
 };
 
-const PartnersFinancialReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ orders, settings, wallet }) => {
+const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings, wallet, activeStore }) => {
     const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
     const [isContinuous, setIsContinuous] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
@@ -1317,7 +1317,7 @@ const PartnersFinancialReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> =
     const [previewHtml, setPreviewHtml] = useState<string | null>(null);
 
     const handlePreview = () => {
-        const html = generatePartnersFinancialReportHTML(stats, settings.storeName, orientation, isContinuous);
+        const html = generatePartnersFinancialReportHTML(stats, activeStore?.name || 'المتجر', orientation, isContinuous);
         setPreviewHtml(html);
     };
 
@@ -1360,9 +1360,9 @@ const PartnersFinancialReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> =
             const opt = {
                 margin: isContinuous ? 0 : 10,
                 filename: `تقرير_الشركاء_والمركز_المالي_${new Date().toISOString().split('T')[0]}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
+                image: { type: 'jpeg' as const, quality: 0.98 },
                 html2canvas: { scale: 2, useCORS: true, logging: false },
-                jsPDF: { unit: 'mm', format: isContinuous ? [orientation === 'landscape' ? 297 : 210, Math.max(297, container.offsetHeight * 0.264583)] : 'a4', orientation: orientation }
+                jsPDF: { unit: 'mm', format: isContinuous ? [orientation === 'landscape' ? 297 : 210, Math.max(297, container.offsetHeight * 0.264583)] as [number, number] : 'a4', orientation: orientation }
             };
 
             await html2pdf().set(opt).from(container).save();
@@ -1556,9 +1556,9 @@ const InventoryReport: React.FC<{ activeStore?: Store; settings: Settings }> = (
     const [isContinuous, setIsContinuous] = useState(false);
     const [previewHtml, setPreviewHtml] = useState<string | null>(null);
 
-    const products = settings?.products || activeStore?.products || [];
-    const suppliers = settings?.suppliers || activeStore?.suppliers || [];
-    const supplyOrders = settings?.supplyOrders || activeStore?.supplyOrders || [];
+    const products = settings?.products || [];
+    const suppliers = settings?.suppliers || [];
+    const supplyOrders = settings?.supplyOrders || [];
 
     const stats = useMemo(() => {
         let totalInventoryValue = 0;
@@ -1653,7 +1653,7 @@ const InventoryReport: React.FC<{ activeStore?: Store; settings: Settings }> = (
     }, [products, suppliers, supplyOrders, settings]);
 
     const handlePreview = () => {
-        const html = generatePurchasesAndInventoryReportHTML(stats, settings.storeName || 'متجري', orientation, isContinuous);
+        const html = generatePurchasesAndInventoryReportHTML(stats, activeStore?.name || 'متجري', orientation, isContinuous);
         setPreviewHtml(html);
     };
 
@@ -1902,7 +1902,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ orders, settings, wallet, act
                 {activeTab === 'summary' && <SalesSummaryReport orders={orders} settings={settings} wallet={wallet} />}
                 {activeTab === 'losses' && <LossesReport orders={orders} settings={settings} activeStore={activeStore} />}
                 {activeTab === 'comprehensive' && <ComprehensiveReport orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
-                {activeTab === 'partners' && <PartnersFinancialReport orders={orders} settings={settings} wallet={wallet} />}
+                {activeTab === 'partners' && <PartnersFinancialReport orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
                 {activeTab === 'inventory' && <InventoryReport activeStore={activeStore} settings={settings} />}
                 {activeTab === 'accounting' && <AccountingReports orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
             </div>

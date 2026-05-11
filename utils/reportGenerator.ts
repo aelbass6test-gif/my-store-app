@@ -1,3 +1,4 @@
+import { Order, Settings, Wallet, OrderItem } from '../types';
 
 export const generatePurchasesAndInventoryReportHTML = (stats: any, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false): string => {
     return `

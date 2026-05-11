@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users, ExternalLink, Link as LinkIcon, MessageSquare, Clock } from 'lucide-react';
+import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users, ExternalLink, Link as LinkIcon, MessageSquare, Clock, Shield, Check, TrendingUp, TrendingDown } from 'lucide-react';
 import { Order, Settings, OrderStatus, Wallet, Transaction, PaymentStatus, PreparationStatus, OrderItem, Product, CustomerProfile, Store, Employee, User, AuditLog } from '../types';
 import { ORDER_STATUSES, EGYPT_GOVERNORATES, ORDER_STATUS_METADATA, generateEgyptShippingOptions } from '../constants';
-import { motion, Variants } from 'framer-motion';
+import { motion, Variants, AnimatePresence } from 'framer-motion';
 import { generateInvoiceHTML } from '../utils/invoiceGenerator';
 import { generateShippingLabelHTML } from '../utils/shippingLabelGenerator';
 import { generateShippingNote } from '../services/geminiService';
@@ -572,11 +572,13 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
             // Check if transaction is related by order number in note
             const relatedByNote = orderNumberToDelete ? note.includes(`#${orderNumberToDelete}`) : false;
 
+            const relatedByField = t.orderId === orderIdToDelete;
+
             // Check if transaction is related by a conventional ID
             const relatedById = id.endsWith(`_${orderIdToDelete}`);
 
             // If it's related, we want to remove it, so we return false from filter
-            return !(relatedByNote || relatedById);
+            return !(relatedByNote || relatedById || relatedByField);
         });
 
         // If nothing changed, return original wallet to avoid re-render
@@ -1143,190 +1145,225 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       animate="visible"
     >
       {/* Header & Main Actions */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="flex items-center justify-between w-full lg:w-auto">
           <div className="min-w-0 flex-1">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <h1 className="text-xl sm:text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1 truncate">إدارة الطلبات</h1>
-              <button 
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+              <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter mb-1 truncate">سجل الطلبات</h1>
+              <motion.button 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={handleManualRefresh}
-                className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-primary hover:border-primary transition-all whitespace-nowrap ${isRefreshing ? 'animate-spin text-primary border-primary/30' : ''}`}
-                title="مزامنة الطلبات من المتاجر الأخرى"
+                className={`flex items-center gap-2 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm ${isRefreshing ? 'animate-spin text-indigo-600 border-indigo-200' : ''}`}
+                title="مزامنة الطلبات"
               >
-                <RefreshCcw size={16} />
-                <span className="text-xs font-bold">مزامنة</span>
-              </button>
+                <RefreshCcw size={18} />
+                <span className="text-sm font-black uppercase tracking-tight">Sync</span>
+              </motion.button>
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <p className="text-[10px] sm:text-xs md:text-sm text-slate-500 font-medium whitespace-nowrap">{filteredOrders.length} طلب</p>
-              <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-1.5 py-0.5 rounded text-[8px] sm:text-[10px] font-bold truncate">المتجر: {activeStore?.id}</span>
+            <div className="flex items-center gap-3 mt-2">
+              <div className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-900/30">
+                {filteredOrders.length} طلب نشط
+              </div>
+              <div className="px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 dark:border-emerald-900/30">
+                المتجر: {activeStore?.id}
+              </div>
             </div>
           </div>
           
-          <button 
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => setShowAddModal(true)}
-            className="lg:hidden bg-primary text-white p-2.5 sm:p-3 rounded-xl sm:rounded-2xl font-black shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center shrink-0 ml-2"
+            className="lg:hidden bg-indigo-600 text-white p-4 rounded-2xl font-black shadow-xl shadow-indigo-500/20 transition-all flex items-center justify-center shrink-0"
           >
-            <Plus size={20} />
-          </button>
+            <Plus size={24} />
+          </motion.button>
         </div>
         
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 lg:pb-0">
-          <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
-            <button 
-              onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              title="عرض القائمة"
-            >
-              <LayoutList size={18} />
-            </button>
-            <button 
-              onClick={() => setViewMode('kanban')}
-              className={`p-1.5 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white dark:bg-slate-700 text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              title="عرض كانبان"
-            >
-              <LayoutGrid size={18} />
-            </button>
+        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-2 lg:pb-0">
+          <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shrink-0">
+            {[
+                { id: 'list', icon: LayoutList },
+                { id: 'kanban', icon: LayoutGrid }
+            ].map(mode => (
+                <button 
+                  key={mode.id}
+                  onClick={() => setViewMode(mode.id as any)}
+                  className={`p-2.5 rounded-xl transition-all ${viewMode === mode.id ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  <mode.icon size={20} />
+                </button>
+            ))}
           </div>
 
-          <button 
-            onClick={handleAutoAssign}
-            className="glass-card px-3 py-2 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-white/50 transition-all flex items-center gap-2 font-bold border border-indigo-100 dark:border-indigo-900/30 text-xs shrink-0"
-          >
-            توزيع <Users size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+              <button 
+                onClick={handleAutoAssign}
+                className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-600 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 transition-all shadow-sm"
+                title="توزيع الطلبات"
+              >
+                <Users size={20} />
+              </button>
 
-          <button 
-            onClick={handleExportPDF}
-            className="glass-card px-3 py-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-white/50 transition-all flex items-center gap-2 font-bold border border-red-100 dark:border-red-900/30 text-xs shrink-0"
-          >
-            PDF <FileText size={16} />
-          </button>
+              <button 
+                onClick={handleExportPDF}
+                className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-600 dark:text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 hover:text-rose-600 transition-all shadow-sm"
+                title="تصدير PDF"
+              >
+                <FileText size={20} />
+              </button>
+          </div>
 
-          <button 
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => setShowAddModal(true)}
-            className="hidden lg:flex bg-primary text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all items-center gap-2 text-sm shrink-0"
+            className="hidden lg:flex bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black shadow-xl shadow-indigo-500/25 transition-all items-center gap-3 text-sm shrink-0"
           >
-            <Plus size={18} />
-            إنشاء طلب
-          </button>
+            <Plus size={20} />
+            <span>طلب جديد</span>
+          </motion.button>
         </div>
       </div>
 
-      {/* Quick Stats Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3 md:gap-4">
+      {/* Quick Stats Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {[
-          { label: 'في انتظار المراجعة', count: quickStats.awaitingWaybill, icon: FileSearch, color: 'bg-amber-500', hideOnMobile: false },
-          { label: 'قيد الشحن', count: quickStats.onTheWay, icon: Truck, color: 'bg-indigo-500', hideOnMobile: false },
-          { label: 'تم التوصيل', count: quickStats.delivered, icon: CheckCircle, color: 'bg-emerald-500', hideOnMobile: false },
-          { label: 'مرتجع / فشل', count: quickStats.failed, icon: XCircle, color: 'bg-rose-500', hideOnMobile: false },
-          { label: 'ملغي', count: quickStats.canceled, icon: Trash2, color: 'bg-slate-500', hideOnMobile: true },
+          { label: 'بانتظار المراجعة', count: quickStats.awaitingWaybill, icon: FileSearch, color: 'indigo', hideOnMobile: false },
+          { label: 'قيد الشحن', count: quickStats.onTheWay, icon: Truck, color: 'blue', hideOnMobile: false },
+          { label: 'تم التوصيل', count: quickStats.delivered, icon: CheckCircle, color: 'emerald', hideOnMobile: false },
+          { label: 'مرتجع / فشل', count: quickStats.failed, icon: XCircle, color: 'rose', hideOnMobile: false },
+          { label: 'طلبات ملغاة', count: quickStats.canceled, icon: Trash2, color: 'slate', hideOnMobile: true },
         ].map((stat, idx) => (
-          <div key={idx} className={`glass-card p-2 sm:p-3 md:p-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-2 sm:gap-3 ${stat.hideOnMobile ? 'hidden sm:flex' : 'flex'}`}>
-            <div className={`w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 rounded-lg sm:rounded-xl ${stat.color} flex items-center justify-center text-white shadow-lg shrink-0`}>
-              <stat.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5" />
+          <div key={idx} className={`bg-white dark:bg-slate-900 p-5 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group ${stat.hideOnMobile ? 'hidden lg:flex' : 'flex'}`}>
+            <div className="flex items-start justify-between">
+                <div className={`p-3 bg-${stat.color}-50 dark:bg-${stat.color}-900/20 text-${stat.color}-600 dark:text-${stat.color}-400 rounded-2xl group-hover:scale-110 transition-transform`}>
+                    <stat.icon size={22} />
+                </div>
+                <div className="text-right">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">{stat.label}</p>
+                    <p className="text-2xl font-black text-slate-900 dark:text-white tabular-nums leading-none">{stat.count}</p>
+                </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-[8px] sm:text-[10px] md:text-xs font-bold text-slate-500 uppercase leading-none mb-1 truncate">{stat.label}</p>
-              <p className="text-xs sm:text-sm md:text-lg font-black text-slate-800 dark:text-white leading-none">{stat.count}</p>
+            {/* Minimal Trend or Sparkline mockup */}
+            <div className="mt-6 flex items-end gap-1 h-4">
+                {[40, 70, 45, 90, 35, 60].map((h, i) => (
+                    <div key={i} className={`flex-1 rounded-full bg-${stat.color}-500/10 dark:bg-${stat.color}-500/20 overflow-hidden`}>
+                        <motion.div 
+                            initial={{ height: 0 }}
+                            animate={{ height: `${h}%` }}
+                            transition={{ delay: 0.1 + (i * 0.05) }}
+                            className={`w-full bg-${stat.color}-500/40`}
+                        />
+                    </div>
+                ))}
             </div>
           </div>
         ))}
       </div>
 
-      {/* Sticky Filter Bar */}
-      <div className="sticky top-0 z-30 py-2 -mx-4 px-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50 space-y-2">
-          <div className="flex items-center gap-1.5 p-1 bg-slate-200/50 dark:bg-slate-800/50 rounded-xl overflow-x-auto no-scrollbar scroll-smooth">
-            {['الجميع', 'في_انتظار_المكالمة', 'جاري_المراجعة', 'قيد_التنفيذ', 'تم_الارسال', 'قيد_الشحن', 'تم_توصيلها', 'تم_التحصيل', 'مدفوعة', 'مرتجع', 'مرتجع_جزئي', 'فشل_التوصيل', 'ملغي', 'مؤرشف', 'مرتجع_بعد_الاستلام', 'تمت_الاعادة_لشركة_الشحن', 'تم_الاستبدال'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap scroll-mx-2 ${
-                  activeTab === tab 
-                    ? 'bg-white dark:bg-slate-700 text-primary shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                {tab.replace(/_/g, ' ')}
-              </button>
-            ))}
-          </div>
+      {/* Floating Filter Hub */}
+      <div className="sticky top-4 z-40 px-4 md:px-0">
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl p-2 rounded-[2.5rem] shadow-2xl border border-slate-200/50 dark:border-slate-800/50 flex flex-col md:flex-row gap-3">
+              <div className="flex-1 flex flex-row-reverse items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-[2rem] overflow-x-auto no-scrollbar scroll-smooth">
+                {['الجميع', 'في_انتظار_المكالمة', 'جاري_المراجعة', 'قيد_التنفيذ', 'تم_الارسال', 'قيد_الشحن', 'تم_توصيلها', 'تم_التحصيل', 'مدفوعة', 'مرتجع', 'مرتجع_جزئي', 'فشل_التوصيل', 'ملغي', 'مؤرشف'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-5 py-2.5 rounded-[1.5rem] text-[11px] font-black transition-all whitespace-nowrap ${
+                      activeTab === tab 
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    {tab.replace(/_/g, ' ')}
+                  </button>
+                ))}
+              </div>
 
-          <div className="flex items-center gap-2 max-w-full">
-            <div className="relative flex-1">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input 
-                type="text"
-                placeholder="ابحث..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pr-9 pl-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
-              />
-            </div>
-            <button 
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              className={`p-2 rounded-xl border transition-all shrink-0 ${
-                showAdvancedFilters 
-                  ? 'bg-primary/10 border-primary text-primary' 
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500'
-              }`}
-            >
-              <Filter size={16} />
-            </button>
+              <div className="flex items-center gap-2 p-1">
+                <div className="relative flex-1 md:w-80">
+                  <Search className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="text"
+                    placeholder="ابحث عن عميل، رقم طلب، أو تفاصيل..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pr-12 pl-4 py-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[1.5rem] text-xs font-bold focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-200 transition-all outline-none dark:text-white"
+                  />
+                </div>
+                <button 
+                  onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                  className={`p-3.5 rounded-[1.5rem] border transition-all shrink-0 ${
+                    showAdvancedFilters 
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/20' 
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  <Filter size={20} />
+                </button>
+              </div>
           </div>
       </div>
 
       {/* Advanced Filters Panel */}
-      {showAdvancedFilters && (
-        <motion.div 
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          className="glass-card p-6 rounded-3xl overflow-hidden"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="space-y-2">
-              <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">المحافظة</label>
-              <select 
-                value={filterGov}
-                onChange={(e) => setFilterGov(e.target.value)}
-                className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">كل المحافظات</option>
-                {EGYPT_GOVERNORATES.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">شركة الشحن</label>
-              <select 
-                value={filterCompany}
-                onChange={(e) => setFilterCompany(e.target.value)}
-                className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">كل الشركات</option>
-                {activeCompanies.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">تاريخ البداية</label>
-              <input 
-                type="date"
-                value={dateRange.start}
-                onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">تاريخ النهاية</label>
-              <input 
-                type="date"
-                value={dateRange.end}
-                onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-          </div>
-        </motion.div>
-      )}
+      <AnimatePresence>
+          {showAdvancedFilters && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0, y: -20 }}
+              animate={{ height: 'auto', opacity: 1, y: 0 }}
+              exit={{ height: 0, opacity: 0, y: -20 }}
+              className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-200 dark:border-slate-800 shadow-lg overflow-hidden"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                {[
+                  { label: 'المحافظة', element: (
+                    <select 
+                        value={filterGov}
+                        onChange={(e) => setFilterGov(e.target.value)}
+                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm font-black outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all text-right"
+                    >
+                        <option value="">كل المحافظات</option>
+                        {EGYPT_GOVERNORATES.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}
+                    </select>
+                  )},
+                  { label: 'شركة الشحن', element: (
+                    <select 
+                        value={filterCompany}
+                        onChange={(e) => setFilterCompany(e.target.value)}
+                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm font-black outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all text-right"
+                    >
+                        <option value="">كل الشركات</option>
+                        {activeCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  )},
+                  { label: 'تاريخ البداية', element: (
+                    <input 
+                        type="date"
+                        value={dateRange.start}
+                        onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm font-black outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all text-right"
+                    />
+                  )},
+                  { label: 'تاريخ النهاية', element: (
+                    <input 
+                        type="date"
+                        value={dateRange.end}
+                        onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm font-black outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all text-right"
+                    />
+                  )}
+                ].map((field, i) => (
+                    <div key={i} className="space-y-3">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">{field.label}</p>
+                        {field.element}
+                    </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+      </AnimatePresence>
 
       {/* Bulk Actions Bar */}
       {selectedOrders.length > 0 && (
@@ -1674,224 +1711,332 @@ const OrderCard = ({
   return (
     <motion.div 
       variants={itemVariants}
-      className={`glass-card p-4 md:p-6 rounded-2xl md:rounded-[32px] border-2 transition-all relative group ${
-        isSelected ? 'border-primary ring-4 ring-primary/10' : 'border-transparent'
+      className={`bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border-2 transition-all relative group shadow-sm hover:shadow-xl ${
+        isSelected ? 'border-indigo-600 ring-4 ring-indigo-500/10' : 'border-slate-100 dark:border-slate-800'
       }`}
     >
-      {/* Selection Checkbox */}
-      <button 
-        onClick={onSelect}
-        className={`absolute top-4 right-4 md:top-6 md:right-6 w-5 h-5 md:w-6 md:h-6 rounded-lg border-2 transition-all flex items-center justify-center z-10 ${
-          isSelected ? 'bg-primary border-primary' : 'bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
-        }`}
-      >
-        {isSelected && <CheckCircle size={12} className="text-white" />}
-      </button>
+      {/* Selection Hub */}
+      <div className="absolute top-6 right-6 flex items-center gap-3 z-10">
+          <button 
+            onClick={onShowAudit}
+            className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-400 hover:text-indigo-600 transition-all opacity-0 group-hover:opacity-100"
+            title="سجل النشاط"
+          >
+            <Shield size={16} />
+          </button>
+          <button 
+            onClick={onSelect}
+            className={`w-6 h-6 rounded-xl border-2 transition-all flex items-center justify-center ${
+              isSelected ? 'bg-indigo-600 border-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'
+            }`}
+          >
+            {isSelected && <Check size={14} className="text-white" />}
+          </button>
+      </div>
 
-      {/* Card Header */}
-      <div className="flex items-start justify-between mb-4 md:mb-6">
-        <div className="flex items-center gap-3 md:gap-4">
+      {/* Card Header & Status */}
+      <div className="flex items-start justify-between mb-8">
+        <div className="flex items-center gap-4">
           <div className="relative">
-            <div className={`w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl ${statusInfo.color} flex items-center justify-center text-white shadow-lg`}>
-              <StatusIcon className="w-6 h-6 md:w-8 md:h-8" />
+            <div className={`w-16 h-16 rounded-2xl ${statusInfo.color} flex items-center justify-center text-white shadow-lg group-hover:scale-105 transition-transform duration-500`}>
+              <StatusIcon size={32} />
             </div>
             {order.platform && order.platform !== 'system' && (
-              <div className="absolute -bottom-2 -right-2 bg-white dark:bg-slate-800 border-2 border-white dark:border-slate-800 rounded-full shadow-sm" title={`منصة: ${order.platform}`}>
-                <div className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center ${
-                  order.platform === 'wuilt' ? 'bg-[#111111]' : 
+              <div className="absolute -bottom-2 -right-2 bg-white dark:bg-slate-800 p-1 rounded-full shadow-md border border-slate-100 dark:border-slate-700">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black text-white uppercase ${
+                  order.platform === 'wuilt' ? 'bg-black' : 
                   order.platform === 'salla' ? 'bg-[#004d5a]' :
-                  order.platform === 'shopify' ? 'bg-[#95bf47]' : 'bg-primary'
+                  order.platform === 'shopify' ? 'bg-[#95bf47]' : 'bg-indigo-600'
                 }`}>
-                   <span className="text-[10px] md:text-xs font-bold text-white uppercase">{order.platform.substring(0, 1)}</span>
+                   {order.platform.substring(0, 1)}
                 </div>
               </div>
             )}
           </div>
-          <div>
-            <div className="flex items-center gap-2 mb-0.5 md:mb-1.5">
-              <span className="text-lg md:text-xl font-black text-slate-900 dark:text-white tracking-tight">#{order.orderNumber}</span>
-              {order.orderType === 'exchange' && (
-                <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[9px] md:text-[11px] font-black px-2 py-0.5 md:px-3 md:py-1 rounded-full uppercase tracking-wider">استبدال</span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 text-[10px] md:text-sm font-bold text-slate-500 dark:text-slate-400">
-              <span>{new Date(order.date).toLocaleDateString('ar-EG')}</span>
-              <span className="text-slate-300">•</span>
-              <span>{order.shippingCompany}</span>
+          <div className="text-right">
+            <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter leading-none mb-1">#{order.orderNumber}</h3>
+            <div className="flex items-center gap-2 flex-row-reverse">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(order.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })}</span>
+                <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
+                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{order.shippingCompany}</span>
             </div>
           </div>
         </div>
-        <div className={`px-3 py-1 md:px-5 md:py-2 rounded-full text-[10px] md:text-xs font-black uppercase tracking-widest ${statusInfo.color} text-white shadow-md`}>
-          {statusInfo.label}
+      </div>
+
+      {/* Status Badge */}
+      <div className="mb-8">
+          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl ${statusInfo.color} text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-md`}>
+              <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
+              {statusInfo.label}
+          </div>
+      </div>
+
+      {/* Profile Section */}
+      <div className="space-y-6 mb-8">
+        <div className="flex items-center gap-4 flex-row-reverse">
+          <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 transition-colors">
+            <UserIcon size={20} />
+          </div>
+          <div className="text-right flex-1">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">العميل</p>
+              <h4 className="text-sm font-black text-slate-800 dark:text-white">{order.customerName}</h4>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 flex-row-reverse">
+          <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+            <MapPin size={20} />
+          </div>
+          <div className="text-right flex-1">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">العنوان</p>
+              <h4 className="text-xs font-bold text-slate-600 dark:text-slate-300 truncate">{order.governorate} - {order.shippingArea}</h4>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 flex-row-reverse">
+          <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+            <Phone size={20} />
+          </div>
+          <div className="text-right flex-1">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">اتصال</p>
+              <div className="flex items-center gap-2 justify-end">
+                <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="p-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-xl hover:scale-110 transition-transform">
+                    <MessageCircle size={16} />
+                </a>
+                <h4 className="text-sm font-black text-slate-800 dark:text-white tabular-nums">{order.customerPhone}</h4>
+              </div>
+          </div>
         </div>
       </div>
 
-      {/* Customer Info */}
-      <div className="space-y-3 md:space-y-5 mb-6 md:mb-8">
-        <div className="flex items-center gap-3 md:gap-4">
-          <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 shadow-sm">
-            <UserIcon className="w-4 h-4 md:w-5 md:h-5" />
-          </div>
-          <span className="text-sm md:text-base font-black text-slate-800 dark:text-slate-100">{order.customerName}</span>
+      {/* Order Items Micro-view */}
+      <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border border-slate-100 dark:border-slate-800/50 mb-8">
+        <div className="flex items-center justify-between flex-row-reverse mb-4">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">محتويات الطلب</span>
+          <span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-[9px] font-black">{order.items.length} قطع</span>
         </div>
-        <div className="flex items-center gap-3 md:gap-4">
-          <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 shadow-sm">
-            <MapPin className="w-4 h-4 md:w-5 md:h-5" />
-          </div>
-          <span className="text-xs md:text-sm font-bold text-slate-600 dark:text-slate-300 truncate">{order.governorate || order.shippingArea} - {order.city || 'غير محدد'}</span>
-        </div>
-        <div className="flex items-center gap-3 md:gap-4">
-          <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 shadow-sm">
-            <Phone className="w-4 h-4 md:w-5 md:h-5" />
-          </div>
-          <span className="text-sm md:text-base font-mono font-black text-slate-700 dark:text-slate-200">{order.customerPhone}</span>
-          <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-emerald-500 hover:scale-110 transition-transform bg-emerald-50 dark:bg-emerald-900/20 p-1.5 md:p-2 rounded-lg">
-            <MessageCircle className="w-4.5 h-4.5 md:w-5 md:h-5" />
-          </a>
-        </div>
-      </div>
-
-      {/* Items Summary */}
-      <div className="p-4 md:p-5 rounded-xl md:rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 mb-6 md:mb-8">
-        <div className="flex items-center justify-between mb-3 md:mb-4">
-          <span className="text-[10px] md:text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">المنتجات</span>
-          <span className="text-[10px] md:text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full">{order.items.length} قطع</span>
-        </div>
-        <div className="space-y-2 md:space-y-3">
-          {order.items.slice(0, 3).map((item, idx) => {
+        <div className="space-y-3">
+          {order.items.slice(0, 2).map((item, idx) => {
             const product = settings.products.find(p => p.id === item.productId);
             return (
-              <div key={idx} className="flex gap-3 items-center">
-                <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-700 flex-shrink-0 overflow-hidden shadow-sm">
+              <div key={idx} className="flex gap-3 items-center flex-row-reverse">
+                <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-700 border border-slate-100 dark:border-slate-600 p-1 flex-shrink-0 shadow-sm">
                    {product?.thumbnail ? (
-                     <img src={product.thumbnail} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                   ) : <Package size={16} className="m-auto text-slate-400" />}
+                     <img src={product.thumbnail} className="w-full h-full object-cover rounded-lg" referrerPolicy="no-referrer" />
+                   ) : <Package size={16} className="m-auto text-slate-300" />}
                 </div>
-                <div className="flex-1 min-w-0">
-                   <p className="text-slate-800 dark:text-slate-100 font-bold text-xs truncate leading-tight">{item.name}</p>
-                   <p className="text-[10px] text-slate-500 font-medium">{item.variantDescription ? `(${item.variantDescription})` : ''} <span className="font-black text-slate-700 dark:text-slate-300">x{item.quantity}</span></p>
+                <div className="text-right min-w-0 flex-1">
+                   <p className="text-slate-800 dark:text-slate-200 font-black text-[11px] truncate leading-tight">{item.name}</p>
+                   <p className="text-[10px] text-slate-400 font-bold">{item.variantDescription || 'وحدة قياسية'} <span className="text-slate-700 dark:text-slate-300">× {item.quantity}</span></p>
                 </div>
               </div>
             );
           })}
-          {order.items.length > 3 && (
-            <p className="text-[10px] md:text-xs font-bold text-primary mt-1 md:mt-2">+{order.items.length - 3} منتجات أخرى</p>
+          {order.items.length > 2 && (
+            <button onClick={onShowSummary} className="w-full text-center py-2 bg-white dark:bg-slate-800/50 rounded-xl text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:bg-slate-100 transition-all">
+                + {order.items.length - 2} منتجات أخرى
+            </button>
           )}
         </div>
       </div>
 
-      {/* Financials & Status */}
-      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl md:rounded-2xl p-4 md:p-5 mb-4 md:mb-6">
-        <div className="flex justify-between items-center mb-4 md:mb-5">
-          <div className="text-[10px] md:text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">إجمالي المبلغ</div>
-          <div className="text-xl md:text-2xl font-black text-slate-900 dark:text-white tabular-nums flex items-center gap-1.5">
-            {displayTotal.toLocaleString()} <span className="text-xs md:text-sm font-bold text-slate-500 dark:text-slate-400">ج.م</span>
-            {(() => {
-              const safeProductCost = Number(order.productCost) || 0;
-              if (safeProductCost > 0) {
-                 const netProfit = computedTotal - safeProductCost;
-                 if (netProfit > 0) return <div className="w-2 h-2 rounded-full bg-emerald-500 ml-1.5 shadow-sm" title="صفقة رابحة" />;
-                 if (netProfit < 0) return <div className="w-2 h-2 rounded-full bg-red-500 ml-1.5 shadow-sm" title="صفقة خاسرة" />;
-                 return <div className="w-2 h-2 rounded-full bg-yellow-500 ml-1.5 shadow-sm" title="نقطة تعادل" />;
-              }
-              return null;
-            })()}
+      {/* Financial Statement */}
+      <div className="flex items-center justify-between flex-row-reverse mb-8 group/total">
+          <div className="text-right">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">المبلغ الإجمالي</p>
+              <div className="flex items-baseline gap-1 justify-end">
+                  <span className="text-xs font-black text-indigo-600">ج.م</span>
+                  <h4 className="text-3xl font-black text-slate-900 dark:text-white tabular-nums group-hover/total:scale-105 transition-transform origin-right">
+                    {displayTotal.toLocaleString()}
+                  </h4>
+              </div>
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3 md:gap-4">
-          <div className="relative">
-            <select 
-              value={order.status}
-              onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
-              disabled={order.source === 'synced'}
-              className={`w-full appearance-none pr-3 pl-8 md:pr-4 md:pl-10 py-2 md:py-3 rounded-lg md:rounded-xl text-[10px] md:text-xs font-black text-white border-none cursor-pointer focus:ring-2 focus:ring-offset-2 transition-all shadow-md ${statusInfo.color} ${order.source === 'synced' ? 'opacity-70 cursor-not-allowed' : ''}`}
-            >
-              {ORDER_STATUSES.map(s => (
-                <option key={s} value={s} className="text-slate-900 bg-white">{ORDER_STATUS_METADATA[s]?.label || s}</option>
-              ))}
-            </select>
-            <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 absolute left-2 md:left-3 top-1/2 -translate-y-1/2 text-white pointer-events-none" />
+          <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl">
+              <Receipt size={24} />
           </div>
-          <div className="relative">
-            <select 
-              value={order.paymentStatus}
-              onChange={(e) => onPaymentChange(e.target.value as PaymentStatus)}
-              disabled={order.source === 'synced'}
-              className={`w-full appearance-none pr-4 pl-10 py-3 rounded-xl text-xs font-black border-none cursor-pointer focus:ring-2 focus:ring-offset-2 transition-all shadow-md ${
-                order.paymentStatus === 'مدفوع' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'
-              } ${order.source === 'synced' ? 'opacity-70 cursor-not-allowed' : ''}`}
-            >
-              {PAYMENT_STATUSES.map(s => (
-                <option key={s} value={s} className="text-slate-900 bg-white">{s}</option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white pointer-events-none" />
-          </div>
-        </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1">
-          <button onClick={onShowSummary} className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-xl transition-all" title="التفاصيل">
-            <Info size={18} />
+      {/* Card Actions Overlay */}
+      <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 duration-300">
+          <button 
+            onClick={onEdit}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-slate-900 dark:bg-black text-white rounded-2xl text-xs font-black hover:scale-[1.02] active:scale-[0.98] transition-all"
+          >
+            تعديل <Edit3 size={14} />
           </button>
-          <button onClick={onEdit} className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-xl transition-all" title="تعديل">
-            <Edit3 size={18} />
+          <button 
+            onClick={onPrintInvoice}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-2xl text-xs font-black hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm"
+          >
+            فاتورة <Printer size={14} />
           </button>
-          <button onClick={onPrintInvoice} className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-xl transition-all" title="فاتورة">
-            <Printer size={18} />
-          </button>
-        </div>
-        
-        <div className="relative group/more">
-          <button className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-xl transition-all">
-            <MoreVertical size={18} />
-          </button>
-          <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 hidden group-hover/more:block z-20">
-            <button 
-                onClick={() => {
-                  if (order.source === 'synced' && order.waybillNumber?.startsWith('http')) {
-                    window.open(order.waybillNumber, '_blank');
-                  } else {
-                    onPrintLabel();
-                  }
-                }} 
-                className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3"
-            >
-              <LayoutList size={16} /> بوليصة {order.source === 'synced' && order.waybillNumber?.startsWith('http') && <ExternalLink size={12} className="text-blue-500 mr-auto" />}
+
+          <div className="relative group/more-card">
+            <button className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-400 hover:text-indigo-600 transition-all shadow-sm">
+              <MoreVertical size={18} />
             </button>
-            <button onClick={onShowAudit} className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3">
-              <FileSearch size={16} /> سجل التدقيق
-            </button>
-            <button onClick={onShowAssignment} className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3">
-              <UserIcon size={16} /> تعيين موظف
-            </button>
-            {order.status === 'تم_توصيلها' && !order.collectionProcessed && (
-              <button onClick={() => onCollect(false)} className="w-full text-right p-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl flex items-center gap-3">
-                <Coins size={16} /> تحصيل المبلغ
+            <div className="absolute bottom-full left-0 mb-3 w-52 bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 p-2 hidden group-hover/more-card:block z-20">
+              <button 
+                  onClick={() => {
+                    if (order.source === 'synced' && order.waybillNumber?.startsWith('http')) {
+                      window.open(order.waybillNumber, '_blank');
+                    } else {
+                      onPrintLabel();
+                    }
+                  }} 
+                  className="w-full text-right px-4 py-3 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors"
+              >
+                بوليصة شحن <LayoutList size={16} /> {order.source === 'synced' && order.waybillNumber?.startsWith('http') && <ExternalLink size={12} className="text-blue-500 mr-auto" />}
               </button>
-            )}
-            {['تم_توصيلها', 'تم_التحصيل'].includes(order.status) && (
-              <>
-                <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-1" />
-                <button onClick={onPostReturn} className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3">
-                  <RefreshCcw size={16} /> إرجاع بعد الاستلام
-                </button>
-                <button onClick={onStartExchange} className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3">
-                  <ArrowRightLeft size={16} /> إنشاء طلب استبدال
-                </button>
-              </>
-            )}
-            <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-1" />
-            <button onClick={onDelete} className="w-full text-right p-3 text-sm font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl flex items-center gap-3">
-              <Trash2 size={16} /> حذف الطلب
-            </button>
+              <button onClick={onShowAudit} className="w-full text-right px-4 py-3 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                سجل التدقيق <FileSearch size={16} />
+              </button>
+              <button onClick={onShowAssignment} className="w-full text-right px-4 py-3 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                تعيين موظف <UserIcon size={16} />
+              </button>
+              <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-1 mx-2" />
+              <button onClick={onDelete} className="w-full text-right px-4 py-3 text-xs font-black text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                حذف نهائي <Trash2 size={16} />
+              </button>
+            </div>
           </div>
-        </div>
       </div>
     </motion.div>
   );
+};
+
+const ShippingDetailsCard: React.FC<{ order: Order }> = ({ order }) => {
+    return (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-xl space-y-4 min-w-[280px]">
+             <div className="flex flex-col items-center text-center space-y-2 pb-2 border-b border-slate-50 dark:border-slate-800">
+                <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{order.shippingCompany}</span>
+                <span className="text-[10px] font-bold text-slate-400">{order.governorate}</span>
+             </div>
+             
+             <div className="flex flex-col items-center justify-center py-6 space-y-4">
+                <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-300">
+                    <Truck size={32} />
+                </div>
+                <div className="text-center">
+                    <p className="text-sm font-black text-slate-800 dark:text-white">{order.shippingCompany}</p>
+                    <div className="mt-4 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                        <p className="text-[10px] font-bold text-slate-400">لا توجد بوليصة حالياً</p>
+                    </div>
+                </div>
+             </div>
+        </div>
+    );
+};
+
+const ProfitBreakdown: React.FC<{ order: Order; settings: Settings }> = ({ order, settings }) => {
+    const safeProductPrice = Number(order.productPrice) || 0;
+    const safeShippingFee = Number(order.shippingFee) || 0;
+    const safeDiscount = Number(order.discount) || 0;
+    const safeProductCost = Number(order.productCost) || 0;
+    
+    const compFees = settings.companySpecificFees?.[order.shippingCompany];
+    const useCustom = compFees?.useCustomFees ?? false;
+    
+    const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
+    const insuranceFee = (order.isInsured ?? true) ? ((safeProductPrice + safeShippingFee) * insuranceRate) / 100 : 0;
+    const inspectionFee = (order.includeInspectionFee ?? true) ? (useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0)) : 0;
+    const codFee = calculateCodFee(order, settings);
+    
+    const totalFees = insuranceFee + inspectionFee + codFee;
+    const netProfit = (safeProductPrice - safeDiscount) - safeProductCost - totalFees;
+
+    return (
+        <div className="bg-white dark:bg-slate-900 rounded-[32px] p-8 border border-slate-100 dark:border-slate-800 shadow-2xl space-y-6 min-w-[320px] text-right">
+            <h4 className="text-lg font-black text-slate-800 dark:text-white pb-4 border-b border-slate-50 dark:border-slate-800">تحليل الأرباح</h4>
+            
+            <div className="space-y-4">
+                <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                    <span className="text-slate-500 font-bold">المنتجات (بيع)</span>
+                    <span className="font-black text-slate-800 dark:text-white tabular-nums">{safeProductPrice.toLocaleString()}</span>
+                </div>
+                {safeDiscount > 0 && (
+                    <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                        <span className="text-slate-500 font-bold">خصم مبيعات</span>
+                        <span className="font-black text-rose-500 tabular-nums">-{safeDiscount.toLocaleString()}</span>
+                    </div>
+                )}
+                <div className="flex justify-between items-center flex-row-reverse text-sm border-b border-slate-50 dark:border-slate-800 pb-4">
+                    <span className="text-slate-500 font-bold">تكلفة المنتجات</span>
+                    <span className="font-black text-rose-500 tabular-nums">-{safeProductCost.toLocaleString()}</span>
+                </div>
+
+                <div className="py-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">المصاريف المخصومة:</p>
+                    <div className="space-y-3">
+                        <div className="flex justify-between items-center flex-row-reverse text-sm">
+                            <span className="text-slate-400 font-bold">رسوم الشحن</span>
+                            <span className="font-black text-rose-500 tabular-nums">-{safeShippingFee}</span>
+                        </div>
+                        {insuranceFee > 0 && (
+                            <div className="flex justify-between items-center flex-row-reverse text-sm">
+                                <span className="text-slate-400 font-bold">التأمين</span>
+                                <span className="font-black text-rose-500 tabular-nums">-{insuranceFee.toFixed(2)}</span>
+                            </div>
+                        )}
+                        {inspectionFee > 0 && (
+                            <div className="flex justify-between items-center flex-row-reverse text-sm">
+                                <span className="text-slate-400 font-bold">المعاينة</span>
+                                <span className="font-black text-rose-500 tabular-nums">-{inspectionFee}</span>
+                            </div>
+                        )}
+                        {codFee > 0 && (
+                            <div className="flex justify-between items-center flex-row-reverse text-sm">
+                                <span className="text-slate-400 font-bold">رسوم التحصيل (COD)</span>
+                                <span className="font-black text-rose-500 tabular-nums">-{codFee}</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <div className={`mt-6 p-5 rounded-3xl flex justify-between items-center flex-row-reverse ${netProfit >= 0 ? 'bg-emerald-50 dark:bg-emerald-900/10' : 'bg-rose-50 dark:bg-rose-900/10'}`}>
+                <span className={`text-sm font-black ${netProfit >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>الربح المتوقع</span>
+                <div className="flex items-baseline gap-1 flex-row-reverse">
+                    <span className={`text-2xl font-black ${netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{netProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    <span className="text-xs font-bold opacity-60">ج.م</span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ProductDetailsList: React.FC<{ order: Order }> = ({ order }) => {
+    return (
+        <div className="bg-slate-50 dark:bg-slate-900/40 rounded-[2.5rem] p-6 border border-slate-100 dark:border-slate-800 shadow-inner w-full max-w-xl mx-auto my-4 space-y-6">
+            <h5 className="text-sm font-black text-slate-400 flex items-center justify-end gap-2 px-4 italic uppercase tracking-wider">
+                تفاصيل المنتجات ({order.items.length}) <Info size={14} />
+            </h5>
+            
+            <div className="space-y-4">
+                {order.items.map((item, idx) => (
+                    <div key={idx} className="bg-white dark:bg-slate-900 p-4 rounded-3xl flex items-center gap-4 flex-row-reverse border border-slate-50 dark:border-slate-800 shadow-sm group hover:border-indigo-200 transition-colors">
+                        <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 overflow-hidden flex-shrink-0 border border-slate-100 dark:border-slate-700">
+                             {item.thumbnail ? (
+                                <img src={item.thumbnail} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                             ) : (
+                                <Package size={24} className="m-auto text-slate-300" />
+                             )}
+                        </div>
+                        <div className="flex-1 text-right">
+                             <p className="text-sm font-black text-slate-800 dark:text-white leading-tight mb-1">{item.name}</p>
+                             <p className="text-[10px] font-bold text-slate-400 line-clamp-1">{item.description || 'لم يتم إضافة وصف'}</p>
+                             <div className="flex items-center gap-3 justify-end mt-2">
+                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{item.price} ج.م</span>
+                                <span className="text-[10px] font-bold text-slate-300">×</span>
+                                <span className="text-xs font-black text-slate-600 dark:text-slate-400">{item.quantity}</span>
+                             </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
 };
 
 const OrderRow = ({ 
@@ -1940,388 +2085,320 @@ const OrderRow = ({
   const safeShippingFee = Number(order.shippingFee) || 0;
   const safeTax = Number(order.tax) || 0;
   const safeDiscount = Number(order.discount) || 0;
+  const safeProductCost = Number(order.productCost) || 0;
+  
   const computedTotal = safeProductPrice + safeShippingFee + safeTax - safeDiscount;
   const totalAmount = order.totalAmountOverride != null ? Number(order.totalAmountOverride) : computedTotal;
   const displayTotal = order.source === 'synced' && order.totalPrice != null ? Number(order.totalPrice) : totalAmount;
 
+  // Detailed Profit Calculation
+  const compFees = settings.companySpecificFees?.[order.shippingCompany];
+  const useCustom = compFees?.useCustomFees ?? false;
+  
+  const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
+  const calculatedInsuranceFee = (order.isInsured ?? true) ? ((safeProductPrice + safeShippingFee) * insuranceRate) / 100 : 0;
+  const calculatedInspectionFee = (order.includeInspectionFee ?? true) ? (useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0)) : 0;
+  const calculatedCodFeeAmount = calculateCodFee(order, settings);
+  
+  const totalFees = calculatedInsuranceFee + calculatedInspectionFee + calculatedCodFeeAmount;
+  const currentNetProfit = (safeProductPrice - safeDiscount) - safeProductCost - totalFees;
+  const isDelivered = order.status === 'تم_توصيلها' || order.status === 'تم_التحصيل';
+  const profitLabel = isDelivered ? 'الربح الصافي' : 'الربح المتوقع';
+  const isProfitable = currentNetProfit >= 0;
+
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showOps, setShowOps] = useState(false);
+  const opsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (opsRef.current && !opsRef.current.contains(e.target as Node)) {
+        setShowOps(false);
+      }
+    };
+    if (showOps) {
+        document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showOps]);
+  const [showProfitPopover, setShowProfitPopover] = useState(false);
+  const [showShippingPopover, setShowShippingPopover] = useState(false);
+
   return (
-    <tr className={`group transition-all ${isSelected ? 'bg-primary/5' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'}`}>
+    <>
+    <tr className={`group transition-all ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-900/40'} border-b border-slate-100 dark:border-slate-800/50`}>
       <td className="p-6 text-center">
         <input 
           type="checkbox" 
           checked={isSelected}
           onChange={onSelect}
-          className="w-5 h-5 rounded-lg border-slate-300 dark:bg-slate-900 dark:border-slate-700 text-primary focus:ring-primary/20 transition-all"
+          className="w-5 h-5 rounded-lg border-slate-300 dark:bg-slate-800 dark:border-slate-700 text-indigo-600 focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer"
         />
       </td>
       <td className="p-6">
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className={`w-12 h-12 rounded-xl ${statusInfo.color} flex items-center justify-center text-white shadow-md`}>
-              <StatusIcon size={22} />
+        <div className="flex items-center gap-4 flex-row-reverse">
+          <div className="relative group/status" onClick={onShowAudit}>
+            <div className={`w-14 h-14 rounded-2xl ${statusInfo.color} flex items-center justify-center text-white shadow-lg group-hover/status:scale-110 transition-transform cursor-pointer`}>
+              <StatusIcon size={24} />
             </div>
             {order.platform && order.platform !== 'system' && (
-              <div className="absolute -bottom-2 -right-2 bg-white dark:bg-slate-800 border-2 border-white dark:border-slate-800 rounded-full shadow-sm" title={`منصة: ${order.platform}`}>
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                  order.platform === 'wuilt' ? 'bg-[#111111]' : 
-                  order.platform === 'salla' ? 'bg-[#004d5a]' :
-                  order.platform === 'shopify' ? 'bg-[#95bf47]' : 'bg-primary'
+              <div className="absolute -bottom-1 -right-1 bg-white dark:bg-slate-900 p-0.5 rounded-full shadow-sm border border-slate-200 dark:border-slate-800">
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black text-white uppercase ${
+                   order.platform === 'wuilt' ? 'bg-black' : 
+                   order.platform === 'salla' ? 'bg-[#004d5a]' :
+                   order.platform === 'shopify' ? 'bg-[#95bf47]' : 'bg-indigo-600'
                 }`}>
-                   <span className="text-[10px] font-bold text-white uppercase">{order.platform.substring(0, 1)}</span>
+                   {order.platform.substring(0, 1)}
                 </div>
               </div>
             )}
           </div>
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-black text-slate-900 dark:text-white">#{order.orderNumber}</span>
-              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-emerald-500 hover:scale-110 transition-transform">
-                <MessageCircle size={16} />
+          <div className="text-right">
+            <div className="flex items-center gap-2 mb-1 justify-end">
+              <h4 className="text-base font-black text-slate-900 dark:text-white tracking-tighter cursor-pointer hover:text-indigo-600" onClick={onShowSummary}>#{order.orderNumber}</h4>
+              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-emerald-500 hover:scale-110 transition-transform p-1.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
+                <MessageCircle size={14} />
               </a>
             </div>
-            <div className="group/customer relative inline-block">
-              <div className="text-sm font-bold text-slate-500 dark:text-slate-400 cursor-help border-b border-dashed border-slate-300 dark:border-slate-600 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">{order.customerName}</div>
-              {/* Customer Popover */}
-              <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 opacity-0 invisible group-hover/customer:opacity-100 group-hover/customer:visible transition-all z-50 translate-y-1 group-hover/customer:translate-y-0 text-right">
-                 <div className="font-black text-slate-800 dark:text-slate-100 mb-2 truncate">{order.customerName}</div>
-                 <div className="flex gap-2 items-start mb-2">
-                    <Phone size={14} className="text-slate-400 mt-0.5 shrink-0" />
-                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300 select-all" dir="ltr">{order.customerPhone}</span>
-                 </div>
-                 <div className="flex gap-2 items-start">
-                    <MapPin size={14} className="text-slate-400 mt-0.5 shrink-0" />
-                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-snug break-words">
-                      {order.governorate && <span className="text-primary">{order.governorate} - </span>}
-                      {order.city && <span>{order.city} - </span>}
-                      {order.customerAddress}
-                    </span>
-                 </div>
+            <div className="group/customer relative inline-block text-right">
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 cursor-help">{order.customerName}</div>
+              <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 flex items-center gap-2 justify-end mt-0.5">
+                  <span className="tabular-nums">{order.customerPhone}</span>
+                  <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
+                  <span>{new Date(order.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })}</span>
               </div>
             </div>
           </div>
         </div>
       </td>
       <td className="p-6">
-        <div className="max-w-[250px] group/items relative">
-          <div className="flex items-center justify-between gap-2 p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-help border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
-             <div className="flex-1 min-w-0">
-               <div className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{order.productName}</div>
-             </div>
-             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded-lg shrink-0">
-               <Package size={12} className="text-slate-400" />
-               <span className="text-[10px] font-black text-slate-600 dark:text-slate-300">{order.items.length} قطع</span>
-               <ChevronDown size={10} className="text-slate-400" />
-             </div>
-          </div>
-          
-          {/* Items Popover */}
-          <div className="absolute top-full right-0 mt-2 w-72 bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 opacity-0 invisible group-hover/items:opacity-100 group-hover/items:visible transition-all z-50 translate-y-1 group-hover/items:translate-y-0 max-h-[300px] overflow-y-auto">
-             <div className="text-xs font-black text-slate-400 uppercase tracking-wider mb-2 px-1">تفاصيل المنتجات ({order.items.length})</div>
-                  <div className="flex flex-col gap-2">
-                    {order.items.map((item, idx) => {
-                      const product = settings.products.find(p => p.id === item.productId);
-                      return (
-                        <div key={idx} className="flex gap-3 items-center p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                          <div className="w-10 h-10 bg-slate-100 dark:bg-slate-900 rounded-lg flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
-                             {product?.thumbnail ? (
-                               <img src={product.thumbnail} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                             ) : <Package size={16} className="text-slate-400" />}
-                          </div>
-                          <div className="flex-1 min-w-0 text-right">
-                             <div className="text-xs font-bold text-slate-800 dark:text-slate-200 line-clamp-2 leading-tight" title={item.name}>{item.name}</div>
-                             <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 mt-1">{item.price} ج.م <span className="text-slate-400 font-medium px-1">×</span> {item.quantity} {item.variantDescription && <span className="text-slate-400">({item.variantDescription})</span>}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-          </div>
+        <div className="max-w-[200px] text-right flex flex-col items-end">
+            <div 
+                onClick={() => setIsExpanded(!isExpanded)}
+                className={`flex items-center justify-end gap-2 p-1.5 rounded-xl transition-all cursor-pointer ${isExpanded ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+            >
+                <ChevronDown size={14} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-[9px] font-black">
+                    <Package size={10} />
+                    <span>{order.items.length} قطع</span>
+                </div>
+                <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">
+                {order.items.length > 0 ? order.items[0].name.substring(0, 15) + '...' : '---'}
+                </div>
+            </div>
         </div>
       </td>
       <td className="p-6">
-        <div className="group/shipping relative inline-block">
-          <div className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 cursor-help border-b border-dashed border-slate-300 dark:border-slate-600 hover:text-primary transition-colors">
-            {order.shippingCompany}
-            {order.waybillNumber && <Truck size={12} className="text-emerald-500" />}
-          </div>
-          <div className="text-xs font-black text-slate-500 uppercase tracking-wider mt-1">{order.governorate || order.shippingArea}</div>
-          
-          {/* Shipping/Waybill Popover */}
-          <div className="absolute top-full right-1/2 translate-x-1/2 mt-2 w-56 bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 opacity-0 invisible group-hover/shipping:opacity-100 group-hover/shipping:visible transition-all z-50 translate-y-1 group-hover/shipping:translate-y-0 text-center">
-            <div className="w-10 h-10 bg-slate-50 dark:bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-2 border border-slate-100 dark:border-slate-700">
-               <Truck size={18} className="text-slate-400" />
+        <div className="text-right space-y-1 relative">
+            <div className="flex items-center gap-2 justify-end overflow-hidden cursor-pointer" onClick={() => setShowShippingPopover(!showShippingPopover)}>
+                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{order.shippingCompany}</span>
+                <Truck size={14} className="text-slate-300" />
             </div>
-            <div className="font-bold text-slate-800 dark:text-slate-100 text-sm mb-1">{order.shippingCompany}</div>
+            <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 truncate max-w-[150px]">{order.governorate}</p>
             
-            {order.waybillNumber ? (
-               <div className="mt-3">
-                 <div className="text-[10px] text-slate-500 mb-1">رقم البوليصة</div>
-                 <div className="bg-slate-50 dark:bg-slate-900 py-1.5 px-3 rounded-lg text-xs font-black text-slate-700 dark:text-slate-300 tracking-wider mb-2 select-all flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700 overflow-hidden">
-                   <span className="truncate" title={order.waybillNumber}>{order.waybillNumber.startsWith('http') ? 'رابط بوليصة خارجي' : order.waybillNumber}</span>
-                 </div>
-                 
-                 <div className="flex justify-center gap-2 mt-2">
-                    {order.waybillNumber.startsWith('http') && (
-                      <a href={order.waybillNumber} target="_blank" rel="noopener noreferrer" className="flex-1 bg-primary hover:bg-primary-dark text-white rounded-lg py-1.5 text-xs font-bold transition-colors flex items-center justify-center gap-1">
-                         <ExternalLink size={12} /> فتح البوليصة
-                      </a>
-                    )}
-                    {order.trackingUrl && (
-                      <a href={order.trackingUrl} target="_blank" rel="noopener noreferrer" className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg py-1.5 text-xs font-bold transition-colors flex items-center justify-center gap-1">
-                         <LinkIcon size={12} /> تتبع
-                      </a>
-                    )}
-                 </div>
-               </div>
-            ) : (
-               <div className="mt-2 text-xs text-slate-400 bg-slate-50 dark:bg-slate-700/30 py-2 rounded-lg">لا توجد بوليصة حالياً</div>
-            )}
-          </div>
+            <AnimatePresence>
+                {showShippingPopover && (
+                    <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowShippingPopover(false)}/>
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                            className="absolute bottom-full left-0 mb-4 z-50"
+                        >
+                            <ShippingDetailsCard order={order} />
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
         </div>
       </td>
       <td className="p-6">
-        {order.source === 'synced' ? (
-          <div className="relative inline-block" title="يتم تحديث الحالة تلقائياً من المنصة الأساسية">
-            <div className={`px-4 py-2 rounded-full text-xs font-black text-white ${statusInfo.color} opacity-90 shadow-sm cursor-not-allowed border border-white/20 flex items-center justify-center gap-2 min-w-[120px]`}>
-               {ORDER_STATUS_METADATA[order.status]?.label || order.status}
-               <Lock size={12} className="opacity-70" />
-            </div>
-          </div>
-        ) : (
-          <div className="relative inline-block">
+        <div className="relative group/status-select">
             <select 
               value={order.status}
               onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
-              className={`appearance-none pr-10 pl-4 py-2 rounded-full text-xs font-black text-white border-none cursor-pointer focus:ring-2 focus:ring-offset-2 transition-all shadow-sm ${statusInfo.color} min-w-[120px]`}
+              className={`appearance-none text-right pr-4 pl-10 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border-none focus:ring-4 focus:ring-indigo-500/10 cursor-pointer shadow-sm transition-all ${statusInfo.color} text-white hover:brightness-110`}
             >
               {ORDER_STATUSES.map(s => (
-                <option key={s} value={s} className="text-slate-900 bg-white">{ORDER_STATUS_METADATA[s]?.label || s}</option>
+                <option key={s} value={s} className="text-slate-900 bg-white font-bold">{ORDER_STATUS_METADATA[s]?.label || s}</option>
               ))}
             </select>
-            <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white pointer-events-none" />
-          </div>
-        )}
-      </td>
-      <td className="p-6">
-        <div className="relative group/profit">
-          <div className="text-base font-black text-slate-900 dark:text-white mb-2 tracking-tight flex items-center gap-1.5 cursor-help border-b border-dashed border-transparent hover:border-slate-300 dark:hover:border-slate-600 transition-colors w-max">
-            {displayTotal.toLocaleString()} <span className="text-xs font-bold text-slate-500">ج.م</span>
-            {(() => {
-              const safeProductCost = Number(order.productCost) || 0;
-              if (safeProductCost > 0) {
-                 const netProfit = computedTotal - safeProductCost;
-                 if (netProfit > 0) return <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-1.5" title="صفقة رابحة" />;
-                 if (netProfit < 0) return <div className="w-1.5 h-1.5 rounded-full bg-red-500 ml-1.5" title="صفقة خاسرة" />;
-                 return <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 ml-1.5" title="نقطة تعادل" />;
-              }
-              return null;
-            })()}
-          </div>
-          {/* Profit Popover */}
-          <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 opacity-0 invisible group-hover/profit:opacity-100 group-hover/profit:visible transition-all z-50 translate-y-1 group-hover/profit:translate-y-0 text-right">
-             <div className="text-xs font-black text-slate-800 dark:text-slate-100 mb-2 pb-2 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
-                 <span>تحليل الأرباح</span>
-                 {order.platformOrderId && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-md">{order.platform}</span>}
-             </div>
-             
-             <div className="space-y-1.5 mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
-                 <div className="flex justify-between items-center text-xs">
-                     <span className="text-slate-500">المنتجات (بيع)</span>
-                     <span className="font-bold text-slate-700 dark:text-slate-300">{safeProductPrice.toLocaleString()}</span>
-                 </div>
-                 <div className="flex justify-between items-center text-xs">
-                     <span className="text-slate-500">سعر الشحن</span>
-                     <span className="font-bold text-slate-700 dark:text-slate-300">+{safeShippingFee.toLocaleString()}</span>
-                 </div>
-                 {safeTax > 0 && (
-                 <div className="flex justify-between items-center text-[10px]">
-                     <span className="text-slate-500">الضريبة</span>
-                     <span className="font-bold text-slate-700 dark:text-slate-300">+{safeTax.toLocaleString()}</span>
-                 </div>
-                 )}
-                 {safeDiscount > 0 && (
-                 <div className="flex justify-between items-center text-[10px]">
-                     <span className="text-slate-500">الخصم</span>
-                     <span className="font-bold text-red-500">-{safeDiscount.toLocaleString()}</span>
-                 </div>
-                 )}
-             </div>
-                                  <div className="space-y-1.5 mb-3">
-                 <div className="flex justify-between items-center text-xs">
-                     <span className="text-slate-500">تكلفة المنتجات</span>
-                     <span className="font-bold text-red-500">-{Number(order.productCost || 0).toLocaleString()}</span>
-                 </div>
-             </div>
-
-             {(() => {
-                 const safeProductCost = Number(order.productCost) || 0;
-                 if (safeProductCost === 0) return (
-                     <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2 text-center border border-slate-200 dark:border-slate-700 text-[10px] text-slate-500">
-                         بيانات التكلفة غير مسجلة بالمنصة
-                     </div>
-                 );
-                 const netProfit = computedTotal - safeProductCost;
-                 const isProfitable = netProfit >= 0;
-                 return (
-                     <div className={`rounded-xl p-2.5 flex items-center justify-between border ${isProfitable ? 'bg-emerald-50 border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20' : 'bg-red-50 border-red-100 dark:bg-red-500/10 dark:border-red-500/20'}`}>
-                         <span className={`text-[10px] font-black uppercase tracking-wider ${isProfitable ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                             {isProfitable ? 'الربح الصافي' : 'الخسارة الصافية'}
-                         </span>
-                         <span className={`text-sm font-black ${isProfitable ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
-                             {Math.abs(netProfit).toLocaleString()} <span className="text-[10px] font-bold">ج.م</span>
-                         </span>
-                     </div>
-                 );
-             })()}
-          </div>
-        </div>
-        
-        <div className="flex flex-col gap-1.5">
-          <div className="relative w-max">
-            <select 
-              value={order.paymentStatus}
-              onChange={(e) => onPaymentChange(e.target.value as PaymentStatus)}
-              disabled={order.source === 'synced'}
-              className={`appearance-none pr-8 pl-3 py-1.5 rounded-lg text-[10px] font-black border-none cursor-pointer focus:ring-2 focus:ring-offset-1 transition-all shadow-sm ${
-                order.paymentStatus === 'مدفوع' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 
-                order.paymentStatus === 'مدفوع جزئياً' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' :
-                'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
-              } ${order.source === 'synced' ? 'opacity-70 cursor-not-allowed' : ''}`}
-            >
-              {PAYMENT_STATUSES.map(s => (
-                <option key={s} value={s} className="text-slate-900 bg-white">{s}</option>
-              ))}
-            </select>
-            <ChevronDown size={12} className={`absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${order.paymentStatus === 'مدفوع' ? 'text-emerald-600 dark:text-emerald-500' : 'text-amber-600 dark:text-amber-500'}`} />
-          </div>
-          
-          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 dark:text-slate-500">
-            {order.paymentMethod === 'الدفع عند الاستلام' ? <Banknote size={12} /> : 
-             order.paymentMethod === 'بطاقة إئتمانية' ? <Coins size={12} /> : <FileText size={12} />}
-            <span className="truncate max-w-[100px]">{order.paymentMethod || 'غير محدد'}</span>
-          </div>
+            <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/70 pointer-events-none" />
         </div>
       </td>
       <td className="p-6">
-        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onShowSummary} className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-all" title="التفاصيل">
-            <Info size={18} />
-          </button>
-          <button onClick={onEdit} className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-all" title="تعديل">
-            <Edit3 size={18} />
-          </button>
-          <div className="relative group/more">
-            <button className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-all">
-              <MoreVertical size={18} />
-            </button>
-            <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 hidden group-hover/more:block z-20">
-              <button onClick={onPrintInvoice} className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3">
-                <Printer size={16} /> فاتورة
-              </button>
-              <button 
-                onClick={() => {
-                  if (order.source === 'synced' && order.waybillNumber?.startsWith('http')) {
-                    window.open(order.waybillNumber, '_blank');
-                  } else {
-                    onPrintLabel();
-                  }
-                }} 
-                className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3"
-              >
-                <LayoutList size={16} /> بوليصة {order.source === 'synced' && order.waybillNumber?.startsWith('http') && <ExternalLink size={12} className="text-blue-500 mr-auto" />}
-              </button>
-              <button onClick={onShowAudit} className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3">
-                <FileSearch size={16} /> سجل التدقيق
-              </button>
-              <button onClick={onShowAssignment} className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3">
-                <UserIcon size={16} /> تعيين موظف
-              </button>
-              {order.status === 'تم_توصيلها' && !order.collectionProcessed && (
-                <button onClick={() => onCollect(false)} className="w-full text-right p-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl flex items-center gap-3">
-                  <Coins size={16} /> تحصيل المبلغ
-                </button>
-              )}
-              {['تم_توصيلها', 'تم_التحصيل'].includes(order.status) && (
-                <>
-                  <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-1" />
-                  <button onClick={onPostReturn} className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3">
-                    <RefreshCcw size={16} /> إرجاع بعد الاستلام
-                  </button>
-                  <button onClick={onStartExchange} className="w-full text-right p-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl flex items-center gap-3">
-                    <ArrowRightLeft size={16} /> إنشاء طلب استبدال
-                  </button>
-                </>
-              )}
-              <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-1" />
-              <button onClick={onDelete} className="w-full text-right p-3 text-sm font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl flex items-center gap-3">
-                <Trash2 size={16} /> حذف
-              </button>
+        <div className="text-right space-y-2 relative">
+            <div className="flex items-baseline gap-1 justify-end">
+                <span className="text-[10px] font-black text-indigo-600">ج.م</span>
+                <span className="text-xl font-black text-slate-900 dark:text-white tabular-nums drop-shadow-sm">{displayTotal.toLocaleString()}</span>
             </div>
-          </div>
+            <div className="flex flex-col gap-1 items-end">
+                <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${
+                    order.paymentStatus === 'مدفوع' 
+                    ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' 
+                    : 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
+                }`}>
+                    {order.paymentStatus}
+                </span>
+                {safeProductCost > 0 && (
+                    <div 
+                        onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+                        className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-tight cursor-pointer p-1 rounded-lg ${isProfitable ? 'text-emerald-500 bg-emerald-50/50' : 'text-rose-500 bg-rose-50/50'} hover:scale-105 transition-transform`}
+                    >
+                        <span>{Math.abs(currentNetProfit).toLocaleString()} {profitLabel}</span>
+                        {isProfitable ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                    </div>
+                )}
+            </div>
+        </div>
+      </td>
+      <td className="p-6">
+        <div className="flex items-center gap-2 justify-end">
+            <div className="relative" ref={opsRef}>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setShowOps(!showOps); }}
+                  className={`flex items-center gap-3 px-6 py-2.5 rounded-[1.5rem] font-black text-xs transition-all shadow-md active:scale-95 ${isSelected ? 'bg-indigo-600 text-white shadow-indigo-200' : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-slate-200 dark:shadow-none'}`}
+                >
+                   <span>العمليات</span>
+                   <ChevronDown size={16} className={`${showOps ? 'rotate-180' : ''} transition-transform`} />
+                </button>
+                
+                <AnimatePresence>
+                {showOps && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="absolute top-full left-0 mt-3 w-56 bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-slate-800 p-2 z-[60] origin-top-left"
+                >
+                    <div className="p-4 mb-2 border-b border-slate-50 dark:border-slate-800">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">إدارة الطلب</p>
+                    </div>
+                    <div className="space-y-1">
+                        <button onClick={(e) => { e.stopPropagation(); setShowOps(false); onEdit(); }} className="w-full h-12 text-right px-4 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                            تعديل البيانات <Edit3 size={16} className="text-indigo-500" />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); setShowOps(false); onPaymentChange(order.paymentStatus === 'مدفوع' ? 'بانتظار الدفع' : 'مدفوع'); }} className="w-full h-12 text-right px-4 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                            {order.paymentStatus === 'مدفوع' ? 'تحديد كغير مدفوع' : 'تحديد كمدفوع'} <Coins size={16} className="text-amber-500" />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); setShowOps(false); onPrintInvoice(); }} className="w-full h-12 text-right px-4 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                            طباعة الفاتورة <Printer size={16} className="text-emerald-500" />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); setShowOps(false); onPrintLabel(); }} className="w-full h-12 text-right px-4 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                            بوليصة شحن <LayoutList size={16} className="text-blue-500" />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); setShowOps(false); onShowAssignment(); }} className="w-full h-12 text-right px-4 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                            تعيين موظف <UserIcon size={16} className="text-purple-500" />
+                        </button>
+                        <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-2 mx-4" />
+                        <button onClick={(e) => { e.stopPropagation(); setShowOps(false); onDelete(); }} className="w-full h-12 text-right px-4 text-xs font-black text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                            حذف الطلب <Trash2 size={16} />
+                        </button>
+                    </div>
+                </motion.div>
+                )}
+                </AnimatePresence>
+            </div>
         </div>
       </td>
     </tr>
+    <AnimatePresence>
+        {isExpanded && (
+            <tr>
+                <td colSpan={7} className="p-0 border-none">
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden bg-slate-50/50 dark:bg-slate-800/30"
+                    >
+                        <div className="flex flex-col md:flex-row gap-6 p-6">
+                            <div className="flex-1">
+                                <ProductDetailsList order={order} />
+                            </div>
+                            <div className="w-full md:w-[350px]">
+                                <ProfitBreakdown order={order} settings={settings} />
+                            </div>
+                        </div>
+                    </motion.div>
+                </td>
+            </tr>
+        )}
+    </AnimatePresence>
+    </>
   );
 };
+
 const KanbanView: React.FC<{ orders: Order[]; onStatusChange: (id: string, newStatus: OrderStatus) => void; onEdit: (order: Order) => void; settings: Settings; }> = ({ orders, onStatusChange, onEdit, settings }) => {
   const columns: OrderStatus[] = ['في_انتظار_المكالمة', 'جاري_المراجعة', 'قيد_التنفيذ', 'تم_الارسال', 'قيد_الشحن', 'تم_توصيلها', 'مرتجع', 'ملغي'];
   
   const statusColors: Record<OrderStatus, string> = { 
-    في_انتظار_المكالمة: 'border-cyan-500 bg-cyan-500/5', 
+    في_انتظار_المكالمة: 'border-indigo-500 bg-indigo-500/5', 
     جاري_المراجعة: 'border-purple-500 bg-purple-500/5', 
-    قيد_التنفيذ: 'border-yellow-500 bg-yellow-500/5', 
-    تم_الارسال: 'border-sky-500 bg-sky-500/5', 
-    قيد_الشحن: 'border-blue-500 bg-blue-500/5', 
-    تم_توصيلها: 'border-teal-500 bg-teal-500/5', 
-    تم_التحصيل: 'border-emerald-500 bg-emerald-500/5', 
+    قيد_التنفيذ: 'border-amber-500 bg-amber-500/5', 
+    تم_الارسال: 'border-blue-500 bg-blue-500/5', 
+    قيد_الشحن: 'border-sky-500 bg-sky-500/5', 
+    تم_توصيلها: 'border-emerald-500 bg-emerald-500/5', 
+    تم_التحصيل: 'border-teal-500 bg-teal-500/5', 
     مدفوعة: 'border-emerald-600 bg-emerald-600/5',
-    مرتجع: 'border-red-500 bg-red-500/5', 
+    مرتجع: 'border-rose-500 bg-rose-500/5', 
     مرتجع_بعد_الاستلام: 'border-orange-500 bg-orange-500/5', 
     تم_الاستبدال: 'border-slate-500 bg-slate-500/5', 
     مرتجع_جزئي: 'border-orange-500 bg-orange-500/5', 
-    فشل_التوصيل: 'border-red-500 bg-red-500/5', 
-    تمت_الاعادة_لشركة_الشحن: 'border-red-600 bg-red-600/5',
+    فشل_التوصيل: 'border-rose-600 bg-rose-600/5', 
+    تمت_الاعادة_لشركة_الشحن: 'border-rose-800 bg-rose-800/5',
     ملغي: 'border-slate-500 bg-slate-500/5', 
     مؤرشف: 'border-slate-500 bg-slate-500/5',
-    مؤجل: 'border-yellow-600 bg-yellow-600/5',
-    مجدول: 'border-indigo-500 bg-indigo-500/5'
+    مؤجل: 'border-amber-600 bg-amber-600/5',
+    مجدول: 'border-indigo-600 bg-indigo-600/5'
   };
 
   return (
-    <div className="flex gap-4 p-4 overflow-x-auto min-h-[600px] no-scrollbar">
-      {columns.map(status => {
+    <div className="flex gap-6 p-4 overflow-x-auto min-h-[70vh] no-scrollbar scroll-smooth">
+      {columns.map((status, idx) => {
         const columnOrders = orders.filter(o => o.status === status);
         return (
-          <div key={status} className="flex-shrink-0 w-80 flex flex-col gap-3">
-            <div className={`p-3 rounded-xl border-t-4 shadow-sm ${statusColors[status]} flex justify-between items-center`}>
-              <h3 className="font-black text-slate-800 dark:text-white text-sm">{status.replace(/_/g, ' ')}</h3>
-              <span className="bg-white dark:bg-slate-800 px-2 py-0.5 rounded-lg text-xs font-bold shadow-sm">{columnOrders.length}</span>
+          <div key={status} className="flex-shrink-0 w-80 flex flex-col gap-4">
+            <div className={`p-4 rounded-[1.5rem] border-t-4 shadow-sm ${statusColors[status]} flex justify-between items-center bg-white dark:bg-slate-900`}>
+              <h3 className="font-black text-slate-900 dark:text-white text-xs uppercase tracking-widest">{status.replace(/_/g, ' ')}</h3>
+              <span className="bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl text-[10px] font-black shadow-inner">{columnOrders.length}</span>
             </div>
-            <div className="flex-1 space-y-3">
-              {columnOrders.map(order => (
+            <div className="flex-1 space-y-4">
+              {columnOrders.map((order, oIdx) => (
                 <motion.div 
                   key={order.id}
                   layoutId={order.id}
-                  className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: (idx * 0.1) + (oIdx * 0.05) }}
+                  className="bg-white dark:bg-slate-900 p-5 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group relative overflow-hidden"
                   onClick={() => onEdit(order)}
                 >
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-mono text-slate-500 dark:text-slate-400">#{order.orderNumber || order.id.slice(0, 4)}</span>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button className="p-1 text-slate-500 dark:text-slate-400 hover:text-indigo-600"><Edit3 size={14}/></button>
+                  <div className="absolute top-0 right-0 w-1 h-full opacity-20" style={{ backgroundColor: statusColors[status].split(' ')[0].split('-')[1] }}></div>
+                  <div className="flex justify-between items-start mb-3">
+                    <span className="text-[10px] font-black text-slate-400 tracking-wider">#{order.orderNumber || order.id.slice(0, 4)}</span>
+                    <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"><Edit3 size={14}/></button>
                     </div>
                   </div>
-                  <h4 className="font-bold text-slate-800 dark:text-white mb-1">{order.customerName}</h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mb-3 line-clamp-1">{order.productName}</p>
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">{(order.totalAmountOverride ?? order.productPrice).toLocaleString()} ج.م</span>
-                    <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-lg text-slate-600 dark:text-slate-300">{order.governorate || order.shippingArea}</span>
+                  <h4 className="font-black text-slate-900 dark:text-white text-sm mb-1">{order.customerName}</h4>
+                  <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-4 line-clamp-1">{order.productName}</p>
+                  <div className="flex justify-between items-center flex-row-reverse border-t border-slate-50 dark:border-slate-800/50 pt-3">
+                    <div className="flex items-baseline gap-1">
+                        <span className="text-[10px] font-black text-indigo-600">ج.م</span>
+                        <span className="text-base font-black text-slate-900 dark:text-white">{(order.totalAmountOverride ?? order.productPrice).toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 p-1.5 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                        <MapPin size={10} className="text-slate-400" />
+                        <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-tighter">{order.governorate || '---'}</span>
+                    </div>
                   </div>
                 </motion.div>
               ))}
               {columnOrders.length === 0 && (
-                <div className="h-24 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-400 dark:text-slate-500 text-xs font-bold">
-                  لا توجد طلبات
+                <div className="h-32 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2rem] flex items-center justify-center text-slate-300 dark:text-slate-700 text-xs font-black uppercase tracking-widest italic p-8 text-center">
+                    لا تتوفر طلبات
                 </div>
               )}
             </div>
@@ -2331,7 +2408,6 @@ const KanbanView: React.FC<{ orders: Order[]; onStatusChange: (id: string, newSt
     </div>
   );
 };
-
 const AuditLogModal: React.FC<{ order: Order; onClose: () => void; }> = ({ order, onClose }) => {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -2896,8 +2972,42 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                         </div>
                         
                         <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-4">ملاحظات إضافية</h4>
+                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                                <FileText size={18} className="text-slate-500"/> ملاحظات إضافية
+                            </h4>
                             <textarea placeholder="أي ملاحظات للمندوب أو الطلب..." value={orderData.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} className="w-full p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl h-24 focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-all resize-none dark:text-white" />
+                        </div>
+
+                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                                <ImageIcon size={18} className="text-pink-500"/> صور ومرفقات الطلب
+                            </h4>
+                            <div className="grid grid-cols-3 gap-3 mb-4">
+                                {(orderData.images || []).map((img: string, idx: number) => (
+                                    <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 group">
+                                        <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                        <button 
+                                            type="button" 
+                                            onClick={() => handleFieldChange('images', (orderData.images || []).filter((_: any, i: number) => i !== idx))}
+                                            className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <X size={12} />
+                                        </button>
+                                    </div>
+                                ))}
+                                <button 
+                                    type="button"
+                                    onClick={() => {
+                                        const url = prompt('أدخل رابط الصورة:');
+                                        if (url) handleFieldChange('images', [...(orderData.images || []), url]);
+                                    }}
+                                    className="aspect-square rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 hover:border-pink-300 hover:text-pink-500 transition-all bg-white dark:bg-slate-900"
+                                >
+                                    <Plus size={20} />
+                                    <span className="text-[10px] font-bold mt-1">إضافة صورة</span>
+                                </button>
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-bold italic">يمكنك إرفاق صور المنتج، بوليصة الشحن، أو أي مستندات متعلقة بالطلب.</p>
                         </div>
                     </div>
                     

@@ -219,7 +219,12 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
               <div className="space-y-2">
                 <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">رصيد المحفظة</p>
                 <h4 className="text-4xl font-black text-slate-900 dark:text-white tabular-nums">
-                  {wallet.transactions.reduce((sum, t) => t.type === 'إيداع' ? sum + t.amount : sum - t.amount, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-lg font-bold text-slate-400">ج.م</span>
+                  {wallet.transactions.reduce((sum, t) => {
+                      const amount = Number(t.amount) || 0;
+                      if (t.type === 'إيداع') return t.status === 'completed' ? sum + amount : sum;
+                      if (t.type === 'سحب') return (t.status === 'rejected' || t.status === 'cancelled') ? sum : sum - amount;
+                      return sum;
+                  }, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-lg font-bold text-slate-400">ج.م</span>
                 </h4>
                 <p className="text-xs text-slate-400 font-medium">متاح للسحب الفوري</p>
               </div>
