@@ -283,6 +283,7 @@ export const AppComponent = () => {
             setSaveMessage('جاري الحفظ...');
 
             try {
+                isSavingRef.current = true;
                 await db.saveGlobalData({ users, loyaltyData: {} });
 
                 if (activeStoreId && allStoresData[activeStoreId] && activeStore) {
@@ -297,9 +298,12 @@ export const AppComponent = () => {
                 setTimeout(() => setSaveStatus('idle'), 2000);
 
             } catch (e: any) {
+                console.error('[AUTO-SAVE] Save failed:', e);
                 setSaveStatus('error');
                 setSaveMessage(e.message || 'فشل الحفظ');
-                setTimeout(() => setSaveStatus('idle'), 3000);
+                // Keep error visible for retry
+            } finally {
+                isSavingRef.current = false;
             }
         }, 800); 
 
@@ -782,6 +786,7 @@ export const AppComponent = () => {
         setSaveStatus('saving');
         setSaveMessage('جاري الحفظ...');
         try {
+            isSavingRef.current = true;
             await db.saveGlobalData({ users, loyaltyData: {} });
             if (activeStoreId && allStoresData[activeStoreId] && activeStore) {
                 const { success, error } = await db.saveStoreData(activeStore, allStoresData[activeStoreId]);
@@ -791,9 +796,12 @@ export const AppComponent = () => {
             setSaveMessage('تم الحفظ بنجاح!');
             setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (e: any) {
+            console.error('[MANUAL-SAVE] Save failed:', e);
             setSaveStatus('error');
             setSaveMessage(e.message || 'فشل الحفظ');
-            setTimeout(() => setSaveStatus('idle'), 3000);
+            // Keep error visible so user can try again
+        } finally {
+            isSavingRef.current = false;
         }
     };
 
@@ -899,11 +907,22 @@ export const AppComponent = () => {
         },
     };
 
+    const getNextOrderNumber = (orders: Order[]) => {
+        const nums = orders
+            .map(o => {
+                const match = o.orderNumber.match(/\d+/);
+                return match ? parseInt(match[0]) : null;
+            })
+            .filter((n): n is number => n !== null);
+        return nums.length > 0 ? Math.max(...nums) + 1 : 1;
+    };
+
     const handlePlaceOrder = (orderData: any) => {
         if (!activeStoreId) return '123';
+        const nextNum = getNextOrderNumber(pageProps.orders);
         const newOrder: Order = {
             id: `order-${Date.now()}`,
-            orderNumber: `ORD-${Math.floor(Math.random() * 10000)}`,
+            orderNumber: `${nextNum}`,
             customerName: orderData.customerName,
             customerPhone: orderData.customerPhone,
             customerAddress: orderData.customerAddress,
@@ -926,7 +945,7 @@ export const AppComponent = () => {
             weight: pageProps.cart.reduce((sum: number, item: any) => sum + ((item.weight || 0) * (item.quantity || 1)), 0),
             discount: orderData.discount || 0,
             orderType: 'standard',
-            paymentMethod: 'cash_on_delivery',
+            paymentMethod: orderData.paymentMethod || 'cash_on_delivery',
             productName: pageProps.cart.map((i: any) => i.name).join(', '),
             includeInspectionFee: false,
             isInsured: false,
