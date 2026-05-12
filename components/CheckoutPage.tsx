@@ -88,6 +88,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ settings, cart, onPlaceOrde
             shippingCompany,
             shippingArea,
             shippingFee,
+            paymentMethod: selectedPaymentMethod,
             notes: finalNotes,
             redeemedPoints: 0,
             discount: discountAmount,

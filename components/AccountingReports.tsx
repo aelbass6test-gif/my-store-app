@@ -199,8 +199,16 @@ const ReportRow = ({ label, value, isBold, isLarge, highlight, color = 'slate' }
 // 2. Balance Sheet
 const BalanceSheet = ({ orders, settings, wallet }: Omit<Props, 'activeStore'>) => {
     const stats = useMemo(() => {
-        // Assets
-        const cashBalance = wallet.balance;
+        // Assets - Calculate cash balance dynamically from transactions for accuracy
+        const cashBalance = wallet.transactions.reduce((sum, t) => {
+            const amount = Number(t.amount) || 0;
+            if (t.category === 'supply_purchase' || t.category === 'supply_deposit') return sum;
+            if (t.type === 'إيداع') return t.status === 'completed' ? sum + amount : sum;
+            if (t.type === 'سحب') return t.status === 'cancelled' ? sum : sum - amount;
+            return sum;
+        }, 0);
+        
+        const supplyWalletBalance = wallet.supplyBalance || 0;
         
         let inventoryValue = 0;
         const products = settings?.products || [];
@@ -219,7 +227,7 @@ const BalanceSheet = ({ orders, settings, wallet }: Omit<Props, 'activeStore'>) 
             .filter(o => o.status === 'تم_توصيلها')
             .reduce((sum, o) => sum + (o.productPrice + (o.shippingFee || 0) - (o.discount || 0)), 0);
 
-        const totalAssets = cashBalance + inventoryValue + receivablesPending;
+        const totalAssets = cashBalance + supplyWalletBalance + inventoryValue + receivablesPending;
 
         // Liabilities
         const suppliers = settings?.suppliers || [];
@@ -247,7 +255,8 @@ const BalanceSheet = ({ orders, settings, wallet }: Omit<Props, 'activeStore'>) 
                         </h4>
                     </div>
                     <div className="p-6 space-y-4">
-                        <ReportRow label="السيولة النقدية (المحفظة)" value={stats.cashBalance} />
+                        <ReportRow label="السيولة النقدية (المحفظة العامة)" value={stats.cashBalance} />
+                        <ReportRow label="محفظة التوريد (Supply Wallet)" value={wallet.supplyBalance || 0} />
                         <ReportRow label="بضاعة في المخزن (Inventory)" value={stats.inventoryValue} />
                         <ReportRow label="ذمم مدينة (معلقة لدى شركات الشحن)" value={stats.receivablesPending} />
                         <div className="pt-4 border-t">
@@ -706,6 +715,7 @@ const PartnerEquity = ({ settings, wallet }: { settings: Settings, wallet: Walle
             capital: number;
             drawings: number;
             repayments: number;
+            distributions: number;
             currentBalance: number;
         }> = {};
 
@@ -716,18 +726,21 @@ const PartnerEquity = ({ settings, wallet }: { settings: Settings, wallet: Walle
                  capital: 0,
                  drawings: 0,
                  repayments: 0,
+                 distributions: 0,
                  currentBalance: p.balance
              };
         });
 
         partnerTransactions.forEach(t => {
             if (perPartner[t.partnerId]) {
-                if (t.type === 'capital_addition' || t.type === 'loan') {
+                if (t.type === 'capital_addition' || t.type === 'supply_funding' || t.type === 'shipping_funding') {
                     perPartner[t.partnerId].capital += t.amount;
-                } else if (t.type === 'profit_withdrawal') {
+                } else if (t.type === 'profit_withdrawal' || t.type === 'loan') {
                     perPartner[t.partnerId].drawings += t.amount;
                 } else if (t.type === 'repayment') {
                     perPartner[t.partnerId].repayments += t.amount;
+                } else if (t.type === 'profit_distribution') {
+                    perPartner[t.partnerId].distributions += t.amount;
                 }
             }
         });
@@ -757,15 +770,19 @@ const PartnerEquity = ({ settings, wallet }: { settings: Settings, wallet: Walle
 
                             <div className="space-y-3 mb-6">
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500">رأس المال المضاف (+)</span>
+                                    <span className="text-slate-500">رأس المال والمصاريف المضافة (+)</span>
                                     <span className="font-bold text-emerald-600">{p.capital.toLocaleString('ar-EG')} ج.م</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500">المسحوبات الشخصية (-)</span>
+                                    <span className="text-slate-500">تمويلات الأرباح (+)</span>
+                                    <span className="font-bold text-blue-600">{p.distributions.toLocaleString('ar-EG')} ج.م</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-slate-500">المسحوبات الشخصية والسلف (-)</span>
                                     <span className="font-bold text-red-600">{p.drawings.toLocaleString('ar-EG')} ج.م</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500">السدادات للمديونية (-)</span>
+                                    <span className="text-slate-500">السدادات للمديونية (+)</span>
                                     <span className="font-bold text-amber-600">{p.repayments.toLocaleString('ar-EG')} ج.م</span>
                                 </div>
                             </div>

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Settings, PlatformIntegration, Store } from '../types';
-import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe, CreditCard, Smartphone, Banknote } from 'lucide-react';
+import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe, CreditCard, Smartphone, Banknote, ShoppingBasket, LayoutDashboard, UserPlus, TrendingUp, Settings as SettingsIcon, Grid, UserCog } from 'lucide-react';
 import { clearStoreData } from '../services/databaseService';
 
 interface SettingsPageProps {
@@ -447,7 +447,18 @@ const DangerZone: React.FC<{ activeStore?: Store }> = ({ activeStore }) => {
         { id: 'customers', label: 'قاعدة العملاء', icon: <Users size={16}/> },
         { id: 'wallet', label: 'المعاملات المالية', icon: <Wallet size={16}/> },
         { id: 'activity', label: 'سجل النشاط', icon: <Activity size={16}/> },
-        { id: 'settings', label: 'كوبونات وإعدادات فرعية', icon: <Tag size={16}/> },
+        { id: 'coupons', label: 'الكوبونات', icon: <Tag size={16}/> },
+        { id: 'reviews', label: 'التقييمات', icon: <MessageSquare size={16}/> },
+        { id: 'abandoned_carts', label: 'السلات المتروكة', icon: <ShoppingBasket size={16}/> },
+        { id: 'shipping', label: 'إعدادات الشحن', icon: <Package size={16}/> },
+        { id: 'pages', label: 'الصفحات المخصصة', icon: <LayoutDashboard size={16}/> },
+        { id: 'suppliers', label: 'الموردين', icon: <UserPlus size={16}/> },
+        { id: 'supply_orders', label: 'طلبات التوريد', icon: <TrendingUp size={16}/> },
+        { id: 'global_options', label: 'خيارات عامة', icon: <SettingsIcon size={16}/> },
+        { id: 'payment_methods', label: 'طرق الدفع', icon: <Wallet size={16}/> },
+        { id: 'collections', label: 'التصنيفات', icon: <Grid size={16}/> },
+        { id: 'employees', label: 'الموظفين', icon: <UserCog size={16}/> },
+        { id: 'partner_withdrawals', label: 'سحوبات الشركاء والمحفظة', icon: <Wallet size={16}/> },
     ];
 
     const toggleTarget = (id: string) => {

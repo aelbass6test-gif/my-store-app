@@ -321,6 +321,7 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
 
         const walletSettingsObj = storeRes.data?.settings?.wallet_settings;
         const withdrawRequestsArr = storeRes.data?.settings?.withdraw_requests || [];
+        const supplyBalanceNum = storeRes.data?.settings?.supply_balance || 0;
 
         const fullData: StoreData = {
             settings: {
@@ -342,6 +343,7 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
             orders: orders,
             wallet: { 
                 balance: 0,
+                supplyBalance: supplyBalanceNum,
                 transactions: transactions,
                 settings: walletSettingsObj,
                 withdrawRequests: withdrawRequestsArr
@@ -383,7 +385,8 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         const cleanSettingsFinal = {
             ...cleanSettings,
             wallet_settings: wallet.settings,
-            withdraw_requests: wallet.withdrawRequests
+            withdraw_requests: wallet.withdrawRequests,
+            supply_balance: wallet.supplyBalance
         };
 
         
@@ -428,22 +431,24 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             }
         };
 
-        // Execute all sync operations sequentially to prevent fetch limits hitting AI Studio proxy
-        await syncAndDelete('products', products);
-        await syncAndDelete('orders', orders);
-        await syncAndDelete('transactions', wallet.transactions);
-        await syncAndDelete('suppliers', suppliers);
-        await syncAndDelete('supply_orders', supplyOrders);
-        await syncAndDelete('reviews', reviews);
-        await syncAndDelete('abandoned_carts', abandonedCarts);
-        await syncAndDelete('employees', employees, 'phone', 'id');
-        await syncAndDelete('discount_codes', discountCodes);
-        await syncAndDelete('collections', collections);
-        await syncAndDelete('custom_pages', customPages);
-        await syncAndDelete('payment_methods', paymentMethods);
-        await syncAndDelete('customers', customers);
-        await syncAndDelete('global_options', globalOptions);
-        await syncAndDelete('shipping_integrations', shippingIntegrations);
+        // Execute all sync operations in parallel to improve performance
+        await Promise.all([
+            syncAndDelete('products', products),
+            syncAndDelete('orders', orders),
+            syncAndDelete('transactions', wallet.transactions),
+            syncAndDelete('suppliers', suppliers),
+            syncAndDelete('supply_orders', supplyOrders),
+            syncAndDelete('reviews', reviews),
+            syncAndDelete('abandoned_carts', abandonedCarts),
+            syncAndDelete('employees', employees, 'phone', 'id'),
+            syncAndDelete('discount_codes', discountCodes),
+            syncAndDelete('collections', collections),
+            syncAndDelete('custom_pages', customPages),
+            syncAndDelete('payment_methods', paymentMethods),
+            syncAndDelete('customers', customers),
+            syncAndDelete('global_options', globalOptions),
+            syncAndDelete('shipping_integrations', shippingIntegrations)
+        ]);
         // --- End of Deletion Logic ---
 
         // --- Handle Upserts ---
@@ -452,7 +457,7 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
                 const uniquePayload = Array.from(new Map(payload.map(item => [String(item.id || `${item.store_id}_${item.phone}`), item])).values());
                 if (uniquePayload.length === 0) return;
                 const { error } = await supabase.from(table).upsert(uniquePayload, { onConflict });
-                if (error) throw new Error(`${table} save failed: ${error.message} - ${JSON.stringify(error.details)}`);
+                if (error) throw new Error(`${table} save failed: ${error.message}`);
             }
         };
 
@@ -475,33 +480,18 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
                 date: t.date, 
                 category: t.category, 
                 note: t.note, 
-                details: { ...t.details, status } // Put status inside details to avoid database column error
+                details: { ...t.details, status }
             };
         });
         const suppliersPayload = suppliers.map(s => {
             const { id, name, phone, address, notes, ...extra } = s;
-            // Store extra fields (like balance) as a JSON string in notes if they exist
             let finalNotes = notes;
-            if (Object.keys(extra).length > 0) {
-                finalNotes = JSON.stringify({ notes, ...extra });
-            }
+            if (Object.keys(extra).length > 0) finalNotes = JSON.stringify({ notes, ...extra });
             return { id, store_id: store.id, name, phone, address, notes: finalNotes };
         });
         const supplyOrdersPayload = supplyOrders.map(so => { 
             const { id, supplierId, totalCost, date, items, status, ...metadata } = so; 
-            return { 
-                id, 
-                store_id: store.id, 
-                supplier_id: supplierId, 
-                total_cost: totalCost, 
-                date, 
-                items: { 
-                    _is_packed: true, 
-                    data: items, 
-                    metadata 
-                }, 
-                status
-            };
+            return { id, store_id: store.id, supplier_id: supplierId, total_cost: totalCost, date, items: { _is_packed: true, data: items, metadata }, status };
         });
         const reviewsPayload = reviews.map(r => { const { productId, customerName, ...rest } = r; return { ...rest, store_id: store.id, product_id: productId, customer_name: customerName }; });
         const abandonedCartsPayload = abandonedCarts.map(ac => ({ id: ac.id, store_id: store.id, customer_name: ac.customerName, customer_phone: ac.customerPhone, total_value: ac.totalValue, date: ac.date, items: ac.items }));
@@ -519,23 +509,25 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         const globalOptionsPayload = globalOptions.map(g => ({ ...g, store_id: store.id }));
         const shippingIntegrationsPayload = shippingIntegrations.map(si => { const { apiKey, apiSecret, accountNumber, isConnected, ...rest } = si; return { ...rest, store_id: store.id, api_key: apiKey, api_secret: apiSecret, account_number: accountNumber, is_connected: isConnected }; });
         
-        // Execute save sequentially to avoid proxy fetch overflow
-        await saveArray('products', productsPayload);
-        await saveArray('orders', ordersPayload);
-        await saveArray('transactions', transactionsPayload);
-        await saveArray('suppliers', suppliersPayload);
-        await saveArray('supply_orders', supplyOrdersPayload);
-        await saveArray('reviews', reviewsPayload);
-        await saveArray('abandoned_carts', abandonedCartsPayload);
-        await saveArray('activity_logs', activityLogsPayload);
-        await saveArray('employees', employeesPayload, 'store_id,phone');
-        await saveArray('discount_codes', discountsPayload);
-        await saveArray('collections', collectionsPayload);
-        await saveArray('custom_pages', pagesPayload);
-        await saveArray('payment_methods', paymentsPayload);
-        await saveArray('customers', customersPayload);
-        await saveArray('global_options', globalOptionsPayload);
-        await saveArray('shipping_integrations', shippingIntegrationsPayload);
+        // Execute saves in parallel
+        await Promise.all([
+            saveArray('products', productsPayload),
+            saveArray('orders', ordersPayload),
+            saveArray('transactions', transactionsPayload),
+            saveArray('suppliers', suppliersPayload),
+            saveArray('supply_orders', supplyOrdersPayload),
+            saveArray('reviews', reviewsPayload),
+            saveArray('abandoned_carts', abandonedCartsPayload),
+            saveArray('activity_logs', activityLogsPayload),
+            saveArray('employees', employeesPayload, 'store_id,phone'),
+            saveArray('discount_codes', discountsPayload),
+            saveArray('collections', collectionsPayload),
+            saveArray('custom_pages', pagesPayload),
+            saveArray('payment_methods', paymentsPayload),
+            saveArray('customers', customersPayload),
+            saveArray('global_options', globalOptionsPayload),
+            saveArray('shipping_integrations', shippingIntegrationsPayload)
+        ]);
         
         const { error: storeError } = await supabase
             .from('stores_data')
@@ -640,6 +632,7 @@ export const clearStoreData = async (storeId: string, targets: string[]): Promis
                 case 'payment_methods': return 'payment_methods';
                 case 'collections': return 'collections';
                 case 'employees': return 'employees';
+                case 'partner_withdrawals': return []; // Handled below by updating settings
                 case 'settings': return ['discount_codes', 'reviews', 'abandoned_carts', 'global_options', 'custom_pages', 'payment_methods', 'collections', 'suppliers', 'supply_orders', 'shipping_integrations'];
                 default: return null;
             }
@@ -651,6 +644,29 @@ export const clearStoreData = async (storeId: string, targets: string[]): Promis
                 .delete()
                 .eq('store_id', storeId);
             if (error) throw new Error(`Failed to clear table ${table}: ${error.message}`);
+        }
+
+        // Special handling for nested settings data
+        if (targets.includes('partner_withdrawals')) {
+            const { data: storeRes, error: fetchError } = await supabase
+                .from('stores_data')
+                .select('settings')
+                .eq('id', storeId)
+                .single();
+
+            if (!fetchError && storeRes) {
+                const updatedSettings = {
+                    ...storeRes.settings,
+                    partnerTransactions: [],
+                    withdraw_requests: [],
+                    supply_balance: 0
+                };
+                const { error: updateError } = await supabase
+                    .from('stores_data')
+                    .update({ settings: updatedSettings })
+                    .eq('id', storeId);
+                if (updateError) throw updateError;
+            }
         }
         
         if (targets.includes('settings')) {

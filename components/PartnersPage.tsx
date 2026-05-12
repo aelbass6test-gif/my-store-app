@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Settings, Partner, PartnerTransaction, Wallet, Transaction, Order } from '../types';
-import { Plus, User, DollarSign, ArrowDownRight, ArrowUpLeft, Trash2, Edit2, Check, X, TrendingUp, Wallet as WalletIcon, PieChart, History, Activity, Info, AlertCircle } from 'lucide-react';
+import { Plus, User, DollarSign, ArrowDownRight, ArrowUpLeft, Trash2, Edit2, Check, X, TrendingUp, Wallet as WalletIcon, PieChart, History, Activity, Info, AlertCircle, Package as PackageIcon, Truck } from 'lucide-react';
 import { calculateOrderProfitLoss } from '../utils/financials';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -79,7 +79,7 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
     const allTimeNetProfit = grossMargin - totalExpenses;
     
     const distributed = transactions
-      .filter(t => t.type === 'profit_withdrawal')
+      .filter(t => t.type === 'profit_distribution')
       .reduce((sum, t) => sum + t.amount, 0);
 
     const undistributedProfit = Math.max(0, allTimeNetProfit - distributed);
@@ -113,8 +113,8 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
 
   const totals = useMemo(() => {
      return {
-        capital: transactions.filter(t => t.type === 'capital_addition').reduce((a, b) => a + b.amount, 0),
-        loans: transactions.filter(t => t.type === 'loan').reduce((a, b) => a + b.amount, 0),
+        capital: transactions.filter(t => t.type === 'capital_addition' || t.type === 'supply_funding' || t.type === 'shipping_funding').reduce((a, b) => a + b.amount, 0),
+        loans: transactions.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((a, b) => a + b.amount, 0),
         repayments: transactions.filter(t => t.type === 'repayment').reduce((a, b) => a + b.amount, 0),
         withdrawals: transactions.filter(t => t.type === 'profit_withdrawal').reduce((a, b) => a + b.amount, 0)
      };
@@ -126,8 +126,8 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
         return;
     }
     const totalRatios = partners.reduce((sum, p) => sum + (p.profitRatio || 0), 0);
-    if (totalRatios > 100) {
-        showToast('خطأ: مجموع نسب الشركاء يتجاوز 100%', 'error');
+    if (totalRatios !== 100) {
+        showToast(`خطأ: لتوزيع الأرباح يجب أن يكون مجموع النسب 100% تماماً. (الحالي: ${totalRatios}%) - إذا كان هناك نسبة مستقطعة للشركة، قم بإضافتها كشريك باسم "أرباح محتجزة" أو "الشركة".`, 'error');
         return;
     }
 
@@ -144,7 +144,7 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
                 const newTransaction: PartnerTransaction = {
                     id: Date.now().toString() + partner.id,
                     partnerId: partner.id,
-                    type: 'profit_withdrawal', 
+                    type: 'profit_distribution', 
                     amount: share,
                     date: new Date().toISOString(),
                     note: `توزيع أرباح تلقائي عن الفترة الحالية ${new Date().toLocaleDateString('ar-EG')}`
@@ -169,6 +169,10 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
   };
 
   const deletePartner = (partnerId: string) => {
+    if (transactions.some(t => t.partnerId === partnerId)) {
+        showToast('عفواً، لا يمكن حذف شريك له حركات مالية مسجلة. للضرورة، قم بتصفية أرقامه أولاً.', 'error');
+        return;
+    }
     setDialog({
         isOpen: true,
         title: 'تأكيد الحذف',
@@ -206,6 +210,25 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
     const partner = partners.find(p => p.id === partnerId);
     if (!partner) return;
 
+    if (transactionType === 'profit_withdrawal') {
+        const partnerDistributions = transactions.filter(t => t.partnerId === partnerId && t.type === 'profit_distribution').reduce((a, b) => a + b.amount, 0);
+        const partnerWithdrawals = transactions.filter(t => t.partnerId === partnerId && t.type === 'profit_withdrawal').reduce((a, b) => a + b.amount, 0);
+        const availableProfit = partnerDistributions - partnerWithdrawals;
+        
+        if (amount > availableProfit) {
+            showToast(`عفواً، لا يمكن سحب أرباح تتجاوز المتاح (${availableProfit.toLocaleString()} ج.م)`, 'error');
+            return;
+        }
+    }
+
+    const isWithdrawal = transactionType === 'loan' || transactionType === 'profit_withdrawal';
+    const isSupplyFunding = transactionType === 'supply_funding';
+
+    if (isWithdrawal && amount > wallet.balance) {
+        showToast('عفواً، الرصيد المتاح في المحفظة غير كافٍ لإتمام السحب', 'error');
+        return;
+    }
+
     const newTransaction: PartnerTransaction = {
       id: Date.now().toString(),
       partnerId,
@@ -227,18 +250,20 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
         return p;
     });
 
-    const isWithdrawal = transactionType === 'loan' || transactionType === 'profit_withdrawal';
     const walletTransaction: Transaction = {
         id: Date.now().toString() + 'w',
-        type: isWithdrawal ? 'سحب' : 'إيداع',
+        type: (isWithdrawal) ? 'سحب' : 'إيداع',
         amount: amount,
         date: new Date().toISOString(),
         note: `معاملة شريك: ${partner.name} - ${
             transactionType === 'loan' ? 'سلفة' : 
             transactionType === 'capital_addition' ? 'إيداع رأس مال' : 
-            transactionType === 'profit_withdrawal' ? 'سحب أرباح' : 'سداد سلفة'
+            transactionType === 'profit_withdrawal' ? 'سحب أرباح' : 
+            transactionType === 'shipping_funding' ? 'إيداع مصاريف الشحن' :
+            transactionType === 'supply_funding' ? 'تمويل شراء بضاعة (إيداع محفظة التوريد)' : 'سداد سلفة'
         }`,
-        category: isWithdrawal ? 'manual_withdrawal' : 'manual_deposit'
+        category: isSupplyFunding ? 'supply_deposit' : (isWithdrawal ? 'manual_withdrawal' : 'manual_deposit'),
+        status: 'completed'
     } as Transaction;
 
     updateSettings({
@@ -246,7 +271,18 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
       partners: updatedPartners,
       partnerTransactions: [...transactions, newTransaction]
     });
-    setWallet(prev => ({ ...prev, transactions: [walletTransaction, ...prev.transactions] }));
+
+    const movesRealMoney = transactionType !== 'profit_distribution';
+    
+    if (movesRealMoney) {
+        setWallet(prev => ({ 
+            ...prev, 
+            balance: isSupplyFunding ? prev.balance : prev.balance + (isWithdrawal ? -amount : amount),
+            supplyBalance: isSupplyFunding ? (prev.supplyBalance || 0) + amount : prev.supplyBalance,
+            transactions: [walletTransaction, ...prev.transactions] 
+        }));
+    }
+    
     setTransactionAmount('');
     showToast('تم إضافة المعاملة بنجاح');
   };
@@ -585,8 +621,10 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
                                 {[
                                   { key: 'loan', label: 'سلفة / سحب', icon: ArrowDownRight, color: 'hover:border-rose-300 hover:text-rose-600' },
                                   { key: 'capital_addition', label: 'إيداع رأس مال', icon: ArrowUpLeft, color: 'hover:border-emerald-300 hover:text-emerald-600' },
+                                  { key: 'shipping_funding', label: 'إيداع مصاريف شحن', icon: Truck, color: 'hover:border-blue-300 hover:text-blue-600' },
                                   { key: 'profit_withdrawal', label: 'سحب من الأرباح', icon: DollarSign, color: 'hover:border-amber-300 hover:text-amber-600' },
-                                  { key: 'repayment', label: 'سداد سلفة', icon: Check, color: 'hover:border-blue-300 hover:text-blue-600' }
+                                  { key: 'repayment', label: 'سداد سلفة', icon: Check, color: 'hover:border-blue-300 hover:text-blue-600' },
+                                  { key: 'supply_funding', label: 'تمويل شراء بضاعة', icon: PackageIcon, color: 'hover:border-indigo-300 hover:text-indigo-600' }
                                 ].map(type => (
                                   <button 
                                     key={type.key}
@@ -652,18 +690,18 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
                               <div key={t.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800/50">
                                   <div className="flex items-center gap-3">
                                       <div className={`p-1.5 rounded-lg ${
-                                        ['capital_addition', 'repayment'].includes(t.type) 
+                                        ['capital_addition', 'repayment', 'supply_funding'].includes(t.type) 
                                           ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' 
                                           : 'bg-rose-100 dark:bg-rose-900/30 text-rose-600'
                                       }`}>
-                                        {t.type === 'loan' ? <ArrowDownRight size={12}/> : t.type === 'capital_addition' ? <ArrowUpLeft size={12}/> : t.type === 'repayment' ? <Check size={12}/> : <DollarSign size={12}/>}
+                                        {['loan', 'customer_advance'].includes(t.type) ? <ArrowDownRight size={12}/> : t.type === 'capital_addition' ? <ArrowUpLeft size={12}/> : t.type === 'shipping_funding' ? <Truck size={12}/> : t.type === 'repayment' ? <Check size={12}/> : t.type === 'supply_funding' ? <PackageIcon size={12}/> : <DollarSign size={12}/>}
                                       </div>
                                       <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">
-                                        {t.type === 'loan' ? 'سلفة' : t.type === 'capital_addition' ? 'رأس مال' : t.type === 'profit_withdrawal' ? 'أرباح' : 'سداد'}
+                                        {t.type === 'loan' ? 'سلفة' : t.type === 'customer_advance' ? 'عربون محصل' : t.type === 'capital_addition' ? 'رأس مال' : t.type === 'shipping_funding' ? 'شحن' : t.type === 'profit_withdrawal' ? 'سحب أرباح' : t.type === 'profit_distribution' ? 'إضافة أرباح' : t.type === 'supply_funding' ? 'تمويل بضاعة' : 'سداد'}
                                       </span>
                                   </div>
-                                  <span className={`text-[10px] font-black ${['capital_addition', 'repayment'].includes(t.type) ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                      {t.amount.toLocaleString()} ج.م
+                                  <span className={`text-[10px] font-black ${['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type) ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                      {['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type) ? '+' : '-'}{t.amount.toLocaleString()} ج.م
                                   </span>
                               </div>
                           ))}
@@ -684,7 +722,7 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
       <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm mb-12">
           {(() => {
               const profitDistributions = transactions
-                  .filter(t => t.type === 'profit_withdrawal')
+                  .filter(t => t.type === 'profit_distribution' || t.type === 'profit_withdrawal')
                   .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
               
               if (profitDistributions.length === 0) {

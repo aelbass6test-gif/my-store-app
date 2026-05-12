@@ -222,7 +222,7 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
                   {wallet.transactions.reduce((sum, t) => {
                       const amount = Number(t.amount) || 0;
                       if (t.type === 'إيداع') return t.status === 'completed' ? sum + amount : sum;
-                      if (t.type === 'سحب') return (t.status === 'rejected' || t.status === 'cancelled') ? sum : sum - amount;
+                      if (t.type === 'سحب') return t.status === 'cancelled' ? sum : sum - amount;
                       return sum;
                   }, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-lg font-bold text-slate-400">ج.م</span>
                 </h4>

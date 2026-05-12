@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, Store, StoreData, Employee, Permission, PERMISSIONS, Transaction, WithdrawRequest } from '../types';
+import { User, Store, StoreData, Employee, Permission, PERMISSIONS, Transaction, WithdrawRequest, Settings } from '../types';
 import { Users, Store as StoreIcon, Activity, Search, ShieldAlert, LogIn, Ban, CheckCircle, Lock, Unlock, LayoutDashboard, TrendingUp, MessageSquare, Send, UserPlus, Clock, UserCog, XCircle, KeyRound, Check, X, Settings as SettingsIcon, ShoppingCart, Package, Wallet, Tag, AlertTriangle, Trash2, ShoppingBasket, Grid } from 'lucide-react';
 import * as db from '../services/databaseService';
 import { clearStoreData } from '../services/databaseService';
@@ -287,7 +287,7 @@ const UserPermissionsModal: React.FC<{
 
 
 const AdminPage: React.FC<AdminPageProps> = ({ users, setUsers, allStoresData, setAllStoresData, onImpersonate, currentUser, settings, setSettings }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'stores' | 'financial' | 'fee_settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'stores' | 'financial' | 'fee_settings' | 'danger_zone'>('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
   const [announcement, setAnnouncement] = useState('');
   const [managingUser, setManagingUser] = useState<User | null>(null);
@@ -622,6 +622,7 @@ const DangerZone = ({ stores }: { stores: Store[] }) => {
         { id: 'payment_methods', label: 'طرق الدفع', icon: <Wallet size={16}/> },
         { id: 'collections', label: 'التصنيفات', icon: <Grid size={16}/> },
         { id: 'employees', label: 'الموظفين', icon: <UserCog size={16}/> },
+        { id: 'partner_withdrawals', label: 'سحوبات الشركاء والمحفظة', icon: <Wallet size={16}/> },
     ];
 
     const toggleTarget = (id: string) => {

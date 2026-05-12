@@ -51,6 +51,8 @@ interface NewOrderState extends Partial<Omit<Order, 'id'>> {
   buildingDetails?: string;
   creditAmount?: number;
   totalAmountOverrideReason?: string;
+  advancePayment?: number;
+  advancePaymentPartnerId?: string;
 }
 
 const EditTotalModal: React.FC<{ 
@@ -286,7 +288,8 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     items: [], shippingFee: 0, status: 'في_انتظار_المكالمة', includeInspectionFee: true, isInsured: true,
     paymentStatus: 'بانتظار الدفع', preparationStatus: 'بانتظار التجهيز', discount: 0, notes: '',
     orderType: 'standard', originalOrderId: undefined,
-    totalAmountOverrideReason: '',
+    totalAmountOverrideReason: '', paymentMethod: 'cod',
+    advancePayment: 0, advancePaymentPartnerId: ''
   });
 
   const [newOrder, setNewOrder] = useState<NewOrderState>(getInitialNewOrder());
@@ -441,33 +444,49 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
 
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
 
-  const handleAddOrder = (e: React.FormEvent) => {
-    e.preventDefault();
-    const orderData: NewOrderState = editingOrder || newOrder;
-    
-    if (!orderData.items || orderData.items.length === 0) {
-      alert("يجب إضافة منتج واحد على الأقل.");
-      return;
-    }
-    
-    const fullAddress = `${orderData.customerAddress}, ${orderData.buildingDetails || ''}`.trim();
-    const finalNotes = orderData.notes || '';
-
-    const totalProductPrice = orderData.items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0);
-    const totalProductCost = orderData.items.reduce((sum, item) => sum + (item.cost || 0) * (item.quantity || 1), 0);
-    const totalWeight = orderData.items.reduce((sum, item) => sum + (item.weight || 0) * (item.quantity || 1), 0);
-    const productNames = orderData.items.map(item => item.name).join(', ');
-
-    const orderToAdd: Omit<Order, 'id'> & { totalAmountOverride?: number } = {
-      ...(orderData as Omit<Order, 'id'>),
-      customerAddress: fullAddress,
-      notes: finalNotes,
-      orderNumber: orderData.orderNumber || `${activeStore?.id ? activeStore.id + '-' : ''}${Date.now()}`,
-      productPrice: totalProductPrice,
-      productCost: totalProductCost,
-      weight: totalWeight,
-      productName: productNames,
+    const getNextOrderNumber = () => {
+        const nums = orders
+            .map(o => {
+                const match = o.orderNumber.match(/\d+/);
+                return match ? parseInt(match[0]) : null;
+            })
+            .filter((n): n is number => n !== null);
+        return nums.length > 0 ? Math.max(...nums) + 1 : 1;
     };
+
+    const handleAddOrder = (e: React.FormEvent) => {
+      e.preventDefault();
+      const orderData: NewOrderState = editingOrder || newOrder;
+      
+      if (!orderData.items || orderData.items.length === 0) {
+        alert("يجب إضافة منتج واحد على الأقل.");
+        return;
+      }
+      
+      const fullAddress = `${orderData.customerAddress}, ${orderData.buildingDetails || ''}`.trim();
+      const finalNotes = orderData.notes || '';
+
+      const totalProductPrice = orderData.items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0);
+      const totalProductCost = orderData.items.reduce((sum, item) => sum + (item.cost || 0) * (item.quantity || 1), 0);
+      const totalWeight = orderData.items.reduce((sum, item) => sum + (item.weight || 0) * (item.quantity || 1), 0);
+      const productNames = orderData.items.map(item => item.name).join(', ');
+
+      const totalBeforeAdvance = totalProductPrice + (orderData.shippingFee || 0) - (orderData.discount || 0);
+      if ((orderData.advancePayment || 0) > totalBeforeAdvance) {
+          alert("عفواً، لا يمكن أن يكون مبلغ العربون أكبر من إجمالي الطلب.");
+          return;
+      }
+
+      const orderToAdd: Omit<Order, 'id'> & { totalAmountOverride?: number } = {
+        ...(orderData as Omit<Order, 'id'>),
+        customerAddress: fullAddress,
+        notes: finalNotes,
+        orderNumber: orderData.orderNumber || `${getNextOrderNumber()}`,
+        productPrice: totalProductPrice,
+        productCost: totalProductCost,
+        weight: totalWeight,
+        productName: productNames,
+      };
     
     const creditAmount = orderData.creditAmount || 0;
     if (orderData.orderType === 'exchange' && creditAmount > 0) {
@@ -491,6 +510,27 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       setEditingOrder(null);
     } else {
       setOrderToConfirm(orderToAdd);
+    }
+
+    const oldAdvance = editingOrder?.advancePayment || 0;
+    const newAdvance = orderToAdd.advancePayment || 0;
+    const difference = newAdvance - oldAdvance;
+    
+    if (difference !== 0 && orderToAdd.advancePaymentPartnerId) {
+        const partnerTx = {
+             id: `adv-${Date.now()}`,
+             partnerId: orderToAdd.advancePaymentPartnerId,
+             type: difference > 0 ? 'customer_advance' : 'repayment',
+             amount: Math.abs(difference),
+             date: new Date().toISOString(),
+             note: `عربون / دفع مقدم للطلب #${orderToAdd.orderNumber} ${difference < 0 ? '(تعديل بالنقصان)' : ''}`
+        } as any;
+        
+        setSettings(prev => ({
+             ...prev,
+             partnerTransactions: [...(prev.partnerTransactions || []), partnerTx],
+             partners: (prev.partners || []).map(p => p.id === orderToAdd.advancePaymentPartnerId ? { ...p, balance: (p.balance || 0) - difference } : p)
+        }));
     }
 
     // Save/Update Customer Data
@@ -607,18 +647,18 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     const useCustom = compFees?.useCustomFees ?? false;
     
     if ((newStatus === 'تم_الارسال' || newStatus === 'قيد_الشحن') && !updatedOrderData.shippingAndInsuranceDeducted) {
-        newTransactions.push({ id: `ship_${orderToUpdate.id}`, type: 'سحب', amount: orderToUpdate.shippingFee, date: new Date().toISOString(), note: `خصم مصاريف شحن أوردر #${orderToUpdate.orderNumber}`, category: 'shipping' });
+        newTransactions.push({ id: `ship_${orderToUpdate.id}`, type: 'سحب', amount: orderToUpdate.shippingFee, date: new Date().toISOString(), note: `إصدار بوليصة شحن أوردر #${orderToUpdate.orderNumber}`, category: 'shipping', status: 'completed' });
         
         const insuranceRate = useCustom ? compFees!.insuranceFeePercent : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
         if (orderToUpdate.isInsured && insuranceRate > 0) {
             const insuranceFee = ((orderToUpdate.productPrice + orderToUpdate.shippingFee) * insuranceRate) / 100;
-            newTransactions.push({ id: `insure_${orderToUpdate.id}`, type: 'سحب', amount: insuranceFee, date: new Date().toISOString(), note: `خصم رسوم تأمين أوردر #${orderToUpdate.orderNumber}`, category: 'insurance' });
+            newTransactions.push({ id: `insure_${orderToUpdate.id}`, type: 'سحب', amount: insuranceFee, date: new Date().toISOString(), note: `خصم رسوم تأمين أوردر #${orderToUpdate.orderNumber}`, category: 'insurance', status: 'completed' });
         }
 
         if (orderToUpdate.includeInspectionFee && !updatedOrderData.inspectionFeeDeducted) {
             const feeAmount = useCustom ? compFees!.inspectionFee : (settings.enableInspection ? settings.inspectionFee : 0);
             if (feeAmount > 0) {
-                newTransactions.push({ id: `insp_${orderToUpdate.id}`, type: 'سحب', amount: feeAmount, date: new Date().toISOString(), note: `خصم رسوم معاينة أوردر #${orderToUpdate.orderNumber}`, category: 'inspection' });
+                newTransactions.push({ id: `insp_${orderToUpdate.id}`, type: 'سحب', amount: feeAmount, date: new Date().toISOString(), note: `خصم رسوم معاينة أوردر #${orderToUpdate.orderNumber}`, category: 'inspection', status: 'completed' });
                 updatedOrderData.inspectionFeeDeducted = true;
             }
         }
@@ -630,7 +670,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         if (applyReturnFee) {
             const returnFeeAmount = useCustom ? compFees!.returnShippingFee : settings.returnShippingFee;
             if (returnFeeAmount > 0) {
-                newTransactions.push({ id: `return_${orderToUpdate.id}`, type: 'سحب', amount: returnFeeAmount, date: new Date().toISOString(), note: `خصم مصاريف مرتجع أوردر #${orderToUpdate.orderNumber}`, category: 'return' });
+                newTransactions.push({ id: `return_${orderToUpdate.id}`, type: 'سحب', amount: returnFeeAmount, date: new Date().toISOString(), note: `خصم مصاريف مرتجع أوردر #${orderToUpdate.orderNumber}`, category: 'return', status: 'completed' });
                 updatedOrderData.returnFeeDeducted = true;
             }
         }
@@ -760,16 +800,27 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     const baseAmountToCollect = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount);
     const totalCollected = baseAmountToCollect + (customerPaidInspection ? inspectionFee : 0);
     
-    newTransactions.push({ id: `collect_${order.id}`, type: 'إيداع', amount: totalCollected, date: new Date().toISOString(), note: `إيداع مبلغ تحصيل أوردر #${order.orderNumber}`, category: 'collection' });
+    newTransactions.push({ id: `collect_${order.id}`, type: 'إيداع', amount: totalCollected, date: new Date().toISOString(), note: `رصيد من الدفع عند الاستلام أوردر #${order.orderNumber}`, category: 'collection', status: 'completed' });
 
     const codFee = calculateCodFee(order, settings);
     if (codFee > 0) {
-        newTransactions.push({ id: `cod_${order.id}`, type: 'سحب', amount: codFee, date: new Date().toISOString(), note: `خصم رسوم COD أوردر #${order.orderNumber}`, category: 'cod' });
+        newTransactions.push({ id: `cod_${order.id}`, type: 'سحب', amount: codFee, date: new Date().toISOString(), note: `خصم رسوم COD أوردر #${order.orderNumber}`, category: 'cod', status: 'completed' });
     }
     
     const updatedOrderData = { ...order, status: 'تم_التحصيل' as OrderStatus, paymentStatus: 'مدفوع' as PaymentStatus, inspectionFeePaidByCustomer: customerPaidInspection, collectionProcessed: true };
     
-    setWallet(prev => ({ ...prev, transactions: [...newTransactions, ...prev.transactions] }));
+    setWallet(prev => {
+        let newBalance = prev.balance || 0;
+        newTransactions.forEach(t => {
+            if (t.type === 'إيداع') newBalance += t.amount;
+            else if (t.type === 'سحب') newBalance -= t.amount;
+        });
+        return { 
+            ...prev, 
+            balance: newBalance,
+            transactions: [...newTransactions, ...prev.transactions] 
+        };
+    });
     setOrders(prevOrders => prevOrders.map(o => (o.id === order.id ? updatedOrderData : o)));
     addLoyaltyPointsForOrder(updatedOrderData);
   };
@@ -809,14 +860,14 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
             }
             
             confirmationMessage += `سيتم إرجاع مبلغ (${returnAmount.toLocaleString()} ج.م) للعميل وخصمه من المحفظة.${inspectionFeeMessage}`;
-            transactions.push({ id: `post_return_refund_${order.id}`, type: 'سحب', amount: returnAmount, date: new Date().toISOString(), note: `إرجاع مبلغ للعميل بعد استلام الطلب #${order.orderNumber}`, category: 'return' });
+            transactions.push({ id: `post_return_refund_${order.id}`, type: 'سحب', amount: returnAmount, date: new Date().toISOString(), note: `إرجاع مبلغ للعميل بعد استلام الطلب #${order.orderNumber}`, category: 'return', status: 'completed' });
         } else {
             confirmationMessage += `لن يتم خصم قيمة المنتج من المحفظة حسب سياسة الشركة.`;
         }
 
         if (returnShippingFee > 0) {
             confirmationMessage += `\nسيتم خصم مصاريف شحن المرتجع (${returnShippingFee} ج.م).`;
-            transactions.push({ id: `post_return_fee_${order.id}`, type: 'سحب', amount: returnShippingFee, date: new Date().toISOString(), note: `مصاريف شحن مرتجع بعد الاستلام للطلب #${order.orderNumber}`, category: 'return' });
+            transactions.push({ id: `post_return_fee_${order.id}`, type: 'سحب', amount: returnShippingFee, date: new Date().toISOString(), note: `مصاريف شحن مرتجع بعد الاستلام للطلب #${order.orderNumber}`, category: 'return', status: 'completed' });
         }
 
     const confirmCollectionReturn = () => {
@@ -827,7 +878,18 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
             confirmText: 'تأكيد الإرجاع',
             onConfirm: () => {
                 if (transactions.length > 0) {
-                    setWallet(prev => ({ ...prev, transactions: [...transactions, ...prev.transactions] }));
+                    setWallet(prev => {
+                        let newBalance = prev.balance || 0;
+                        transactions.forEach(t => {
+                            if (t.type === 'إيداع') newBalance += t.amount;
+                            else if (t.type === 'سحب') newBalance -= t.amount;
+                        });
+                        return {
+                            ...prev,
+                            balance: newBalance,
+                            transactions: [...transactions, ...prev.transactions]
+                        };
+                    });
                 }
 
                 // Return Stock
@@ -974,18 +1036,18 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                     const useCustom = compFees?.useCustomFees ?? false;
                     
                     if ((newStatus === 'تم_الارسال' || newStatus === 'قيد_الشحن') && !orderToUpdate.shippingAndInsuranceDeducted) {
-                        allNewTransactions.push({ id: `ship_${o.id}`, type: 'سحب', amount: o.shippingFee, date: new Date().toISOString(), note: `خصم مصاريف شحن أوردر #${o.orderNumber}`, category: 'shipping' });
+                        allNewTransactions.push({ id: `ship_${o.id}`, type: 'سحب', amount: o.shippingFee, date: new Date().toISOString(), note: `خصم مصاريف شحن أوردر #${o.orderNumber}`, category: 'shipping', status: 'completed' });
                         
                         const insuranceRate = useCustom ? compFees!.insuranceFeePercent : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
                         if (o.isInsured && insuranceRate > 0) {
                             const insuranceFee = ((o.productPrice + o.shippingFee) * insuranceRate) / 100;
-                            allNewTransactions.push({ id: `insure_${o.id}`, type: 'سحب', amount: insuranceFee, date: new Date().toISOString(), note: `خصم رسوم تأمين أوردر #${o.orderNumber}`, category: 'insurance' });
+                            allNewTransactions.push({ id: `insure_${o.id}`, type: 'سحب', amount: insuranceFee, date: new Date().toISOString(), note: `خصم رسوم تأمين أوردر #${o.orderNumber}`, category: 'insurance', status: 'completed' });
                         }
 
                         if (o.includeInspectionFee && !orderToUpdate.inspectionFeeDeducted) {
                             const feeAmount = useCustom ? compFees!.inspectionFee : (settings.enableInspection ? settings.inspectionFee : 0);
                             if (feeAmount > 0) {
-                                allNewTransactions.push({ id: `insp_${o.id}`, type: 'سحب', amount: feeAmount, date: new Date().toISOString(), note: `خصم رسوم معاينة أوردر #${o.orderNumber}`, category: 'inspection' });
+                                allNewTransactions.push({ id: `insp_${o.id}`, type: 'سحب', amount: feeAmount, date: new Date().toISOString(), note: `خصم رسوم معاينة أوردر #${o.orderNumber}`, category: 'inspection', status: 'completed' });
                                 orderToUpdate.inspectionFeeDeducted = true;
                             }
                         }
@@ -997,7 +1059,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                         if (applyReturnFee) {
                             const returnFeeAmount = useCustom ? compFees!.returnShippingFee : settings.returnShippingFee;
                             if (returnFeeAmount > 0) {
-                                allNewTransactions.push({ id: `return_${o.id}`, type: 'سحب', amount: returnFeeAmount, date: new Date().toISOString(), note: `خصم مصاريف مرتجع أوردر #${o.orderNumber}`, category: 'return' });
+                                allNewTransactions.push({ id: `return_${o.id}`, type: 'سحب', amount: returnFeeAmount, date: new Date().toISOString(), note: `خصم مصاريف مرتجع أوردر #${o.orderNumber}`, category: 'return', status: 'completed' });
                                 orderToUpdate.returnFeeDeducted = true;
                             }
                         }
@@ -1704,7 +1766,8 @@ const OrderCard = ({
   const safeShippingFee = Number(order.shippingFee) || 0;
   const safeTax = Number(order.tax) || 0;
   const safeDiscount = Number(order.discount) || 0;
-  const computedTotal = safeProductPrice + safeShippingFee + safeTax - safeDiscount;
+  const safeAdvance = Number(order.advancePayment) || 0;
+  const computedTotal = safeProductPrice + safeShippingFee + safeTax - safeDiscount - safeAdvance;
   const totalAmount = order.totalAmountOverride ?? computedTotal;
   const displayTotal = order.source === 'synced' && order.totalPrice != null ? Number(order.totalPrice) : totalAmount;
 
@@ -1851,6 +1914,7 @@ const OrderCard = ({
                     {displayTotal.toLocaleString()}
                   </h4>
               </div>
+              {(order.advancePayment || 0) > 0 && <p className="text-[10px] text-teal-600 font-bold mt-1 text-left">عربون: {order.advancePayment}</p>}
           </div>
           <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl">
               <Receipt size={24} />
@@ -2086,8 +2150,9 @@ const OrderRow = ({
   const safeTax = Number(order.tax) || 0;
   const safeDiscount = Number(order.discount) || 0;
   const safeProductCost = Number(order.productCost) || 0;
+  const safeAdvance = Number(order.advancePayment) || 0;
   
-  const computedTotal = safeProductPrice + safeShippingFee + safeTax - safeDiscount;
+  const computedTotal = safeProductPrice + safeShippingFee + safeTax - safeDiscount - safeAdvance;
   const totalAmount = order.totalAmountOverride != null ? Number(order.totalAmountOverride) : computedTotal;
   const displayTotal = order.source === 'synced' && order.totalPrice != null ? Number(order.totalPrice) : totalAmount;
 
@@ -2229,9 +2294,12 @@ const OrderRow = ({
       </td>
       <td className="p-6">
         <div className="text-right space-y-2 relative">
-            <div className="flex items-baseline gap-1 justify-end">
-                <span className="text-[10px] font-black text-indigo-600">ج.م</span>
-                <span className="text-xl font-black text-slate-900 dark:text-white tabular-nums drop-shadow-sm">{displayTotal.toLocaleString()}</span>
+            <div className="flex flex-col items-end">
+                <div className="flex items-baseline gap-1 justify-end">
+                    <span className="text-[10px] font-black text-indigo-600">ج.م</span>
+                    <span className="text-xl font-black text-slate-900 dark:text-white tabular-nums drop-shadow-sm">{displayTotal.toLocaleString()}</span>
+                </div>
+                {(order.advancePayment || 0) > 0 && <span className="text-[10px] text-teal-600 font-bold">عربون: {order.advancePayment}</span>}
             </div>
             <div className="flex flex-col gap-1 items-end">
                 <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${
@@ -2714,7 +2782,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
     }, [orderData.includeInspectionFee, orderData.shippingCompany, settings]);
 
     const totalBeforeCredit = useMemo(() => subtotal - itemDiscounts + (orderData.shippingFee || 0) - (orderData.discount || 0) + inspectionFee, [subtotal, itemDiscounts, orderData.shippingFee, orderData.discount, inspectionFee]);
-    const finalAmount = totalBeforeCredit - creditAmount;
+    const finalAmount = totalBeforeCredit - creditAmount - (orderData.advancePayment || 0);
 
     const handleFieldChange = (field: keyof NewOrderState, value: any) => setOrderData((prev: any) => ({ ...prev, [field]: value }));
     const handleCustomerSelect = (customer: Pick<CustomerProfile, 'name'|'phone'|'address'>) => {
@@ -3132,6 +3200,27 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                                     </div>
                                 </div>
                             </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
+                                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">دفع مقدم / عربون (يخصم من الإجمالي)</label>
+                                    <div className="flex items-center gap-2">
+                                        <input type="number" min="0" value={orderData.advancePayment || 0} onChange={e => handleFieldChange('advancePayment', Number(e.target.value))} className="w-full font-bold bg-transparent outline-none text-emerald-600 dark:text-emerald-400" />
+                                        <span className="text-sm text-slate-400">ج.م</span>
+                                    </div>
+                                </div>
+                                {(orderData.advancePayment || 0) > 0 && (
+                                    <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
+                                        <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">تم التحويل إلى محفظة الشريك</label>
+                                        <select value={orderData.advancePaymentPartnerId || ''} onChange={e => handleFieldChange('advancePaymentPartnerId', e.target.value)} className="w-full bg-transparent outline-none font-bold text-slate-700 dark:text-slate-300 text-sm">
+                                            <option value="">-- اختر الشريك --</option>
+                                            {settings.partners?.map(p => (
+                                                <option key={p.id} value={p.id}>{p.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
 
                             <div className="border-t border-slate-200 dark:border-slate-700 my-4"></div>
                             
@@ -3196,6 +3285,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                         {isExchange && <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">الطلب الجديد: {totalBeforeCredit.toLocaleString()} ج.م - رصيد سابق: {creditAmount.toLocaleString()} ج.م</div>}
                         <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{finalAmount >= 0 ? 'الإجمالي المطلوب من العميل' : 'المبلغ المستحق للعميل'}</span>
                         <p className={`text-3xl font-black ${finalAmount >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-orange-500'}`}>{Math.abs(orderData.totalAmountOverride ?? finalAmount).toLocaleString()} ج.م</p>
+                        {(orderData.advancePayment || 0) > 0 && <p className="text-[11px] text-teal-600 dark:text-teal-400 font-bold mt-1">يتضمن خصم {orderData.advancePayment} ج.م عربون</p>}
                     </div>
                     <div className="flex gap-3">
                         <button type="button" onClick={onClose} className="px-6 py-3.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
@@ -3216,7 +3306,8 @@ const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ ord
     const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0;
     const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0;
     const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
-    const total = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount + inspectionFee);
+    const safeAdvance = Number(order.advancePayment) || 0;
+    const total = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount - safeAdvance + inspectionFee);
     
     return (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">
@@ -3304,7 +3395,8 @@ const OrderPreConfirmationModal: React.FC<OrderPreConfirmationModalProps> = ({ o
     const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0;
     const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0;
     const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
-    const total = (order as any).totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0) + inspectionFee);
+    const safeAdvance = Number((order as any).advancePayment) || 0;
+    const total = (order as any).totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0) - safeAdvance + inspectionFee);
     
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">

@@ -29,12 +29,14 @@ interface WalletPageProps {
 }
 
 const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings, orders, settings }) => {
-  const [modalMode, setModalMode] = useState<'none' | 'charge' | 'withdraw' | 'settings' | 'history' | 'bank' | 'cod_history' | 'withdraw_confirm' | 'error'>('none');
+  const [modalMode, setModalMode] = useState<'none' | 'charge' | 'withdraw' | 'settings' | 'history' | 'bank' | 'cod_history' | 'withdraw_confirm' | 'error' | 'transfer_supply'>('none');
   const [errorConfig, setErrorConfig] = useState({ title: '', message: '' });
+  const [supplyAmount, setSupplyAmount] = useState('');
+  const [transferDirection, setTransferDirection] = useState<'to_supply' | 'from_supply'>('to_supply');
   const [chargeMethod, setChargeMethod] = useState<'card' | 'wallet' | 'instapay'>('card');
   const [withdrawMode, setWithdrawMode] = useState<'normal' | 'same_day'>('normal');
   const [amount, setAmount] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'orders' | 'withdrawals' | 'manual'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'orders' | 'withdrawals' | 'manual' | 'supply_wallet'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [settingsScreen, setSettingsScreen] = useState<'main' | 'payment_methods' | 'withdraw_settings'>('main');
   
@@ -56,6 +58,9 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
     const liveBalance = wallet.transactions.reduce((sum, t) => {
         const amount = Number(t.amount) || 0;
         
+        // Exclude transactions that come from the Supply Wallet (they were already deducted from main during funding or never entered main)
+        if (t.category === 'supply_purchase' || t.category === 'supply_deposit') return sum;
+
         // Deposits: only include when completed
         if (t.type === 'إيداع') {
              return t.status === 'completed' ? sum + amount : sum;
@@ -63,7 +68,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
         
         // Withdrawals: include both completed AND pending (reserve them)
         if (t.type === 'سحب') {
-             return (t.status === 'rejected' || t.status === 'cancelled') ? sum : sum - amount;
+             return t.status === 'cancelled' ? sum : sum - amount;
         }
         
         return sum;
@@ -77,12 +82,85 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
         return sum;
     }, 0);
 
+    const inRouteOrders = orders.filter(o => 
+      (!o.paymentMethod || o.paymentMethod === 'cod') && 
+      (o.status === 'تم_توصيلها' || o.status === 'قيد_الشحن' || o.status === 'تم_الارسال') && 
+      !o.collectionProcessed
+    );
+    
+    const inRouteTotal = inRouteOrders.reduce((sum, o) => sum + (o.totalAmountOverride ?? (o.productPrice + o.shippingFee - (o.discount || 0))), 0);
+
     return { 
         liveBalance, 
+        supplyBalance: wallet.supplyBalance || 0,
         pendingWithdrawals: pendingWithdrawalsSum,
-        availableToWithdraw: liveBalance
+        availableToWithdraw: liveBalance,
+        inRouteTotal
     };
-  }, [wallet.transactions]);
+  }, [wallet.transactions, wallet.supplyBalance, orders]);
+
+  const handleTransferSupply = (e: React.FormEvent) => {
+    e.preventDefault();
+    const numAmount = parseFloat(supplyAmount);
+    if (isNaN(numAmount) || numAmount <= 0) return;
+
+    if (transferDirection === 'to_supply') {
+      if (numAmount > walletStats.liveBalance) {
+        setErrorConfig({
+          title: 'رصيد غير كافٍ',
+          message: 'لا يمكنك تحويل مبلغ أكبر من متاح المحفظة الأساسية.'
+        });
+        setModalMode('error');
+        return;
+      }
+
+      const transMain: Transaction = {
+        id: `TR-S-${Date.now()}`,
+        type: 'سحب',
+        amount: numAmount,
+        date: new Date().toISOString(),
+        note: 'تحويل إلى محفظة الموردين (تمويل مخزون)',
+        category: 'supply_funding',
+        status: 'completed'
+      };
+
+      setWallet(prev => ({
+        ...prev,
+        balance: prev.balance - numAmount,
+        supplyBalance: (prev.supplyBalance || 0) + numAmount,
+        transactions: [transMain, ...prev.transactions]
+      }));
+    } else {
+      if (numAmount > walletStats.supplyBalance) {
+        setErrorConfig({
+            title: 'رصيد غير كافٍ',
+            message: 'لا يمكنك تحويل مبلغ أكبر من متاح محفظة الموردين.'
+          });
+          setModalMode('error');
+          return;
+      }
+
+      const transMain: Transaction = {
+        id: `TR-M-${Date.now()}`,
+        type: 'إيداع',
+        amount: numAmount,
+        date: new Date().toISOString(),
+        note: 'تحويل من محفظة الموردين إلى المحفظة الأساسية',
+        category: 'manual_deposit',
+        status: 'completed'
+      };
+
+      setWallet(prev => ({
+        ...prev,
+        balance: prev.balance + numAmount,
+        supplyBalance: (prev.supplyBalance || 0) - numAmount,
+        transactions: [transMain, ...prev.transactions]
+      }));
+    }
+
+    setModalMode('none');
+    setSupplyAmount('');
+  };
 
   // Derived settings or defaults
   const walletSettings: WalletSettings = useMemo(() => {
@@ -255,10 +333,11 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
     if (activeTab === 'orders') {
         base = base.filter(t => t.note.includes('#') || t.orderNumber || t.orderId);
     } else if (activeTab === 'manual') {
-        base = base.filter(t => !t.note.includes('#') && !t.orderNumber && !t.orderId && t.category !== 'wallet_withdrawal' && t.category !== 'wallet_charge');
+        base = base.filter(t => !t.note.includes('#') && !t.orderNumber && !t.orderId && t.category !== 'wallet_withdrawal' && t.category !== 'wallet_charge' && !t.category?.startsWith('supply_'));
+    } else if (activeTab === 'supply_wallet') {
+        base = base.filter(t => t.category?.startsWith('supply_') || t.category === 'inventory_purchase');
     } else if (activeTab === 'all') {
-        // filter out withdraw requests from transactions since they are shown in withdrawals tab
-        // Or keep them? Usually withdrawals tab is dedicated, but "all" shows them anyway.
+        // Show everything
     }
     
     return base;
@@ -274,12 +353,18 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
     const ungrouped: any[] = [];
 
     filteredHistory.forEach(t => {
-      const orderNumMatch = t.note.match(/#(\w+)/);
+      const orderNumMatch = t.note.match(/أوردر #([^ \)]+)/) || t.note.match(/الطلب #([^ \)]+)/);
+      const supplyOrderMatch = t.note.match(/أمر:\s?([^ \)]+)/);
       const orderKey = t.orderNumber || t.orderId || (orderNumMatch ? orderNumMatch[1] : null);
+      const supplyKey = supplyOrderMatch ? supplyOrderMatch[1] : null;
 
-      if (orderKey) {
+      if (orderKey && (t.type === 'سحب' || t.type === 'إيداع') && t.category !== 'wallet_withdrawal' && t.category !== 'wallet_charge') {
         if (!groups[orderKey]) groups[orderKey] = [];
         groups[orderKey].push(t);
+      } else if (supplyKey && (t.category === 'supply_purchase' || t.category === 'supply_deposit' || t.category === 'inventory_purchase' || t.category === 'supply_withdrawal')) {
+        const key = `supply_${supplyKey}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(t);
       } else {
         ungrouped.push(t);
       }
@@ -291,7 +376,12 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
       if (items.length === 1) {
         result.push(items[0]);
       } else {
-        const sortedItems = [...items].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const sortedItems = [...items].sort((a, b) => {
+          const timeDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+          if (timeDiff !== 0) return timeDiff;
+          if (a.type !== b.type) return a.type === 'سحب' ? -1 : 1;
+          return 0;
+        });
         const first = sortedItems[0];
         const totalAmount = items.reduce((sum, i) => i.type === 'إيداع' ? sum + i.amount : sum - i.amount, 0);
         
@@ -302,13 +392,22 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
           items: sortedItems,
           amount: Math.abs(totalAmount),
           type: totalAmount >= 0 ? 'إيداع' : 'سحب',
-          note: `إجمالي تسويات الأوردر #${key}`,
-          orderNumber: key
+          note: key.startsWith('supply_') ? `إجمالي تمويل وشراء بضاعة (أمر: ${key.replace('supply_', '')})` : `إجمالي تسويات الأوردر #${key}`,
+          orderNumber: key.startsWith('supply_') ? key.replace('supply_', '') : key
         });
       }
     });
 
-    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return result.sort((a, b) => {
+      const timeDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      // If times are exactly identical, list the purchase (سحب) before funding (إيداع)
+      // This applies specifically to supply stock orders with partner funding.
+      if (a.type !== b.type) {
+        return a.type === 'سحب' ? -1 : 1;
+      }
+      return 0;
+    });
   }, [filteredHistory, activeTab]);
 
   const paginatedHistory = useMemo(() => {
@@ -351,31 +450,31 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
         </div>
 
         {/* Top Cards Section */}
-        <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-[1.4fr,2fr] gap-8">
+        <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Main Balance Card - Premium Glassmorphism */}
           <div className="relative group perspective-1000">
             <div className="absolute -inset-1 bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-600 rounded-[3rem] opacity-30 blur-2xl group-hover:opacity-50 transition duration-1000 animate-pulse"></div>
-            <div className="relative overflow-hidden bg-slate-900 dark:bg-black rounded-[3rem] p-10 text-white shadow-2xl flex flex-col justify-between min-h-[380px] border border-white/10">
+            <div className="relative overflow-hidden bg-slate-900 dark:bg-black rounded-[3rem] p-8 text-white shadow-2xl flex flex-col justify-between min-h-[340px] border border-white/10">
                 {/* Background effects */}
                 <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
-                    <div className="absolute -top-24 -left-24 w-96 h-96 bg-emerald-500/20 rounded-full blur-[100px]"></div>
-                    <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-teal-500/10 rounded-full blur-[100px]"></div>
+                    <div className="absolute -top-24 -left-24 w-72 h-72 bg-emerald-500/20 rounded-full blur-[100px]"></div>
+                    <div className="absolute -bottom-24 -right-24 w-72 h-72 bg-teal-500/10 rounded-full blur-[100px]"></div>
                     <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.1) 1px, transparent 0)', backgroundSize: '32px 32px' }}></div>
-                    <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-b from-white/[0.03] to-transparent"></div>
                 </div>
 
                 <div className="relative z-10">
-                    <div className="flex justify-between items-start flex-row-reverse mb-8">
+                    <div className="flex justify-between items-start flex-row-reverse mb-6">
                         <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10">
                             <WalletIcon size={24} className="text-emerald-400" />
                         </div>
                         <div className="text-right">
-                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400/80 mb-2">السيولة المتاحة</p>
+                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400/80 mb-2">المحفظة الأساسية</p>
+                            <p className="text-[10px] text-white/50 mb-2">تستخدم للمبيعات، السحوبات، والمصاريف العامة</p>
                             <div className="flex items-baseline gap-2 flex-row-reverse">
-                                <h2 className="text-6xl font-black tracking-tighter drop-shadow-2xl">
+                                <h2 className="text-5xl font-black tracking-tighter drop-shadow-2xl">
                                     {walletStats.liveBalance.toLocaleString('ar-EG', { minimumFractionDigits: 0 })}
                                 </h2>
-                                <span className="text-2xl font-bold text-emerald-400">ج.م</span>
+                                <span className="text-xl font-bold text-emerald-400">ج.م</span>
                             </div>
                             {walletStats.pendingWithdrawals > 0 && (
                                 <div className="flex justify-end mt-2">
@@ -389,131 +488,176 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
                     </div>
                 </div>
 
-                <div className="relative z-10 grid grid-cols-2 gap-4">
+                <div className="relative z-10 grid grid-cols-2 gap-3">
                     <motion.button
                         whileHover={{ scale: 1.02, y: -2 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => { setAmount(''); setModalMode('withdraw'); }}
-                        className="group/btn relative py-6 bg-white/5 border border-white/10 hover:bg-white/10 rounded-[2rem] text-white font-black text-sm transition-all overflow-hidden backdrop-blur-md"
+                        className="group/btn relative py-5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-[1.5rem] text-white font-black text-xs transition-all overflow-hidden backdrop-blur-md"
                     >
-                        <div className="relative z-10 flex items-center justify-center gap-3">
-                            <span className="tracking-wide">سحب الأموال</span>
-                            <div className="p-1.5 bg-white/10 rounded-lg group-hover/btn:bg-white/20 transition-colors">
-                                <ArrowDownLeft size={16} className="group-hover/btn:-translate-x-1 group-hover/btn:translate-y-1 transition-transform" />
-                            </div>
+                        <div className="relative z-10 flex items-center justify-center gap-2">
+                            <span>سحب</span>
+                            <ArrowDownLeft size={14} className="group-hover/btn:-translate-x-1 group-hover/btn:translate-y-1 transition-transform" />
                         </div>
                     </motion.button>
                     <motion.button
                         whileHover={{ scale: 1.02, y: -2 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => { setAmount(''); setModalMode('charge'); }}
-                        className="group/btn relative py-6 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-[#051C1A] rounded-[2rem] font-black text-sm transition-all shadow-2xl shadow-emerald-500/30 overflow-hidden"
+                        className="group/btn relative py-5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-[#051C1A] rounded-[1.5rem] font-black text-xs transition-all shadow-2xl shadow-emerald-500/30 overflow-hidden"
                     >
-                        <div className="relative z-10 flex items-center justify-center gap-3">
-                            <span className="tracking-wide">إيداع رصيد</span>
-                            <div className="p-1.5 bg-black/10 rounded-lg group-hover/btn:rotate-90 transition-transform">
-                                <Plus size={16} />
-                            </div>
+                        <div className="relative z-10 flex items-center justify-center gap-2">
+                            <span>إيداع</span>
+                            <Plus size={14} className="group-hover/btn:rotate-90 transition-transform" />
                         </div>
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-1000"></div>
                     </motion.button>
                 </div>
             </div>
           </div>
 
-          {/* Stats Grid - Bento Style */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Coming Revenue Card */}
-              <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-slate-800 p-8 shadow-sm hover:shadow-xl transition-all flex flex-col group">
-                  <div className="flex items-center justify-between flex-row-reverse mb-8">
-                      <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl group-hover:rotate-12 transition-transform shadow-sm">
-                          <Truck size={24} />
-                      </div>
-                      <div className="text-right">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">في الطريق إليك</p>
-                          <h4 className="text-3xl font-black text-slate-800 dark:text-white">٠ <span className="text-sm font-bold opacity-30">ج.م</span></h4>
-                      </div>
-                  </div>
-                  
-                  <div className="space-y-5">
-                      {[
-                        { label: 'اليوم (10/5)', value: '٠', progress: 40, color: 'bg-emerald-500' },
-                        { label: 'غداً (11/5)', value: '٠', progress: 20, color: 'bg-blue-500' },
-                        { label: 'الثلاثاء (12/5)', value: '٠', progress: 10, color: 'bg-indigo-500' }
-                      ].map((item, idx) => (
-                        <div key={idx} className="space-y-2 flex flex-col">
-                           <div className="flex justify-between flex-row-reverse text-[11px] font-bold">
-                               <span className="text-slate-500">{item.label}</span>
-                               <span className="text-slate-900 dark:text-slate-100">{item.value} ج.م</span>
-                           </div>
-                           <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-full overflow-hidden">
-                               <motion.div 
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${item.progress}%` }}
-                                    className={`h-full ${item.color} shadow-[0_0_8px_rgba(0,0,0,0.1)]`}
-                                />
-                           </div>
+          <div className="relative group perspective-1000">
+            <div className="absolute -inset-1 bg-gradient-to-r from-indigo-600 via-blue-500 to-indigo-600 rounded-[3rem] opacity-30 blur-2xl group-hover:opacity-50 transition duration-1000"></div>
+            <div className="relative overflow-hidden bg-slate-900 dark:bg-slate-950 rounded-[3rem] p-8 text-white shadow-2xl flex flex-col justify-between min-h-[340px] border border-white/10">
+                <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden text-indigo-500/5">
+                    <History size={300} className="absolute -bottom-20 -left-20 rotate-12" />
+                </div>
+
+                <div className="relative z-10">
+                    <div className="flex justify-between items-start flex-row-reverse mb-6">
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveTab('supply_wallet');
+                                const element = document.getElementById('transactions-section');
+                                if (element) element.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="bg-indigo-500/20 backdrop-blur-md p-3 rounded-2xl border border-indigo-500/20 hover:bg-indigo-500/30 transition-all cursor-pointer group/hist"
+                        >
+                            <History size={24} className="text-indigo-400 group-hover/hist:rotate-[-45deg] transition-transform" />
+                        </button>
+                        <div className="text-right">
+                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400 mb-2">محفظة التوريد (رأس مال البضاعة)</p>
+                            <p className="text-[10px] text-white/50 mb-2">مخصصة فقط لشراء المخزون وتمويل البضاعة</p>
+                            <div className="flex items-baseline gap-2 flex-row-reverse">
+                                <h2 className="text-5xl font-black tracking-tighter drop-shadow-2xl">
+                                    {walletStats.supplyBalance.toLocaleString('ar-EG', { minimumFractionDigits: 0 })}
+                                </h2>
+                                <span className="text-xl font-bold text-indigo-400">ج.م</span>
+                            </div>
                         </div>
-                      ))}
-                  </div>
-                  
-                  <div className="mt-auto pt-6 flex justify-center">
-                    <button 
-                      onClick={() => setModalMode('cod_history')}
-                      className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 group/link"
-                    >
-                        عرض تفاصيل التسويات <ChevronRight size={12} className="rotate-180 group-hover/link:-translate-x-1 transition-transform" />
-                    </button>
-                  </div>
-              </div>
-
-              {/* Transactions Summary Card */}
-          <div className="bg-slate-900 dark:bg-slate-800/50 rounded-[3rem] p-8 text-white flex flex-col shadow-2xl relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
-                      <TrendingUp size={140} />
-                  </div>
-                  <div className="flex justify-between items-start flex-row-reverse relative z-10">
-                    <div className="text-right">
-                        <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">إجمالي ما تم سحبه</p>
-                        <h4 className="text-4xl font-black tracking-tight">{(wallet.withdrawRequests || []).reduce((sum, r) => r.status === 'accepted' ? sum + r.amount : sum, 0).toLocaleString()} <span className="text-lg opacity-30">ج.م</span></h4>
                     </div>
-                    <button 
-                      onClick={() => setModalMode('history')}
-                      className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl transition-all border border-white/10"
-                      title="عرض سجل السحوبات"
-                    >
-                      <History size={18} />
-                    </button>
-                  </div>
+                </div>
 
-                  <div className="relative z-10 grid grid-cols-2 gap-4 mt-8">
-                      <div className="p-5 bg-white/5 rounded-[2rem] border border-white/10 hover:bg-white/10 transition-colors">
-                          <p className="text-[10px] font-bold text-white/40 mb-1">طلبات السحب</p>
-                          <p className="text-2xl font-black text-emerald-400">{wallet.withdrawRequests?.length || 0}</p>
-                      </div>
-                      <div className="p-5 bg-white/5 rounded-[2rem] border border-white/10 hover:bg-white/10 transition-colors">
-                          <p className="text-[10px] font-bold text-white/40 mb-1">متوسط السحب</p>
-                          <p className="text-2xl font-black text-emerald-400">٠ <span className="text-[10px] opacity-40">ج.م</span></p>
-                      </div>
-                  </div>
-              </div>
+                <div className="relative z-10 mt-auto">
+                    <motion.button
+                        whileHover={{ scale: 1.02, y: -2 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => { setSupplyAmount(''); setModalMode('transfer_supply'); }}
+                        className="w-full group/btn relative py-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-[2rem] font-black text-sm transition-all shadow-xl shadow-indigo-500/20 overflow-hidden flex items-center justify-center gap-3"
+                    >
+                        <span>تحويل أموال للمخزون</span>
+                        <div className="p-1 px-3 bg-white/20 rounded-lg text-[10px] group-hover/btn:bg-white/30 transition-colors">
+                            إدارة رأس المال
+                        </div>
+                    </motion.button>
+                </div>
+            </div>
           </div>
         </motion.div>
 
+        {/* Stats Grid - Bento Style */}
+        <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            {/* Coming Revenue Card */}
+            <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-slate-800 p-8 shadow-sm hover:shadow-xl transition-all flex flex-col group">
+                <div className="flex items-center justify-between flex-row-reverse mb-8">
+                    <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl group-hover:rotate-12 transition-transform shadow-sm">
+                        <Truck size={24} />
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">في الطريق إليك</p>
+                        <h4 className="text-3xl font-black text-slate-800 dark:text-white">{walletStats.inRouteTotal.toLocaleString()} <span className="text-sm font-bold opacity-30">ج.م</span></h4>
+                    </div>
+                </div>
+                
+                <div className="space-y-5">
+                    {[
+                      { label: 'دفع عند الاستلام (نشط)', value: walletStats.inRouteTotal.toLocaleString(), progress: walletStats.inRouteTotal > 0 ? 100 : 0, color: 'bg-emerald-500' },
+                      { label: 'بانتظار التحصيل', value: '٠', progress: 0, color: 'bg-blue-500' },
+                      { label: 'متوقع دخوله', value: (walletStats.inRouteTotal * 0.8).toLocaleString(), progress: 60, color: 'bg-indigo-500' }
+                    ].map((item, idx) => (
+                      <div key={idx} className="space-y-2 flex flex-col">
+                         <div className="flex justify-between flex-row-reverse text-[11px] font-bold">
+                             <span className="text-slate-500">{item.label}</span>
+                             <span className="text-slate-900 dark:text-slate-100">{item.value} ج.م</span>
+                         </div>
+                         <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-full overflow-hidden">
+                             <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${item.progress}%` }}
+                                  className={`h-full ${item.color} shadow-[0_0_8px_rgba(0,0,0,0.1)]`}
+                              />
+                         </div>
+                      </div>
+                    ))}
+                </div>
+                
+                <div className="mt-auto pt-6 flex justify-center">
+                  <button 
+                    onClick={() => setModalMode('cod_history')}
+                    className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 group/link"
+                  >
+                      عرض تفاصيل التسويات <ChevronRight size={12} className="rotate-180 group-hover/link:-translate-x-1 transition-transform" />
+                  </button>
+                </div>
+            </div>
+
+            {/* Transactions Summary Card */}
+            <div className="bg-slate-900 dark:bg-slate-800/50 rounded-[3rem] p-8 text-white flex flex-col shadow-2xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+                    <TrendingUp size={140} />
+                </div>
+                <div className="flex justify-between items-start flex-row-reverse relative z-10">
+                  <div className="text-right">
+                      <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">إجمالي ما تم سحبه</p>
+                      <h4 className="text-4xl font-black tracking-tight">{(wallet.withdrawRequests || []).reduce((sum, r) => r.status === 'accepted' ? sum + r.amount : sum, 0).toLocaleString()} <span className="text-lg opacity-30">ج.م</span></h4>
+                  </div>
+                  <button 
+                    onClick={() => setModalMode('history')}
+                    className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl transition-all border border-white/10"
+                    title="عرض سجل السحوبات"
+                  >
+                    <History size={18} />
+                  </button>
+                </div>
+
+                <div className="relative z-10 grid grid-cols-2 gap-4 mt-8">
+                    <div className="p-5 bg-white/5 rounded-[2rem] border border-white/10 hover:bg-white/10 transition-colors">
+                        <p className="text-[10px] font-bold text-white/40 mb-1">طلبات السحب</p>
+                        <p className="text-2xl font-black text-emerald-400">{wallet.withdrawRequests?.length || 0}</p>
+                    </div>
+                    <div className="p-5 bg-white/5 rounded-[2rem] border border-white/10 hover:bg-white/10 transition-colors">
+                        <p className="text-[10px] font-bold text-white/40 mb-1">متوسط السحب</p>
+                        <p className="text-2xl font-black text-emerald-400">٠ <span className="text-[10px] opacity-40">ج.م</span></p>
+                    </div>
+                </div>
+            </div>
+        </motion.div>
+
         {/* Interactive List Section */}
-        <motion.div variants={itemVariants} className="space-y-8">
+        <motion.div id="transactions-section" variants={itemVariants} className="space-y-8">
           <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-6">
-            <div className="flex flex-row-reverse p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl border border-slate-200/50 dark:border-slate-700/50">
+            <div className="flex flex-row-reverse p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 overflow-x-auto no-scrollbar max-w-full">
                 {[
                     { id: 'all', label: 'الجميع' },
                     { id: 'orders', label: 'طلبات' },
                     { id: 'withdrawals', label: 'سحوبات' },
+                    { id: 'supply_wallet', label: 'التوريد' },
                     { id: 'manual', label: 'يدوي' }
                 ].map(tab => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
-                        className={`px-8 py-2.5 rounded-xl text-xs font-black transition-all duration-300 ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                        className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all duration-300 whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
                     >
                         {tab.label}
                     </button>
@@ -645,10 +789,13 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
                                   </div>
                                   <div className="text-right">
                                       <h5 className="text-base font-black text-slate-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors tracking-tight">
-                                          {item.note || item.type}
+                                          {item.category === 'collection' ? 'رصيد من الدفع عند الاستلام' : item.category === 'shipping' ? 'إصدار بوليصة شحن' : (item.note || item.type)}
                                       </h5>
                                       <div className="flex items-center gap-3 flex-row-reverse mt-1.5">
                                           <span className="text-[11px] font-black text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-100 dark:border-slate-700">#{item.orderNumber || item.id.slice(-6)}</span>
+                                           {item.category?.startsWith('supply_') && (
+                                              <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/40 px-2 py-0.5 rounded-lg border border-indigo-100 dark:border-indigo-800">محفظة التوريد</span>
+                                           )}
                                           <span className="w-1 h-1 bg-slate-300 dark:bg-slate-600 rounded-full"></span>
                                           <div className="flex items-center gap-1.5 flex-row-reverse">
                                               <Calendar size={12} className="text-slate-400"/>
@@ -681,14 +828,18 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
                                   </div>
                                   
                                   <div className="flex items-center gap-4">
-                                      <span className={`px-5 py-2 rounded-xl text-[11px] font-black border tracking-wide ${
+                                      <span className={`inline-flex flex-row-reverse items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-black border tracking-wide ${
                                           item.status === 'pending'
                                           ? 'bg-amber-50 text-amber-600 border-amber-200/50 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
                                           : item.status === 'completed'
                                           ? 'bg-emerald-50 text-emerald-600 border-emerald-200/50 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
                                           : 'bg-rose-50 text-rose-600 border-rose-200/50 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20'
                                       }`}>
-                                          {item.status === 'pending' ? 'قيد المراجعة' : item.status === 'completed' ? 'عملية ناجحة' : 'عملية مرفوضة'}
+                                          {item.status === 'pending' ? 'قيد التنفيذ' : item.status === 'completed' ? 'تم التنفيذ' : 'تم إلغاؤها'}
+                                          <span className={`w-1.5 h-1.5 rounded-full ${
+                                              item.status === 'pending' ? 'bg-amber-500' :
+                                              item.status === 'completed' ? 'bg-emerald-500' : 'bg-rose-500'
+                                          }`} />
                                       </span>
                                       <motion.div 
                                           animate={{ rotate: item.isGroup && expandedGroups[item.id] ? 90 : 0 }}
@@ -720,7 +871,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
                                     {sub.type === 'إيداع' ? <ArrowUpRight size={14}/> : <ArrowDownLeft size={14}/>}
                                   </div>
                                   <div className="text-right">
-                                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{sub.note}</p>
+                                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{sub.category === 'collection' ? 'رصيد من الدفع عند الاستلام' : sub.category === 'shipping' ? 'إصدار بوليصة شحن' : sub.note}</p>
                                     <p className="text-[10px] text-slate-400">{new Date(sub.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
                                   </div>
                                 </div>
@@ -763,7 +914,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
                                 <div className="h-px bg-slate-200 dark:bg-slate-700 w-full" />
                                 <div className="text-right space-y-1">
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">تفاصيل / ملاحظات</p>
-                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{item.note}</p>
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{item.category === 'collection' ? 'رصيد من الدفع عند الاستلام' : item.category === 'shipping' ? 'إصدار بوليصة شحن' : item.note}</p>
                                 </div>
                                 {item.orderId && (
                                     <>
@@ -1578,6 +1729,78 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
         )}
       </AnimatePresence>
 
+      {/* Supply Transfer Modal */}
+      <AnimatePresence>
+        {modalMode === 'transfer_supply' && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md" onClick={() => setModalMode('none')}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-10 space-y-8">
+                <div className="flex justify-between items-center flex-row-reverse">
+                    <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">إدارة رأس المال</h3>
+                    <button onClick={() => setModalMode('none')} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X size={24}/></button>
+                </div>
+
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
+                    <button 
+                        onClick={() => setTransferDirection('to_supply')}
+                        className={`flex-1 py-3 text-center rounded-xl font-black text-xs transition-all ${transferDirection === 'to_supply' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+                    >
+                        تحويل للمخزون
+                    </button>
+                    <button 
+                        onClick={() => setTransferDirection('from_supply')}
+                        className={`flex-1 py-3 text-center rounded-xl font-black text-xs transition-all ${transferDirection === 'from_supply' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+                    >
+                        استرداد للمحفظة
+                    </button>
+                </div>
+
+                <form onSubmit={handleTransferSupply} className="space-y-6">
+                    <div className="space-y-3">
+                        <label className="text-sm font-black text-slate-600 dark:text-slate-400 block text-right">المبلغ المراد تحويله</label>
+                        <div className="relative">
+                            <input
+                                type="number"
+                                value={supplyAmount}
+                                onChange={e => setSupplyAmount(e.target.value)}
+                                className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl text-center text-2xl font-black focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all dark:text-white"
+                                placeholder="0.00"
+                                required
+                            />
+                            <div className="absolute left-6 top-1/2 -translate-y-1/2 font-black text-slate-400">ج.م</div>
+                        </div>
+                        <div className="flex justify-between flex-row-reverse text-[10px] font-bold text-slate-400 px-2">
+                           <span>الرصيد المتاح: {transferDirection === 'to_supply' ? walletStats.liveBalance.toLocaleString() : walletStats.supplyBalance.toLocaleString()} ج.م</span>
+                        </div>
+                    </div>
+
+                    <div className="p-6 bg-indigo-50 dark:bg-indigo-900/20 rounded-[2rem] border border-indigo-100 dark:border-indigo-500/20 text-right">
+                        <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 leading-relaxed">
+                            {transferDirection === 'to_supply' 
+                                ? 'سيتم خصم المبلغ من محفظتك الأساسية وإضافته لمحفظة الموردين. هذا المبلغ سيُستخدم حصرياً لتمويل مشتريات البضاعة.' 
+                                : 'سيتم استرداد المبلغ من محفظة الموردين وإعادته لمحفظتك الأساسية المتاحة للسحب.'}
+                        </p>
+                    </div>
+
+                    <button
+                        type="submit"
+                        className="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-black shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 transition-all text-sm"
+                    >
+                        تأكيد العملية
+                    </button>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Error / Alert Modal */}
       <AnimatePresence>
         {modalMode === 'error' && (
@@ -1672,12 +1895,13 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                                {orders.filter(o => o.paymentMethod === 'cod').map((o, idx) => {
+                                {orders.filter(o => (!o.paymentMethod || o.paymentMethod === 'cod') && (o.status === 'تم_توصيلها' || o.status === 'تم_التحصيل' || o.status === 'قيد_الشحن' || o.status === 'تم_الارسال' || o.status === 'مدفوعة')).map((o, idx) => {
                                     const total = o.totalAmountOverride ?? (o.productPrice + o.shippingFee - (o.discount || 0));
+                                    const isCollected = o.status === 'تم_التحصيل';
                                     return (
                                         <tr key={o.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/10 transition-all">
                                             <td className="p-6 text-indigo-600 font-bold">#{o.orderNumber}</td>
-                                            <td className="p-6 text-slate-500">{new Date(o.date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</td>
+                                            <td className="p-6 text-slate-500">{o.date ? new Date(o.date).toLocaleDateString('en-GB') : '-'}</td>
                                             <td className="p-6">
                                                 <div className="flex items-center gap-2 justify-end">
                                                     <span className="text-slate-600">{o.shippingCompany || 'آرامكس'}</span>
@@ -1685,19 +1909,28 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
                                                 </div>
                                             </td>
                                             <td className="p-6">
-                                                <div className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20">
-                                                    <div className="w-1 h-1 bg-emerald-500 rounded-full" />
-                                                    تمت إضافتها للمحفظة
+                                                <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[9px] ${
+                                                    isCollected 
+                                                    ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400' 
+                                                    : 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400'
+                                                }`}>
+                                                    <div className={`w-1 h-1 rounded-full ${isCollected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                                    {isCollected ? 'تمت إضافتها للمحفظة' : 'قيد التوصيل / بانتظار التحصيل'}
                                                 </div>
                                             </td>
                                             <td className="p-6 text-slate-800 dark:text-slate-100">{total.toLocaleString()} ج.م</td>
                                             <td className="p-6 text-slate-400 text-center">-</td>
                                             <td className="p-6 text-slate-400 text-center">-</td>
                                             <td className="p-6 text-slate-800 dark:text-slate-100 font-black">{total.toLocaleString()} ج.م</td>
-                                            <td className="p-6 text-slate-600 text-center">{new Date(new Date(o.date).getTime() + 3*24*60*60*1000).toLocaleDateString('en-GB')}</td>
+                                            <td className="p-6 text-slate-600 text-center">{isCollected ? 'متاح الآن' : 'بانتظار التحصيل'}</td>
                                         </tr>
                                     );
-                                })}
+                                 })}
+                                {orders.filter(o => (!o.paymentMethod || o.paymentMethod === 'cod') && (o.status === 'تم_توصيلها' || o.status === 'تم_التحصيل' || o.status === 'قيد_الشحن' || o.status === 'تم_الارسال' || o.status === 'مدفوعة')).length === 0 && (
+                                    <tr>
+                                        <td colSpan={9} className="p-20 text-center text-slate-400 font-bold">لا توجد عمليات دفع خاضعة للتحصيل حالياً</td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>

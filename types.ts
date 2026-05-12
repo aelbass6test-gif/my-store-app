@@ -99,7 +99,7 @@ export interface Product {
   stockThreshold?: number;
 }
 
-export type TransactionCategory = 'shipping' | 'insurance' | 'inspection' | 'collection' | 'cod' | 'return' | 'manual_deposit' | 'manual_withdrawal' | 'expense_ads' | 'expense_salary' | 'expense_rent' | 'expense_other' | 'inventory_purchase' | 'capital_addition' | 'profit_withdrawal' | 'loan' | 'repayment' | 'wallet_charge' | 'wallet_withdrawal';
+export type TransactionCategory = 'shipping' | 'insurance' | 'inspection' | 'collection' | 'cod' | 'return' | 'manual_deposit' | 'manual_withdrawal' | 'expense_ads' | 'expense_salary' | 'expense_rent' | 'expense_other' | 'inventory_purchase' | 'capital_addition' | 'profit_withdrawal' | 'loan' | 'repayment' | 'wallet_charge' | 'wallet_withdrawal' | 'partner_supply' | 'supplier_payment' | 'supply_purchase' | 'supply_deposit' | 'supply_funding';
 
 export type WithdrawStatus = 'pending' | 'accepted' | 'rejected' | 'processing';
 
@@ -149,6 +149,7 @@ export interface Transaction {
 
 export interface Wallet {
   balance: number;
+  supplyBalance?: number; // Added supplyBalance for inventory funding
   transactions: Transaction[];
   withdrawRequests?: WithdrawRequest[];
   settings?: WalletSettings;
@@ -292,7 +293,7 @@ export interface Partner {
 export interface PartnerTransaction {
   id: string;
   partnerId: string;
-  type: 'loan' | 'capital_addition' | 'profit_withdrawal' | 'repayment';
+  type: 'loan' | 'capital_addition' | 'profit_withdrawal' | 'repayment' | 'supply_funding' | 'profit_distribution' | 'shipping_funding' | 'customer_advance';
   amount: number;
   date: string;
   note?: string;
@@ -317,6 +318,11 @@ export interface SupplyOrderItem {
   discountType?: 'amount' | 'percentage';
 }
 
+export interface PartnerPayment {
+  partnerId: string;
+  amount: number;
+}
+
 export interface SupplyOrder {
   id: string;
   supplierId: string;
@@ -326,8 +332,10 @@ export interface SupplyOrder {
   items: SupplyOrderItem[];
   totalCost: number;
   status: 'completed' | 'draft' | 'cancelled';
+  partnerId?: string;
+  partnerPayments?: PartnerPayment[]; // New field for multiple partners
   notes?: string;
-  paymentMethod?: 'cash' | 'credit';
+  paymentMethod?: 'cash' | 'credit' | 'partner' | 'supply_wallet';
 }
 
 export interface ActivityLog {
@@ -581,6 +589,8 @@ export interface Order {
   callAttempts?: CallAttempt[];
   sentiment?: string;
   images?: string[];
+  advancePayment?: number;
+  advancePaymentPartnerId?: string;
 }
 
 export interface StoreData {
@@ -598,6 +608,7 @@ export interface PlaceOrderData {
     shippingCompany: string;
     shippingArea: string;
     shippingFee: number;
+    paymentMethod: string;
     notes?: string;
     redeemedPoints: number;
     discount: number;

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Settings, Partner, PartnerTransaction, Wallet, Transaction, Order } from '../types';
-import { User, ArrowLeft, TrendingUp, DollarSign, ArrowDownRight, ArrowUpLeft, History, PieChart, Activity, Calendar, Download, Check } from 'lucide-react';
+import { User, ArrowLeft, TrendingUp, DollarSign, ArrowDownRight, ArrowUpLeft, History, PieChart, Activity, Calendar, Download, Check, Package as PackageIcon, Truck } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { motion } from 'motion/react';
 
@@ -33,9 +33,9 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
 
   const stats = useMemo(() => {
     return {
-       totalInvested: transactions.filter(t => t.type === 'capital_addition').reduce((sum, t) => sum + t.amount, 0),
+       totalInvested: transactions.filter(t => t.type === 'capital_addition' || t.type === 'supply_funding' || t.type === 'shipping_funding').reduce((sum, t) => sum + t.amount, 0),
        totalWithdrawn: transactions.filter(t => t.type === 'profit_withdrawal').reduce((sum, t) => sum + t.amount, 0),
-       totalLoans: transactions.filter(t => t.type === 'loan').reduce((sum, t) => sum + t.amount, 0),
+       totalLoans: transactions.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((sum, t) => sum + t.amount, 0),
        totalRepaid: transactions.filter(t => t.type === 'repayment').reduce((sum, t) => sum + t.amount, 0),
     };
   }, [transactions]);
@@ -45,7 +45,7 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
     return transactions
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
         .map(t => {
-            if (['capital_addition', 'repayment'].includes(t.type)) {
+            if (['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type)) {
                 currentBalance += t.amount;
             } else {
                 currentBalance -= t.amount;
@@ -222,17 +222,25 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex items-center gap-3">
                         <div className={`p-2 rounded-xl flex items-center justify-center ${
-                          ['capital_addition', 'repayment'].includes(t.type) 
+                          ['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type) 
                             ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' 
                             : 'bg-rose-100 dark:bg-rose-900/30 text-rose-600'
                         }`}>
-                          {t.type === 'loan' ? <ArrowDownRight size={16}/> : t.type === 'capital_addition' ? <ArrowUpLeft size={16}/> : t.type === 'repayment' ? <Check size={16}/> : <DollarSign size={16}/>}
+                          {['loan', 'customer_advance'].includes(t.type) ? <ArrowDownRight size={16}/> : 
+                           t.type === 'capital_addition' ? <ArrowUpLeft size={16}/> : 
+                           t.type === 'shipping_funding' ? <Truck size={16}/> : 
+                           t.type === 'repayment' ? <Check size={16}/> : 
+                           t.type === 'supply_funding' ? <PackageIcon size={16}/> : <DollarSign size={16}/>}
                         </div>
                         <div>
                           <p className="font-black text-slate-800 dark:text-white text-sm">
                             {t.type === 'loan' ? 'سلفة / سحب يدوي' : 
+                             t.type === 'customer_advance' ? 'عربون محصل من عميل' :
                              t.type === 'capital_addition' ? 'إيداع رأس مال جديد' : 
-                             t.type === 'profit_withdrawal' ? 'سحب من حصة الأرباح' : 'سداد سلفة مالية'}
+                             t.type === 'shipping_funding' ? 'إيداع مصاريف الشحن' : 
+                             t.type === 'profit_withdrawal' ? 'سحب من حصة الأرباح' : 
+                             t.type === 'profit_distribution' ? 'إضافة أرباح من المستحقات' : 
+                             t.type === 'supply_funding' ? 'تمويل شراء بضاعة' : 'سداد سلفة مالية'}
                           </p>
                           <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 mt-0.5">
                              <Calendar size={10} />
@@ -240,7 +248,7 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
                           </div>
                         </div>
                       </div>
-                      <span className={`text-base font-black ${['capital_addition', 'repayment'].includes(t.type) ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      <span className={`text-base font-black ${['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type) ? 'text-emerald-600' : 'text-rose-600'}`}>
                           {['loan', 'profit_withdrawal'].includes(t.type) ? '-' : '+'}{t.amount.toLocaleString()} 
                           <span className="text-[10px] ml-1">ج.م</span>
                       </span>

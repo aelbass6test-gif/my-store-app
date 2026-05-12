@@ -556,31 +556,34 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             .reduce((sum, t) => sum + t.amount, 0);
             
         const totalLoans = partnerTransactions
-            .filter(t => t.type === 'loan')
+            .filter(t => t.type === 'loan' || t.type === 'customer_advance')
             .reduce((sum, t) => sum + t.amount, 0);
             
         const totalProfitWithdrawals = partnerTransactions
-            .filter(t => t.type === 'profit_withdrawal')
+            .filter(t => t.type === 'profit_distribution')
             .reduce((sum, t) => sum + t.amount, 0);
 
         const partnerPerformance = partners.map(partner => {
             const partnerTx = partnerTransactions.filter(t => t.partnerId === partner.id);
             const capitalContribution = partnerTx.filter(t => t.type === 'capital_addition').reduce((sum, t) => sum + t.amount, 0);
-            const loans = partnerTx.filter(t => t.type === 'loan').reduce((sum, t) => sum + t.amount, 0);
+            const loans = partnerTx.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((sum, t) => sum + t.amount, 0);
             const withdrawals = partnerTx.filter(t => t.type === 'profit_withdrawal').reduce((sum, t) => sum + t.amount, 0);
+            const distributions = partnerTx.filter(t => t.type === 'profit_distribution').reduce((sum, t) => sum + t.amount, 0);
             const repayments = partnerTx.filter(t => t.type === 'repayment').reduce((sum, t) => sum + t.amount, 0);
             
             const currentProfitShare = (finalNet * (partner.profitRatio || 0)) / 100;
-            const currentBalance = (partner.balance || 0) + currentProfitShare; // current balance includes their share of today's net profit
+            const undistributedShare = Math.max(0, currentProfitShare - distributions);
+            const currentBalance = partner.balance || 0; 
             
             return {
                 ...partner,
                 capitalContribution,
                 loans,
                 withdrawals,
+                distributions,
                 repayments,
                 netLoan: loans - repayments,
-                currentProfitShare,
+                currentProfitShare: undistributedShare,
                 currentBalance
             };
         });
@@ -593,13 +596,20 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             return sum + (getLatestProductCost(p.id, settings) * (p.stockQuantity || 0));
         }, 0);
 
+        const inventorySalesValue = settings.products.reduce((sum, p) => {
+            if (p.hasVariants && p.variants) {
+                return sum + p.variants.reduce((vSum, v) => vSum + (v.price * (v.stockQuantity || 0)), 0);
+            }
+            return sum + (p.price * (p.stockQuantity || 0));
+        }, 0);
+
         return { 
             totalRevenue, totalProductRevenue, totalExtraMarkup, totalShippingRevenue, totalCogs, 
             totalInsuranceFees, totalInspectionFees, totalCodFees, totalProfit, 
             totalLoss, totalFailedShipping, totalFailedInsurance, totalFailedInspection, 
             totalReturnFees, totalExpenses, finalNet, totalPercentageProfit, totalCommissionProfit,
             successRate, lossRatio, avgProfitPerOrder, carrierStats, productStats, pendingCollection,
-            collectedOrdersCount: collectedOrders.length, geoData, expenseCategories, inventoryValue,
+            collectedOrdersCount: collectedOrders.length, geoData, expenseCategories, inventoryValue, inventorySalesValue,
             partnerPerformance, totalCapital, totalLoans, totalProfitWithdrawals
         };
     }, [orders, settings, wallet]);
@@ -819,6 +829,64 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                         <h4 className="font-bold text-amber-800 dark:text-amber-400 mb-1 flex items-center gap-2"><Package size={18}/> قيمة المخزون</h4>
                         <p className="text-2xl font-black text-amber-600">{stats.inventoryValue.toLocaleString()} ج.م</p>
                         <p className="text-[10px] text-amber-500 mt-1">قيمة البضاعة المتاحة في المخزن</p>
+                    </div>
+                </div>
+
+                {/* NEW: Final Comprehensive Report Section */}
+                <div className="bg-slate-900 p-8 rounded-3xl text-white shadow-2xl relative overflow-hidden mt-8">
+                    <h2 className="text-2xl font-black mb-8 flex items-center gap-3">
+                        <FileText className="text-blue-400" /> التقرير الختامي الشامل
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                            <p className="text-slate-400 text-xs font-bold uppercase mb-2">إجمالي المبيعات (كلي)</p>
+                            <p className="text-2xl font-black">{(stats.totalProductRevenue + stats.totalExtraMarkup + stats.totalShippingRevenue).toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                        </div>
+                        <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                            <p className="text-slate-400 text-xs font-bold uppercase mb-2">إجمالي تكلفة البضاعة (COGS)</p>
+                            <p className="text-2xl font-black text-red-400">{stats.totalCogs.toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                        </div>
+                        <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                            <p className="text-slate-400 text-xs font-bold uppercase mb-2">إجمالي الخسائر (مرتجع)</p>
+                            <p className="text-2xl font-black text-red-400">{stats.totalLoss.toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                        </div>
+                        <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                            <p className="text-slate-400 text-xs font-bold uppercase mb-2">إجمالي المصروفات الإدارية</p>
+                            <p className="text-2xl font-black text-amber-400">{stats.totalExpenses.toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                        </div>
+                        <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                            <p className="text-slate-400 text-xs font-bold uppercase mb-2">الصافي النهائي</p>
+                            <p className="text-3xl font-black text-emerald-400">{stats.finalNet.toLocaleString('ar-EG')} <span className="text-base font-normal">ج.م</span></p>
+                        </div>
+                        
+                        <div className="lg:col-span-3 border-t border-slate-700 pt-6 mt-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                             <div>
+                                <p className="text-slate-400 text-xs font-bold uppercase mb-4">قيمة البضاعة المتاحة (في المخازن)</p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                                        <p className="text-slate-400 text-[10px]">بسعر الشراء</p>
+                                        <p className="font-black">{stats.inventoryValue.toLocaleString('ar-EG')} ج.م</p>
+                                    </div>
+                                    <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                                        <p className="text-slate-400 text-[10px]">بسعر البيع</p>
+                                        <p className="font-black text-emerald-300">{stats.inventorySalesValue.toLocaleString('ar-EG')} ج.م</p>
+                                    </div>
+                                </div>
+                             </div>
+                             <div>
+                                <p className="text-slate-400 text-xs font-bold uppercase mb-4">أرصدة وعهدة الشركاء</p>
+                                <div className="space-y-2">
+                                    {stats.partnerPerformance.map(p => (
+                                        <div key={p.id} className="flex justify-between items-center bg-slate-800 p-2 rounded-lg text-sm">
+                                            <span className="font-bold">{p.name}</span>
+                                            <span className={`${p.currentBalance >= 0 ? 'text-emerald-400' : 'text-red-400'} font-black tabular-nums`}>
+                                                {p.currentBalance.toLocaleString('ar-EG')} ج.م
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                             </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1274,14 +1342,14 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
         const allTimeNetProfit = grossMargin - totalOperationalExpenses;
 
         const distributed = transactions
-            .filter(t => t.type === 'profit_withdrawal')
+            .filter(t => t.type === 'profit_distribution')
             .reduce((sum, t) => sum + t.amount, 0);
 
         const undistributedProfit = Math.max(0, allTimeNetProfit - distributed);
 
         const totals = {
-            capital: transactions.filter(t => t.type === 'capital_addition').reduce((a, b) => a + b.amount, 0),
-            loans: transactions.filter(t => t.type === 'loan').reduce((a, b) => a + b.amount, 0),
+            capital: transactions.filter(t => t.type === 'capital_addition' || t.type === 'supply_funding' || t.type === 'shipping_funding').reduce((a, b) => a + b.amount, 0),
+            loans: transactions.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((a, b) => a + b.amount, 0),
             repayments: transactions.filter(t => t.type === 'repayment').reduce((a, b) => a + b.amount, 0),
             withdrawals: distributed
         };
@@ -1295,12 +1363,14 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
             totalOperationalExpenses,
             partnerDetails: partners.map(p => {
                 const pTx = transactions.filter(t => t.partnerId === p.id);
-                const capital = pTx.filter(t => t.type === 'capital_addition').reduce((a, b) => a + b.amount, 0);
-                const loans = pTx.filter(t => t.type === 'loan').reduce((a, b) => a + b.amount, 0);
+                const capital = pTx.filter(t => t.type === 'capital_addition' || t.type === 'supply_funding' || t.type === 'shipping_funding').reduce((a, b) => a + b.amount, 0);
+                const loans = pTx.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((a, b) => a + b.amount, 0);
                 const repayments = pTx.filter(t => t.type === 'repayment').reduce((a, b) => a + b.amount, 0);
                 const withdrawals = pTx.filter(t => t.type === 'profit_withdrawal').reduce((a, b) => a + b.amount, 0);
+                const distributions = pTx.filter(t => t.type === 'profit_distribution').reduce((a, b) => a + b.amount, 0);
                 const profitShare = undistributedProfit * (p.profitRatio / 100);
-                const balance = capital + profitShare - (loans - repayments);
+                const supplyFunding = pTx.filter(t => t.type === 'supply_funding').reduce((a, b) => a + b.amount, 0);
+                const balance = p.balance; // Use the actual partner balance 
                 
                 return {
                     ...p,
@@ -1308,6 +1378,7 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
                     loans,
                     repayments,
                     withdrawals,
+                    distributions,
                     balance
                 };
             })
@@ -1446,21 +1517,23 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
                                 <th className="px-4 py-3">الشريك</th>
                                 <th className="px-4 py-3">النسبة</th>
                                 <th className="px-4 py-3">رأس المال</th>
-                                <th className="px-4 py-3">الأرباح المسحوبة</th>
+                                <th className="px-4 py-3">أرباح حصل عليها</th>
+                                <th className="px-4 py-3">سحوبات شخصية</th>
                                 <th className="px-4 py-3">السلف القائمة</th>
                                 <th className="px-4 py-3">الرصيد الكلي</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {stats.partnerDetails.length === 0 ? (
-                                <tr><td colSpan={6} className="text-center py-12 text-slate-400 font-medium">لا يوجد شركاء مسجلين حالياً.</td></tr>
+                                <tr><td colSpan={7} className="text-center py-12 text-slate-400 font-medium">لا يوجد شركاء مسجلين حالياً.</td></tr>
                             ) : (
                                 stats.partnerDetails.map(p => (
                                     <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                         <td className="px-4 py-3 font-bold text-slate-800 dark:text-white">{p.name}</td>
                                         <td className="px-4 py-3"><span className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-bold">{p.profitRatio}%</span></td>
                                         <td className="px-4 py-3 font-mono">{p.capital.toLocaleString()}</td>
-                                        <td className="px-4 py-3 font-mono text-emerald-600">+{p.withdrawals.toLocaleString()}</td>
+                                        <td className="px-4 py-3 font-mono text-emerald-600">+{p.distributions.toLocaleString()}</td>
+                                        <td className="px-4 py-3 font-mono text-amber-600">-{p.withdrawals.toLocaleString()}</td>
                                         <td className="px-4 py-3 font-mono text-red-600">{(p.loans - p.repayments).toLocaleString()}</td>
                                         <td className={`px-4 py-3 font-black ${p.balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                                             {p.balance.toLocaleString()} ج.م

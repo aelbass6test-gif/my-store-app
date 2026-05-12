@@ -6,10 +6,11 @@ import { SupplyOrderItem } from '../types';
 interface SuppliersPageProps {
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+  wallet: any;
   setWallet: React.Dispatch<React.SetStateAction<any>>;
 }
 
-const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, setWallet }) => {
+const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, wallet, setWallet }) => {
   const [activeTab, setActiveTab] = useState<'suppliers' | 'orders'>('orders');
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showOrderModal, setShowOrderModal] = useState(false);
@@ -28,8 +29,40 @@ const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, se
   const [orderReference, setOrderReference] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
   const [orderItems, setOrderItems] = useState<SupplyOrderItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'partner' | 'supply_wallet'>('cash');
+  const [partnerPayments, setPartnerPayments] = useState<{ partnerId: string, amount: number }[]>([]);
+  const [selectedPartnerId, setSelectedPartnerId] = useState(''); // Kept for backward compatibility/legacy simple selector
   
+  const totalCost = React.useMemo(() => {
+    return orderItems.reduce((sum, item) => {
+        let itemTotal = item.cost * item.quantity;
+        if (item.discountValue) {
+            if (item.discountType === 'percentage') {
+                itemTotal -= (itemTotal * (item.discountValue / 100));
+            } else {
+                itemTotal -= (item.discountValue * item.quantity);
+            }
+        }
+        return sum + itemTotal;
+    }, 0);
+  }, [orderItems]);
+
+  // Auto-initialize or keep in sync if only one partner
+  React.useEffect(() => {
+    if (paymentMethod === 'partner' && settings.partners?.length > 0) {
+        if (partnerPayments.length === 0) {
+            setPartnerPayments([{ partnerId: settings.partners[0].id, amount: totalCost }]);
+        } else if (partnerPayments.length === 1) {
+            // If there's only one partner, keep the amount in sync with totalCost
+            if (partnerPayments[0].amount !== totalCost) {
+                const newPayments = [...partnerPayments];
+                newPayments[0].amount = totalCost;
+                setPartnerPayments(newPayments);
+            }
+        }
+    }
+  }, [paymentMethod, settings.partners, totalCost, partnerPayments]);
+
   const handleAddSupplier = () => {
       if(!newSupplier.name) return;
       if (editingSupplier) {
@@ -69,17 +102,19 @@ const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, se
   const handleAddOrder = () => {
       if(!selectedSupplierId || orderItems.length === 0) return;
       
-      const totalCost = orderItems.reduce((sum, item) => {
-          let itemTotal = item.cost * item.quantity;
-          if (item.discountValue) {
-              if (item.discountType === 'percentage') {
-                  itemTotal -= (itemTotal * (item.discountValue / 100));
-              } else {
-                  itemTotal -= (item.discountValue * item.quantity);
-              }
+      const currentOrderId = editingOrder ? (editingOrder as any).id : Date.now().toString();
+      
+      if (paymentMethod === 'partner') {
+          const distributedTotal = partnerPayments.reduce((s, p) => s + p.amount, 0);
+          if (Math.abs(distributedTotal - totalCost) > 0.01) {
+              alert('عذراً، يجب أن يكون مجموع تمويل الشركاء مساوياً لإجمالي الفاتورة: ' + totalCost.toLocaleString() + ' ج.م');
+              return;
           }
-          return sum + itemTotal;
-      }, 0);
+          if (partnerPayments.some(p => !p.partnerId)) {
+              alert('يرجى التأكد من اختيار الشركاء بشكل صحيح');
+              return;
+          }
+      }
 
       const supplier = settings.suppliers.find(s => s.id === selectedSupplierId);
 
@@ -87,15 +122,34 @@ const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, se
           let updatedProducts = [...prev.products];
           let updatedOrders = [...(prev.supplyOrders || [])];
           let updatedSuppliers = [...(prev.suppliers || [])];
+          let updatedPartners = [...(prev.partners || [])];
+          let updatedPartnerTransactions = [...(prev.partnerTransactions || [])];
           
           // 1. Revert Old Order Impact (if editing)
           if (editingOrder) {
-              const oldSuppIdx = updatedSuppliers.findIndex(s => s.id === editingOrder.supplierId);
-              if (oldSuppIdx > -1 && editingOrder.paymentMethod === 'credit') {
+              const currentOldOrder = editingOrder as SupplyOrder;
+              const oldSuppIdx = updatedSuppliers.findIndex(s => s.id === currentOldOrder.supplierId);
+              if (oldSuppIdx > -1 && currentOldOrder.paymentMethod === 'credit') {
                   updatedSuppliers[oldSuppIdx] = {
                       ...updatedSuppliers[oldSuppIdx],
-                      balance: (updatedSuppliers[oldSuppIdx].balance || 0) - editingOrder.totalCost
+                      balance: (updatedSuppliers[oldSuppIdx].balance || 0) - currentOldOrder.totalCost
                   };
+              }
+
+              // Revert Partner Balance if was partner funded
+              if (currentOldOrder.paymentMethod === 'partner') {
+                  const oldPayments = currentOldOrder.partnerPayments || (currentOldOrder.partnerId ? [{ partnerId: currentOldOrder.partnerId, amount: currentOldOrder.totalCost }] : []);
+                  oldPayments.forEach(op => {
+                      const pIdx = updatedPartners.findIndex(p => p.id === op.partnerId);
+                      if (pIdx > -1) {
+                          updatedPartners[pIdx] = {
+                              ...updatedPartners[pIdx],
+                              balance: (updatedPartners[pIdx].balance || 0) - op.amount
+                          };
+                      }
+                  });
+                  // Remove the old partner transactions
+                  updatedPartnerTransactions = updatedPartnerTransactions.filter(pt => !pt.id.startsWith(`supply_pt_${currentOldOrder.id}`));
               }
 
               editingOrder.items.forEach(oldItem => {
@@ -131,28 +185,60 @@ const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, se
               };
           }
 
+          // 4. Update Partner Balance if Partner Funded
+          if (paymentMethod === 'partner') {
+              partnerPayments.forEach((pp, idx) => {
+                  const pIdx = updatedPartners.findIndex(p => p.id === pp.partnerId);
+                  if (pIdx > -1) {
+                      updatedPartners[pIdx] = {
+                          ...updatedPartners[pIdx],
+                          balance: (updatedPartners[pIdx].balance || 0) + pp.amount
+                      };
+                      
+                      // Add Partner Transaction
+                      updatedPartnerTransactions.push({
+                          id: `supply_pt_${currentOrderId}_${idx}`,
+                          partnerId: pp.partnerId,
+                          type: 'supply_funding',
+                          amount: pp.amount,
+                          date: new Date().toISOString(),
+                          note: `تمويل مخزون (أمر توريد من ${supplier?.name})`
+                      });
+                  }
+              });
+          }
+
+          // 5. Update Supply Wallet Balance
+          if (paymentMethod === 'supply_wallet') {
+            // This is handled in setWallet, but here we just ensure the order is tagged correctly
+          }
+
           if (editingOrder) {
               updatedOrders = updatedOrders.map(o => o.id === editingOrder.id ? {
                   ...o,
                   supplierId: selectedSupplierId,
+                  partnerId: paymentMethod === 'partner' ? (partnerPayments.length === 1 ? partnerPayments[0].partnerId : undefined) : undefined,
+                  partnerPayments: paymentMethod === 'partner' ? partnerPayments : undefined,
                   referenceNumber: orderReference,
                   notes: orderNotes,
                   items: orderItems,
                   totalCost,
                   paymentMethod
-              } : o);
+              } as any : o);
           } else {
               const newOrder: SupplyOrder = {
-                  id: Date.now().toString(),
+                  id: currentOrderId,
                   supplierId: selectedSupplierId,
+                  partnerId: paymentMethod === 'partner' ? (partnerPayments.length === 1 ? partnerPayments[0].partnerId : undefined) : undefined,
+                  partnerPayments: paymentMethod === 'partner' ? partnerPayments : undefined,
                   date: new Date().toISOString(),
-                  referenceNumber: orderReference || `supply_${Date.now()}`,
+                  referenceNumber: orderReference || `supply_${currentOrderId}`,
                   notes: orderNotes,
                   items: orderItems,
                   totalCost,
                   status: 'completed',
                   paymentMethod
-              };
+              } as SupplyOrder;
               updatedOrders.push(newOrder);
           }
 
@@ -160,39 +246,135 @@ const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, se
               ...prev,
               products: updatedProducts,
               supplyOrders: updatedOrders,
-              suppliers: updatedSuppliers
+              suppliers: updatedSuppliers,
+              partners: updatedPartners,
+              partnerTransactions: updatedPartnerTransactions
           };
       });
 
-      // Update Wallet ONLY IF CASH
-      if (paymentMethod === 'cash') {
+      // Update Wallet
+      if (paymentMethod === 'cash' || paymentMethod === 'partner' || paymentMethod === 'supply_wallet') {
           setWallet((prev: any) => {
-              const transId = `supply_${editingOrder ? editingOrder.id : Date.now()}`;
-              const newTransaction: Transaction = {
-                  id: transId,
-                  type: 'سحب',
-                  amount: totalCost,
-                  date: new Date().toISOString(),
-                  note: `شراء بضاعة (كاش) من المورد ${supplier?.name} (المرجع: ${orderReference || transId})`,
-                  category: 'inventory_purchase'
-              };
+              const currentSupplyBalance = prev.supplyBalance || 0;
+              const currentBalance = prev.balance || 0;
+              
+              let newSupplyBalance = currentSupplyBalance;
+              let newBalance = currentBalance;
 
-              // Filter out existing transaction if editing
-              const filteredTransactions = prev.transactions.filter((t: any) => t.id !== (editingOrder ? `supply_${editingOrder.id}` : transId));
-              return { ...prev, transactions: [newTransaction, ...filteredTransactions] };
+              // 1. Revert old impacts if editing
+              if (editingOrder) {
+                  const currentOld = editingOrder as SupplyOrder;
+                  if (currentOld.paymentMethod === 'supply_wallet') {
+                      newSupplyBalance += currentOld.totalCost;
+                  } else if (currentOld.paymentMethod === 'cash') {
+                      newBalance += currentOld.totalCost;
+                  } else if (currentOld.paymentMethod === 'partner') {
+                      // Partner funding previously added to supplyBalance
+                      newSupplyBalance -= currentOld.totalCost;
+                  }
+              }
+
+              // 2. Prepare new transactions
+              const newWalletTransactions: Transaction[] = [];
+              const now = new Date();
+
+              if (paymentMethod === 'partner') {
+                  partnerPayments.forEach((pp, idx) => {
+                      const partner = settings.partners.find(p => p.id === pp.partnerId);
+                      // Add 1ms per idx so funding are slightly staggered
+                      const txDate = new Date(now.getTime() + idx);
+                      newWalletTransactions.push({
+                          id: `supply_funding_dep_${currentOrderId}_${idx}`,
+                          type: 'إيداع',
+                          amount: pp.amount,
+                          date: txDate.toISOString(),
+                          note: `تمويل من الشريك ${partner?.name || 'غير معروف'} لشراء بضاعة (أمر: ${orderReference || currentOrderId})`,
+                          category: 'supply_deposit',
+                          status: 'completed'
+                      } as Transaction);
+                      // Partner funding increases the supply wallet
+                      newSupplyBalance += pp.amount;
+                  });
+
+                  // Add an extra ms offset to purchase to be "newest", so it appears ABOVE funding
+                  const purchaseDate = new Date(now.getTime() + partnerPayments.length + 1);
+                  newWalletTransactions.push({
+                      id: `supply_purchase_with_${currentOrderId}`,
+                      type: 'سحب',
+                      amount: totalCost,
+                      date: purchaseDate.toISOString(),
+                      note: `شراء بضاعة (بتمويل الشركاء) من المورد ${supplier?.name} (أمر: ${orderReference || currentOrderId})`,
+                      category: 'supply_purchase',
+                      status: 'completed'
+                  } as Transaction);
+                  
+                  // Payment comes out of the supply wallet
+                  newSupplyBalance -= totalCost;
+              } else if (paymentMethod === 'cash') {
+                  newBalance -= totalCost;
+                  newWalletTransactions.push({
+                      id: `supply_purchase_${currentOrderId}`,
+                      type: 'سحب',
+                      amount: totalCost,
+                      date: new Date().toISOString(),
+                      note: `شراء بضاعة (كاش) من المورد ${supplier?.name} (المرجع: ${orderReference || currentOrderId})`,
+                      category: 'inventory_purchase',
+                      status: 'completed'
+                  } as Transaction);
+              } else if (paymentMethod === 'supply_wallet') {
+                  newSupplyBalance -= totalCost;
+                  newWalletTransactions.push({
+                      id: `supply_purchase_${currentOrderId}`,
+                      type: 'سحب',
+                      amount: totalCost,
+                      date: new Date().toISOString(),
+                      note: `شراء بضاعة من محفظة التوريد (المورد: ${supplier?.name})`,
+                      category: 'supply_purchase',
+                      status: 'completed'
+                  } as Transaction);
+              }
+
+              const filteredTransactions = prev.transactions.filter((t: any) => 
+                !t.id.startsWith(`supply_${currentOrderId}`) && 
+                !t.id.startsWith(`supply_purchase_with_${currentOrderId}`) &&
+                !t.id.startsWith(`supply_funding_dep_${currentOrderId}`)
+              );
+
+              return { 
+                ...prev, 
+                balance: newBalance,
+                supplyBalance: newSupplyBalance,
+                transactions: [...newWalletTransactions, ...filteredTransactions] 
+              };
           });
-      } else if (editingOrder && editingOrder.paymentMethod === 'cash' && paymentMethod === 'credit') {
-          // If changed from cash to credit, remove the transaction
-          setWallet((prev: any) => ({
-              ...prev,
-              transactions: prev.transactions.filter((t: any) => t.id !== `supply_${editingOrder.id}`)
-          }));
+      } else if (editingOrder && (editingOrder.paymentMethod as string === 'cash' || editingOrder.paymentMethod as string === 'partner' || editingOrder.paymentMethod as string === 'supply_wallet') && paymentMethod === 'credit') {
+          // If changed to credit, remove the transaction and revert balance
+          setWallet((prev: any) => {
+              let newSupplyBalance = prev.supplyBalance || 0;
+              let newBalance = prev.balance || 0;
+
+              const currentOld = editingOrder as SupplyOrder;
+              if (currentOld.paymentMethod === 'supply_wallet') {
+                  newSupplyBalance += currentOld.totalCost;
+              } else if (currentOld.paymentMethod === 'cash') {
+                  newBalance += currentOld.totalCost;
+              }
+
+              return {
+                ...prev,
+                balance: newBalance,
+                supplyBalance: newSupplyBalance,
+                transactions: prev.transactions.filter((t: any) => t.id !== `supply_${editingOrder.id}`)
+              };
+          });
       }
 
       setShowOrderModal(false);
       setEditingOrder(null);
       setOrderItems([]);
       setSelectedSupplierId('');
+      setPartnerPayments([]);
+      setSelectedPartnerId('');
       setOrderReference('');
       setOrderNotes('');
   };
@@ -200,31 +382,55 @@ const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, se
   const startEditOrder = (order: SupplyOrder) => {
       setEditingOrder(order);
       setSelectedSupplierId(order.supplierId);
+      const initialPartnerPayments = order.partnerPayments || (order.partnerId ? [{ partnerId: order.partnerId, amount: order.totalCost }] : []);
+      setPartnerPayments(initialPartnerPayments);
+      setSelectedPartnerId(order.partnerId || '');
       setOrderReference(order.referenceNumber || '');
       setOrderNotes(order.notes || '');
       setOrderItems(order.items);
-      setPaymentMethod(order.paymentMethod || 'cash');
+      setPaymentMethod(order.paymentMethod as any || 'cash');
       setShowOrderModal(true);
   };
 
   const handleDeleteOrder = (order: SupplyOrder) => {
       if (!confirm('هل أنت متأكد من حذف أمر التوريد هذا؟ سيتم استرجاع المخزون وتعديل الحسابات.')) return;
       
+      const currentOrder = order as SupplyOrder;
       setSettings(prev => {
           let updatedSuppliers = [...prev.suppliers];
-          if (order.paymentMethod === 'credit') {
-              const suppIdx = updatedSuppliers.findIndex(s => s.id === order.supplierId);
+          let updatedPartners = [...(prev.partners || [])];
+          let updatedPartnerTransactions = [...(prev.partnerTransactions || [])];
+
+          if (currentOrder.paymentMethod === 'credit') {
+              const suppIdx = updatedSuppliers.findIndex(s => s.id === currentOrder.supplierId);
               if (suppIdx > -1) {
                   updatedSuppliers[suppIdx] = {
                       ...updatedSuppliers[suppIdx],
-                      balance: (updatedSuppliers[suppIdx].balance || 0) - order.totalCost
+                      balance: (updatedSuppliers[suppIdx].balance || 0) - currentOrder.totalCost
                   };
               }
+          }
+
+          if (currentOrder.paymentMethod === 'partner') {
+              const oldPayments = currentOrder.partnerPayments || (currentOrder.partnerId ? [{ partnerId: currentOrder.partnerId, amount: currentOrder.totalCost }] : []);
+              oldPayments.forEach(op => {
+                  const pIdx = updatedPartners.findIndex(p => p.id === op.partnerId);
+                  if (pIdx > -1) {
+                      updatedPartners[pIdx] = {
+                          ...updatedPartners[pIdx],
+                          balance: (updatedPartners[pIdx].balance || 0) - op.amount
+                      };
+                  }
+              });
+              // Remove partner transactions
+              updatedPartnerTransactions = updatedPartnerTransactions.filter(pt => !pt.id.startsWith(`supply_pt_${currentOrder.id}`));
           }
 
           return {
             ...prev,
             suppliers: updatedSuppliers,
+            partners: updatedPartners,
+            partnerTransactions: updatedPartnerTransactions,
             products: prev.products.map(p => {
                 const item = order.items.find(i => i.productId === p.id);
                 if (item) {
@@ -238,12 +444,35 @@ const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, se
           };
       });
 
-      // Remove from Wallet if was cash
-      if (order.paymentMethod === 'cash') {
-          setWallet((prev: any) => ({
-              ...prev,
-              transactions: prev.transactions.filter((t: any) => t.id !== `supply_${order.id}`)
-          }));
+      // Revert from Wallet if was cash, partner or supply_wallet
+      if (order.paymentMethod === 'cash' || order.paymentMethod === 'partner' || order.paymentMethod === 'supply_wallet') {
+          setWallet((prev: any) => {
+              let newBalance = prev.balance || 0;
+              let newSupplyBalance = prev.supplyBalance || 0;
+
+              if (order.paymentMethod === 'cash') {
+                  newBalance += order.totalCost;
+              } else if (order.paymentMethod === 'supply_wallet') {
+                  newSupplyBalance += order.totalCost;
+              } else if (order.paymentMethod === 'partner') {
+                  // The net impact of partner funding (deposit) followed by purchase (withdrawal) on supplyBalance was 0.
+                  // Reverting both means we stay at 0 change, but we must remove the transactions.
+              }
+
+              const filteredTransactions = prev.transactions.filter((t: any) => 
+                 !t.id.startsWith(`supply_${order.id}`) && 
+                 !t.id.startsWith(`supply_purchase_${order.id}`) && 
+                 !t.id.startsWith(`supply_purchase_with_${order.id}`) && 
+                 !t.id.startsWith(`supply_funding_dep_${order.id}`)
+              );
+
+              return {
+                  ...prev,
+                  balance: newBalance,
+                  supplyBalance: newSupplyBalance,
+                  transactions: filteredTransactions
+              };
+          });
       }
   };
 
@@ -325,6 +554,8 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
   const handleRecordPayment = () => {
     if (!selectedSupplierForPayment || paymentAmount <= 0) return;
 
+    const fromSupplyWallet = paymentMethod === 'supply_wallet';
+
     setSettings(prev => ({
         ...prev,
         suppliers: prev.suppliers.map(s => s.id === selectedSupplierForPayment.id ? {
@@ -334,20 +565,28 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
     }));
 
     // Record in Wallet as "Supply Payment"
-    setWallet((prev: any) => ({
-        ...prev,
-        transactions: [
-            {
-                id: `pay_${Date.now()}`,
-                type: 'سحب',
-                amount: paymentAmount,
-                date: new Date().toISOString(),
-                note: `دفعة مديونية للمورد: ${selectedSupplierForPayment.name} ${paymentNote ? `(${paymentNote})` : ''}`,
-                category: 'supplier_payment'
-            },
-            ...prev.transactions
-        ]
-    }));
+    setWallet((prev: any) => {
+        const newBalance = fromSupplyWallet ? (prev.balance || 0) : (prev.balance || 0) - paymentAmount;
+        const newSupplyBalance = fromSupplyWallet ? (prev.supplyBalance || 0) - paymentAmount : (prev.supplyBalance || 0);
+        
+        return {
+            ...prev,
+            balance: newBalance,
+            supplyBalance: newSupplyBalance,
+            transactions: [
+                {
+                    id: `pay_${Date.now()}`,
+                    type: 'سحب',
+                    amount: paymentAmount,
+                    date: new Date().toISOString(),
+                    note: `سداد مديونية للمورد: ${selectedSupplierForPayment.name} (${fromSupplyWallet ? 'محفظة التوريد' : 'المحفظة العامة'})`,
+                    category: fromSupplyWallet ? 'supply_purchase' : 'supplier_payment',
+                    status: 'completed'
+                },
+                ...prev.transactions
+            ]
+        };
+    });
 
     setShowPaymentModal(false);
     setPaymentAmount(0);
@@ -372,11 +611,21 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12 px-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
-            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl flex-shrink-0"><Truck size={28} /></div>
-            <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-white">إدارة الموردين والمخزون</h1>
-                <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 mt-1">سجل الموردين وقم بإنشاء أوامر توريد لزيادة مخزونك.</p>
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl flex-shrink-0"><Truck size={28} /></div>
+                <div>
+                    <h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-white">إدارة الموردين والمخزون</h1>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">سجل الموردين وقم بإنشاء أوامر توريد لزيادة مخزونك.</p>
+                </div>
+            </div>
+            <div className="bg-white dark:bg-slate-900 px-6 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm w-full md:w-auto">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">إجمالي المديونية الحالية</p>
+                <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-black text-rose-600 dark:text-rose-400">
+                        {settings.suppliers.reduce((sum, s) => sum + (s.balance || 0), 0).toLocaleString()} <span className="text-sm">ج.م</span>
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -506,7 +755,7 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                         <button onClick={() => setShowOrderModal(false)} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X size={24}/></button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div>
                             <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">المورد</label>
                             <select value={selectedSupplierId || ''} onChange={e => setSelectedSupplierId(e.target.value)} className="w-full p-3 bg-slate-100 dark:bg-slate-800 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none dark:text-white">
@@ -516,12 +765,150 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                         </div>
                         <div>
                             <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">طريقة الدفع</label>
-                            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                                <button onClick={() => setPaymentMethod('cash')} className={`flex-1 py-2 text-center rounded-lg font-bold transition-all ${paymentMethod === 'cash' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'}`}>كاش</button>
-                                <button onClick={() => setPaymentMethod('credit')} className={`flex-1 py-2 text-center rounded-lg font-bold transition-all ${paymentMethod === 'credit' ? 'bg-white dark:bg-slate-700 text-amber-600 shadow-sm' : 'text-slate-500'}`}>آجل (مديونية)</button>
+                            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl overflow-x-auto no-scrollbar">
+                                <button onClick={() => setPaymentMethod('cash')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'cash' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'}`}>كاش (العامة)</button>
+                                <button onClick={() => setPaymentMethod('supply_wallet')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'supply_wallet' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500'}`}>محفظة التوريد</button>
+                                <button onClick={() => setPaymentMethod('partner')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'partner' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'}`}>تمويل شركاء</button>
+                                <button onClick={() => setPaymentMethod('credit')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'credit' ? 'bg-white dark:bg-slate-700 text-amber-600 shadow-sm' : 'text-slate-500'}`}>آجل</button>
                             </div>
+                            <p className="mt-2 text-[10px] text-slate-400 font-medium px-1">
+                                {paymentMethod === 'partner' ? 'سيتم خصم المبلغ من أرصدة الشركاء المختارة وإضافته لمحفظة التوريد ثم سداده للمورد.' : 
+                                 paymentMethod === 'cash' ? 'سيتم خصم المبلغ مباشرة من الرصيد السائل في المحفظة العامة.' : 
+                                 paymentMethod === 'supply_wallet' ? 'سيتم خصم المبلغ من محفظة التوريد (رأس مال البضاعة).' : 
+                                 'سيتم إضافة المبلغ كمديونية على الشركة لصالح هذا المورد.'}
+                            </p>
                         </div>
-                        <div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        {paymentMethod === 'partner' && (
+                             <div className="md:col-span-2 space-y-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-sm font-bold text-slate-600 dark:text-slate-400">توزيع التكلفة على الشركاء</label>
+                                    <button 
+                                        type="button"
+                                        onClick={() => setPartnerPayments([...partnerPayments, { partnerId: '', amount: 0 }])}
+                                        className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                                    >
+                                        <Plus size={12}/> إضافة شريك ممول
+                                    </button>
+                                </div>
+                                
+                                {partnerPayments.map((payment, pidx) => (
+                                    <div key={pidx} className="flex gap-2 items-end">
+                                        <div className="flex-1">
+                                            <select 
+                                                value={payment.partnerId} 
+                                                onChange={e => {
+                                                    const newPayments = [...partnerPayments];
+                                                    newPayments[pidx].partnerId = e.target.value;
+                                                    setPartnerPayments(newPayments);
+                                                }}
+                                                className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 dark:text-white"
+                                            >
+                                                <option value="">اختر الشريك...</option>
+                                                {settings.partners?.map(p => <option key={p.id} value={p.id}>{p.name} (رصيد: {p.balance})</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="w-24 sm:w-32">
+                                            <input 
+                                                type="number" 
+                                                value={payment.amount}
+                                                onChange={e => {
+                                                    const newPayments = [...partnerPayments];
+                                                    newPayments[pidx].amount = Number(e.target.value);
+                                                    setPartnerPayments(newPayments);
+                                                }}
+                                                placeholder="المبلغ"
+                                                className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500 dark:text-white"
+                                            />
+                                        </div>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setPartnerPayments(partnerPayments.filter((_, i) => i !== pidx))}
+                                            className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                                
+                                <div className="pt-2 flex flex-col sm:flex-row justify-between items-center gap-2">
+                                    {(() => {
+                                        const distributedTotal = partnerPayments.reduce((s, p) => s + p.amount, 0);
+                                        return (
+                                            <>
+                                                <span className={`text-[10px] font-black ${Math.abs(distributedTotal - totalCost) < 0.01 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                    تم توزيع: {distributedTotal.toLocaleString()} / {totalCost.toLocaleString()} ج.م
+                                                </span>
+                                                <div className="flex gap-2 flex-wrap justify-end">
+                                                    {distributedTotal < totalCost && partnerPayments.length > 0 && (
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const remaining = totalCost - distributedTotal;
+                                                                // Find the first partner with 0 or empty amount and give it the remaining
+                                                                const newPayments = [...partnerPayments];
+                                                                const emptyIdx = newPayments.findIndex(p => p.amount === 0);
+                                                                if (emptyIdx > -1) {
+                                                                    newPayments[emptyIdx].amount += remaining;
+                                                                } else {
+                                                                    newPayments[newPayments.length - 1].amount += remaining;
+                                                                }
+                                                                setPartnerPayments(newPayments);
+                                                            }}
+                                                            className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                                                        >
+                                                            توزيع المتبقي ({(totalCost - distributedTotal).toLocaleString()})
+                                                        </button>
+                                                    )}
+                                                    {partnerPayments.length > 1 && (
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const equalShare = Number((totalCost / partnerPayments.length).toFixed(2));
+                                                                const newPayments = partnerPayments.map((p, i) => ({
+                                                                    ...p,
+                                                                    amount: i === partnerPayments.length - 1 
+                                                                        ? Number((totalCost - (equalShare * (partnerPayments.length - 1))).toFixed(2))
+                                                                        : equalShare
+                                                                }));
+                                                                setPartnerPayments(newPayments);
+                                                            }}
+                                                            className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 hover:underline"
+                                                        >
+                                                            توزيع بالتساوي
+                                                        </button>
+                                                    )}
+                                                    {(partnerPayments.length <= 1) && (
+                                                        <button 
+                                                          type="button"
+                                                          onClick={() => {
+                                                              if (partnerPayments.length === 0) {
+                                                                  if (settings.partners && settings.partners.length > 0) {
+                                                                      setPartnerPayments([{ partnerId: settings.partners[0].id, amount: totalCost }]);
+                                                                  } else {
+                                                                      setPartnerPayments([{ partnerId: '', amount: totalCost }]);
+                                                                  }
+                                                              } else {
+                                                                  const newPayments = [...partnerPayments];
+                                                                  newPayments[0].amount = totalCost;
+                                                                  setPartnerPayments(newPayments);
+                                                              }
+                                                          }}
+                                                          className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 hover:underline"
+                                                        >
+                                                            توزيع تلقائي بالكامل
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        )}
+                        <div className={paymentMethod === 'partner' ? 'md:col-span-2' : 'md:col-span-2'}>
                             <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">رقم المرجع (Ref)</label>
                             <input type="text" placeholder="مثال: Inv-1234" value={orderReference || ''} onChange={e => setOrderReference(e.target.value)} className="w-full p-3 bg-slate-100 dark:bg-slate-800 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none dark:text-white" />
                         </div>
@@ -672,6 +1059,24 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                                 value={paymentNote}
                                 onChange={e => setPaymentNote(e.target.value)}
                             />
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">الدفع من</label>
+                            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                                <button 
+                                    onClick={() => setPaymentMethod('cash')} 
+                                    className={`flex-1 py-2 text-center rounded-lg font-bold transition-all text-xs ${paymentMethod === 'cash' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+                                >
+                                    المحفظة العامة
+                                </button>
+                                <button 
+                                    onClick={() => setPaymentMethod('supply_wallet')} 
+                                    className={`flex-1 py-2 text-center rounded-lg font-bold transition-all text-xs ${paymentMethod === 'supply_wallet' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500'}`}
+                                >
+                                    محفظة التوريد
+                                </button>
+                            </div>
                         </div>
 
                         <button onClick={handleRecordPayment} className="w-full py-4 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2">

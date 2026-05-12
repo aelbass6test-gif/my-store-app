@@ -84,7 +84,8 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
         amount: numAmount,
         date: new Date().toISOString(),
         note: description || 'مصروف جديد',
-        category: category
+        category: category,
+        status: 'completed'
     };
 
     setWallet(prevWallet => {
