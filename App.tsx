@@ -3,7 +3,8 @@ import { HashRouter, Routes, Route, Outlet, useNavigate, useParams, Navigate, us
 
 import { User, Store, StoreData, Order, Settings, Wallet, OrderItem, Employee, Product, PlaceOrderData } from './types';
 import * as db from './services/databaseService';
-import { supabase } from './services/supabaseClient';
+import { onSnapshot, collection, query, where, doc } from 'firebase/firestore';
+import { db as firebaseDb } from './services/firebaseClient';
 import { INITIAL_SETTINGS } from './constants';
 import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
 import { oneToolzProducts } from './data/one-toolz-products';
@@ -266,6 +267,8 @@ export const AppComponent = () => {
         if (isRefreshing.current) {
             console.log('[AUTO-SAVE] Skipped save because a refresh just occurred.');
             isRefreshing.current = false; 
+            // We still want to evaluate auto-save for future changes, so we don't return early forever.
+            // Oh wait, if we changed isRefreshing.current to false, the NEXT change will save.
             return;
         }
 
@@ -336,7 +339,8 @@ export const AppComponent = () => {
             const globalData = await db.getGlobalData();
             let loadedUsers: User[] = globalData?.users || [];
 
-            if (loadedUsers.length === 0) {
+            const hasAdmin = loadedUsers.some(u => u.isAdmin || u.phone === 'admin');
+            if (!hasAdmin) {
                 const adminUser: User = { 
                     fullName: 'المدير العام', 
                     phone: 'admin', 
@@ -346,7 +350,7 @@ export const AppComponent = () => {
                     joinDate: new Date().toISOString(),
                     isAdmin: true 
                 };
-                loadedUsers.push(adminUser);
+                loadedUsers = [adminUser, ...loadedUsers];
             }
 
             setUsers(loadedUsers);
@@ -417,11 +421,18 @@ export const AppComponent = () => {
         setOtpError('');
 
         try {
-            const { data, error } = await supabase.functions.invoke('verify-otp', {
-                body: { email: userForOtp.email, otp },
+            const response = await fetch('/api/verify-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: userForOtp.email, otp })
             });
 
-            if (error) throw error;
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'فشل التحقق');
+            }
+
+            const data = await response.json();
 
             if (data.valid) {
                 completeLogin(userForOtp, sessionInfoForOtp);
@@ -689,39 +700,44 @@ export const AppComponent = () => {
     };
 
     useEffect(() => {
-        console.log('[REALTIME] Setting up subscriptions...');
+        console.log('[REALTIME] Setting up Firestore snapshots...');
         
-        const handleStoreChange = (payload: any) => {
-            console.log('[REALTIME] Store data change detected:', payload);
-            const record = payload.new || payload.old;
-            const storeId = record.store_id || record.id;
-            if (storeId) {
-              refreshStoreData(storeId);
-            }
-        };
-        
-        const handleUserChange = (payload: any) => {
-            console.log('[REALTIME] User data change detected:', payload);
+        const unsubscribers: (() => void)[] = [];
+
+        if (activeStoreId) {
+            // Listen for changes on store configuration
+            const unsubStore = onSnapshot(doc(firebaseDb, 'stores_data', activeStoreId), (snap) => {
+                if (snap.exists() && !isSavingRef.current) {
+                    console.log('[REALTIME] Store settings change detected via Firestore snapshot');
+                    refreshStoreData(activeStoreId);
+                }
+            });
+            unsubscribers.push(unsubStore);
+
+            // Listen for changes on orders
+            const qOrders = query(collection(firebaseDb, 'orders'), where('storeId', '==', activeStoreId));
+            const unsubOrders = onSnapshot(qOrders, (snap) => {
+                if (!isSavingRef.current) {
+                    console.log('[REALTIME] Orders change detected via Firestore snapshot');
+                    refreshStoreData(activeStoreId);
+                }
+            });
+            unsubscribers.push(unsubOrders);
+        }
+
+        // Listen for user collections change
+        const unsubUsers = onSnapshot(collection(firebaseDb, 'users'), (snap) => {
+            console.log('[REALTIME] Users collection change detected via Firestore snapshot');
             refreshGlobalData();
-        };
+        });
+        unsubscribers.push(unsubUsers);
 
-        const subscriptions = [
-          supabase.channel('public:orders').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, handleStoreChange).subscribe(),
-          supabase.channel('public:stores_data').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'stores_data' }, handleStoreChange).subscribe(),
-          supabase.channel('public:products').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, handleStoreChange).subscribe(),
-          supabase.channel('public:transactions').on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, handleStoreChange).subscribe(),
-          supabase.channel('public:employees').on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, handleStoreChange).subscribe(),
-          supabase.channel('public:collections').on('postgres_changes', { event: '*', schema: 'public', table: 'collections' }, handleStoreChange).subscribe(),
-          supabase.channel('public:custom_pages').on('postgres_changes', { event: '*', schema: 'public', table: 'custom_pages' }, handleStoreChange).subscribe(),
-          supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleUserChange).subscribe()
-        ];
-
-        // Fallback polling mechanism in case Realtime is not enabled in Supabase
+        // Fallback polling mechanism 
         const pollingInterval = setInterval(() => {
             if (activeStoreId && !isSavingRef.current) {
                 refreshStoreData(activeStoreId);
             }
-        }, 5000); // Poll every 5 seconds
+        }, 8000); // Poll every 8 seconds
 
         // Background Auto-Sync for Platforms (Wuilt, etc.)
         const autoSyncInterval = setInterval(async () => {
@@ -734,7 +750,6 @@ export const AppComponent = () => {
                     if (config?.isActive) {
                         console.log(`[AUTO-SYNC] Triggering background sync for ${platformId}...`);
                         try {
-                            // Set refreshing flag early to block auto-saves during the sync window
                             isRefreshing.current = true;
                             
                             const response = await fetch(`/api/sync/platform/${platformId}/${activeStoreId}?type=orders`, {
@@ -744,7 +759,6 @@ export const AppComponent = () => {
                             
                             if (response.ok) {
                                 console.log(`[AUTO-SYNC] Successfully synced orders for ${platformId}`);
-                                // Immediately refresh to pick up the new data and avoid stale state save-backs
                                 await refreshStoreData(activeStoreId);
                             } else {
                                 isRefreshing.current = false;
@@ -759,8 +773,8 @@ export const AppComponent = () => {
         }, 120000); // Every 2 minutes
 
         return () => {
-            console.log('[REALTIME] Removing subscriptions and polling.');
-            subscriptions.forEach(sub => supabase.removeChannel(sub));
+            console.log('[REALTIME] Unsubscribing Firestore listeners and polling.');
+            unsubscribers.forEach(unsub => unsub());
             clearInterval(pollingInterval);
             clearInterval(autoSyncInterval);
         };
@@ -940,9 +954,9 @@ export const AppComponent = () => {
                 cost: item.cost || 0,
                 weight: item.weight || 0,
             })),
-            productPrice: pageProps.cart.reduce((sum: number, item: any) => sum + ((item.price || 0) * (item.quantity || 1)), 0),
-            productCost: pageProps.cart.reduce((sum: number, item: any) => sum + ((item.cost || 0) * (item.quantity || 1)), 0),
-            weight: pageProps.cart.reduce((sum: number, item: any) => sum + ((item.weight || 0) * (item.quantity || 1)), 0),
+            productPrice: (pageProps.cart || []).reduce((sum: number, item: any) => sum + ((item.price || 0) * (item.quantity || 1)), 0),
+            productCost: (pageProps.cart || []).reduce((sum: number, item: any) => sum + ((item.cost || 0) * (item.quantity || 1)), 0),
+            weight: (pageProps.cart || []).reduce((sum: number, item: any) => sum + ((item.weight || 0) * (item.quantity || 1)), 0),
             discount: orderData.discount || 0,
             orderType: 'standard',
             paymentMethod: orderData.paymentMethod || 'cash_on_delivery',
@@ -1064,7 +1078,7 @@ export const AppComponent = () => {
                     <Route path="design-templates" element={<ComingSoonPage />} />
                     <Route path="domain" element={<ComingSoonPage />} />
                     <Route path="legal-pages" element={<ComingSoonPage />} />
-                    <Route path="apps" element={<AppsPage storeId={activeStoreId} storeData={allStoresData[activeStoreId] || null} onUpdateSettings={pageProps.setSettings} onRefresh={pageProps.onRefresh} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
+                    <Route path="apps" element={<AppsPage storeId={activeStoreId} storeData={allStoresData[activeStoreId] || null} onUpdateSettings={pageProps.setSettings} onUpdateOrders={pageProps.setOrders} onRefresh={pageProps.onRefresh} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
                     <Route path="settings/tax" element={<ComingSoonPage />} />
                     <Route path="settings/developer" element={<DeveloperSettingsPage settings={pageProps.settings} setSettings={pageProps.setSettings} activeStoreId={activeStoreId} hostUrl={pageProps.settings.customAppDomain || window.location.origin} />} />
                 </Route>
