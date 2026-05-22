@@ -31,7 +31,7 @@ const itemVariants: Variants = {
 };
 
 const StatusDistribution = ({ data }: { data: { name: string, value: number, color: string }[] }) => {
-    const total = useMemo(() => data.reduce((sum, item) => sum + item.value, 0), [data]);
+    const total = useMemo(() => (data || []).reduce((sum, item) => sum + item.value, 0), [data]);
 
     if (total === 0) {
         return <div className="h-full flex items-center justify-center text-slate-400">لا توجد بيانات لعرضها.</div>;
@@ -69,7 +69,7 @@ const SmartSuggestions = ({ orders, settings }: { orders: Order[], settings: Set
 
     const customers = useMemo(() => {
         const customerMap = new Map<string, Pick<CustomerProfile, 'name' | 'successfulOrders' | 'totalSpent'>>();
-        orders.forEach(order => {
+        (orders || []).forEach(order => {
             const cleanPhone = (order.customerPhone || '').replace(/\s/g, '').replace('+2', '');
             if (!cleanPhone) return;
             if (!customerMap.has(cleanPhone)) {
@@ -87,7 +87,7 @@ const SmartSuggestions = ({ orders, settings }: { orders: Order[], settings: Set
     const fetchSuggestions = async () => {
         setIsLoading(true);
         setSuggestions('');
-        const result = await generateDashboardSuggestions(orders, settings.products, customers);
+        const result = await generateDashboardSuggestions(orders || [], (settings?.products || []), customers);
         setSuggestions(result);
         setIsLoading(false);
     };
@@ -128,7 +128,7 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
       'فشل_التوصيل': 0, 'تمت_الاعادة_لشركة_الشحن': 0, 'ملغي': 0, 'مؤجل': 0, 'مجدول': 0
     };
 
-    orders.forEach((o: Order) => {
+    (orders || []).forEach((o: Order) => {
       if (counts[o.status] !== undefined) counts[o.status]++;
       
       const { profit, loss } = calculateOrderProfitLoss(o, settings);
@@ -136,19 +136,19 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
       totalLoss += loss;
     });
 
-    return { net: totalProfit - totalLoss, counts, total: orders.length };
+    return { net: totalProfit - totalLoss, counts, total: (orders || []).length };
   }, [orders, settings]);
 
   const chartData = [
-    { name: 'بانتظار مكالمة', value: stats.counts['في_انتظار_المكالمة'], color: '#06b6d4' },
-    { name: 'مراجعة', value: stats.counts['جاري_المراجعة'], color: '#a855f7' },
-    { name: 'تحصيل', value: stats.counts['تم_التحصيل'] + stats.counts['مدفوعة'], color: '#22c55e' },
-    { name: 'مرتجع', value: stats.counts['مرتجع'] + stats.counts['فشل_التوصيل'] + stats.counts['تمت_الاعادة_لشركة_الشحن'], color: '#ef4444' },
-    { name: 'في الطريق', value: stats.counts['قيد_الشحن'] + stats.counts['تم_الارسال'], color: '#0ea5e9' },
-    { name: 'مؤجل/مجدول', value: stats.counts['مؤجل'] + stats.counts['مجدول'], color: '#6366f1' }
+    { name: 'بانتظار مكالمة', value: stats.counts['في_انتظار_المكالمة'] || 0, color: '#06b6d4' },
+    { name: 'مراجعة', value: stats.counts['جاري_المراجعة'] || 0, color: '#a855f7' },
+    { name: 'تحصيل', value: (stats.counts['تم_التحصيل'] || 0) + (stats.counts['مدفوعة'] || 0), color: '#22c55e' },
+    { name: 'مرتجع', value: (stats.counts['مرتجع'] || 0) + (stats.counts['فشل_التوصيل'] || 0) + (stats.counts['تمت_الاعادة_لشركة_الشحن'] || 0), color: '#ef4444' },
+    { name: 'في الطريق', value: (stats.counts['قيد_الشحن'] || 0) + (stats.counts['تم_الارسال'] || 0), color: '#0ea5e9' },
+    { name: 'مؤجل/مجدول', value: (stats.counts['مؤجل'] || 0) + (stats.counts['مجدول'] || 0), color: '#6366f1' }
   ];
 
-  const lowStockProducts = settings.products.filter(p => p.stockQuantity < 5);
+  const lowStockProducts = (settings?.products || []).filter(p => (p.stockQuantity ?? 0) < 5);
 
   return (
     <motion.div 
@@ -219,7 +219,7 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
               <div className="space-y-2">
                 <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">رصيد المحفظة</p>
                 <h4 className="text-4xl font-black text-slate-900 dark:text-white tabular-nums">
-                  {wallet.transactions.reduce((sum, t) => {
+                  {(wallet?.transactions || []).reduce((sum, t) => {
                       const amount = Number(t.amount) || 0;
                       if (t.type === 'إيداع') return t.status === 'completed' ? sum + amount : sum;
                       if (t.type === 'سحب') return t.status === 'cancelled' ? sum : sum - amount;

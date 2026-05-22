@@ -658,7 +658,7 @@ export interface JoinRequest {
 }
 
 export interface ChatMessage {
-  id: number;
+  id: string | number;
   store_id: string;
   sender_id: string;
   receiver_id: string;

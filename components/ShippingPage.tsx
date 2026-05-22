@@ -476,7 +476,7 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
   const [newCityUseParent, setNewCityUseParent] = useState(true);
 
   // Determine active columns based on company settings
-  const companyFees = settings.companySpecificFees[companyName];
+  const companyFees = settings?.companySpecificFees?.[companyName] || { useCustomFees: false };
   const showExchange = companyFees?.useCustomFees ? companyFees.enableExchange : settings.enableExchangePrice;
   const showReturnAfter = companyFees?.useCustomFees ? companyFees.enableReturnAfter : settings.enableReturnAfterPrice;
   const showReturnWithout = companyFees?.useCustomFees ? companyFees.enableReturnWithout : settings.enableReturnWithoutPrice;
@@ -937,7 +937,7 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
   );
 };
 const CompanyFinancialsEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
-    const companyFees = settings.companySpecificFees[companyName] || { useCustomFees: false };
+    const companyFees = settings?.companySpecificFees?.[companyName] || { useCustomFees: false };
     const handleCompanyFeeChange = (field: keyof CompanyFees, value: any) => { setSettings((prev: Settings) => ({ ...prev, companySpecificFees: { ...prev.companySpecificFees, [companyName]: { ...prev.companySpecificFees[companyName], [field]: value } } })); };
     return (
         <SectionCard title={`الإعدادات المالية لـ ${companyName}`} icon={<Wallet size={22} />}>

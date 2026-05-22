@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ShoppingCart, Store, Mail, User as UserIcon, ShieldAlert, Phone, KeyRound, LogIn, UserPlus, Loader2, X, BarChart, Settings, Users, ArrowLeft, CheckCircle } from 'lucide-react';
+import { ShoppingCart, Store, Mail, User as UserIcon, ShieldAlert, Phone, KeyRound, LogIn, UserPlus, Loader2, X, BarChart, Settings, Users, ArrowLeft, CheckCircle, Database, AlertCircle, Copy, Check, RefreshCw, Shield } from 'lucide-react';
 import { User } from '../types';
 import { motion } from 'framer-motion';
 
@@ -52,6 +52,230 @@ const AuthModal: React.FC<{
 );
 
 
+// --- SQL Schema Script for Custom DB setup ---
+const SQL_SCHEMA_SCRIPT = `-- 1. STORES_DATA (قاعدة بيانات المتاجر)
+CREATE TABLE IF NOT EXISTS stores_data (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    settings JSONB DEFAULT '{}'::jsonb
+);
+
+-- 2. USERS (المستخدمون والمدراء)
+CREATE TABLE IF NOT EXISTS users (
+    phone TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    password TEXT NOT NULL,
+    email TEXT,
+    stores JSONB DEFAULT '[]'::jsonb,
+    sites JSONB DEFAULT '[]'::jsonb,
+    is_admin BOOLEAN DEFAULT false,
+    is_banned BOOLEAN DEFAULT false,
+    join_date TEXT
+);
+
+-- 3. PRODUCTS (المنتجات)
+CREATE TABLE IF NOT EXISTS products (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    sku TEXT,
+    price NUMERIC NOT NULL,
+    stock_quantity NUMERIC DEFAULT 0,
+    details JSONB DEFAULT '{}'::jsonb
+);
+
+-- 4. ORDERS (الطلبات والأوردرات)
+CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    order_number TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    date TEXT NOT NULL,
+    total_price NUMERIC NOT NULL,
+    details JSONB DEFAULT '{}'::jsonb
+);
+
+-- 5. TRANSACTIONS (الحركات المالية والمحفظة)
+CREATE TABLE IF NOT EXISTS transactions (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    amount NUMERIC NOT NULL,
+    date TEXT NOT NULL,
+    category TEXT,
+    note TEXT,
+    details JSONB DEFAULT '{}'::jsonb
+);
+
+-- 6. SUPPLIERS (الموردين)
+CREATE TABLE IF NOT EXISTS suppliers (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT,
+    notes TEXT
+);
+
+-- 7. SUPPLY_ORDERS (أوردرات الإمداد والمخزون)
+CREATE TABLE IF NOT EXISTS supply_orders (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    supplier_id TEXT,
+    total_cost NUMERIC NOT NULL,
+    date TEXT NOT NULL,
+    items JSONB DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL
+);
+
+-- 8. REVIEWS (مراجعات وآراء التقاطعات)
+CREATE TABLE IF NOT EXISTS reviews (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
+    customer_name TEXT,
+    rating NUMERIC DEFAULT 5,
+    comment TEXT,
+    status TEXT
+);
+
+-- 9. ABANDONED_CARTS (السلات المتروكة)
+CREATE TABLE IF NOT EXISTS abandoned_carts (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    customer_name TEXT,
+    customer_phone TEXT,
+    total_value NUMERIC,
+    date TEXT,
+    items JSONB DEFAULT '[]'::jsonb
+);
+
+-- 10. ACTIVITY_LOGS (سجل الحركات العام)
+CREATE TABLE IF NOT EXISTS activity_logs (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    user_name TEXT,
+    action TEXT NOT NULL,
+    details JSONB,
+    timestamp TEXT,
+    date TEXT
+);
+
+-- 11. EMPLOYEES (الموظفون وصلاحياتهم)
+CREATE TABLE IF NOT EXISTS employees (
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    phone TEXT NOT NULL,
+    permissions JSONB DEFAULT '[]'::jsonb,
+    status TEXT NOT NULL,
+    PRIMARY KEY (store_id, phone)
+);
+
+-- 12. DISCOUNT_CODES (أكواد الخصم)
+CREATE TABLE IF NOT EXISTS discount_codes (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    code TEXT NOT NULL,
+    discount_type TEXT NOT NULL,
+    value NUMERIC NOT NULL,
+    usage_limit NUMERIC,
+    usage_count NUMERIC DEFAULT 0,
+    expiration_date TEXT,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- 13. COLLECTIONS (التصنيفات والجموعات للمنتجات)
+CREATE TABLE IF NOT EXISTS collections (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    image_url TEXT,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- 14. CUSTOM_PAGES (الصفحات التعريفية المخصصة)
+CREATE TABLE IF NOT EXISTS custom_pages (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    content TEXT,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- 15. PAYMENT_METHODS (طرق الدفع المفعلة)
+CREATE TABLE IF NOT EXISTS payment_methods (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    logo_url TEXT,
+    is_active BOOLEAN DEFAULT true,
+    details JSONB DEFAULT '{}'::jsonb
+);
+
+-- 16. CUSTOMERS (بيانات العملاء وتقييمات الولاء)
+CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    address TEXT,
+    loyalty_points NUMERIC DEFAULT 0,
+    total_spent NUMERIC DEFAULT 0,
+    first_order_date TEXT,
+    last_order_date TEXT,
+    notes TEXT
+);
+
+-- 17. GLOBAL_OPTIONS (خيارات الضبط العام للمتجر)
+CREATE TABLE IF NOT EXISTS global_options (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- 18. SHIPPING_INTEGRATIONS (تكاملات شركات الشحن والدليفري)
+CREATE TABLE IF NOT EXISTS shipping_integrations (
+    id TEXT PRIMARY KEY,
+    store_id TEXT REFERENCES stores_data(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    api_key TEXT,
+    api_secret TEXT,
+    account_number TEXT,
+    is_connected BOOLEAN DEFAULT false
+);
+
+-- 19. DOCUMENTS (الملفات وأرشيف الفواتير الموروثة)
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    content JSONB DEFAULT '{}'::jsonb
+);
+
+-- تعطيل نظام الحماية للمشاريع البسيطة لتمكين الاتصال المباشر دون تعقيد السياسات
+ALTER TABLE stores_data DISABLE ROW LEVEL SECURITY;
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE products DISABLE ROW LEVEL SECURITY;
+ALTER TABLE orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE suppliers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE supply_orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE reviews DISABLE ROW LEVEL SECURITY;
+ALTER TABLE abandoned_carts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE employees DISABLE ROW LEVEL SECURITY;
+ALTER TABLE discount_codes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE collections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE custom_pages DISABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_methods DISABLE ROW LEVEL SECURITY;
+ALTER TABLE customers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE global_options DISABLE ROW LEVEL SECURITY;
+ALTER TABLE shipping_integrations DISABLE ROW LEVEL SECURITY;
+ALTER TABLE documents DISABLE ROW LEVEL SECURITY;`;
+
 // --- Main Page Component ---
 interface SignUpPageProps {
   onPasswordSuccess: (user: User) => void;
@@ -77,6 +301,26 @@ const SignUpPage: React.FC<SignUpPageProps> = ({ onPasswordSuccess, users, setUs
   const [adminPhone, setAdminPhone] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
+
+  // Custom database state and actions
+  const [hasCustomDb, setHasCustomDb] = useState(
+    typeof window !== 'undefined' ? !!localStorage.getItem('custom_supabase_url') : false
+  );
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [showSqlDetails, setShowSqlDetails] = useState(false);
+
+  const handleRestoreDefaultDb = () => {
+    localStorage.removeItem('custom_supabase_url');
+    localStorage.removeItem('custom_supabase_anon_key');
+    alert("تمت استعادة قاعدة البيانات الافتراضية بنجاح! سيتم إعادة تشغيل ومزامنة حسابك القديم.");
+    window.location.reload();
+  };
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(SQL_SCHEMA_SCRIPT);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2000);
+  };
 
   const openAuthModal = (isLogin: boolean) => {
     setIsLoginView(isLogin);
@@ -301,6 +545,50 @@ const SignUpPage: React.FC<SignUpPageProps> = ({ onPasswordSuccess, users, setUs
                   <h2 className="text-2xl font-bold">{isLoginView ? 'تسجيل الدخول' : 'إنشاء حساب جديد'}</h2>
                   <p className="text-slate-400 mt-1">{isLoginView ? 'مرحباً بعودتك! أدخل بياناتك للمتابعة.' : 'ابدأ بإنشاء متجرك الإلكتروني الآن'}</p>
                 </div>
+
+                {hasCustomDb && (
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mt-4 text-right space-y-3">
+                    <div className="flex gap-2.5 items-start">
+                      <Database size={18} className="text-indigo-400 mt-0.5 shrink-0" />
+                      <div>
+                        <h3 className="text-xs font-bold text-indigo-300">منبه: السيرفر المخصص مفعل</h3>
+                        <p className="text-slate-400 text-[11px] mt-1 leading-relaxed">
+                          أنت متصل بقاعدة بيانات مخصصة جديدة وفارغة. حساباتك القديمة موجودة على السيرفر الافتراضي الأصلي. يمكنك <strong>إنشاء حساب جديد</strong> لتشغيل السيرفر المخصص، أو الرجوع فوراً للسيرفر الافتراضي لاسترجاع بياناتك.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-1 flex flex-wrap gap-2 text-[11px]">
+                      <button 
+                        type="button" 
+                        onClick={handleCopySql} 
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-950/50 hover:bg-indigo-900/50 text-indigo-300 rounded-lg font-bold border border-indigo-900/50 transition active:scale-95"
+                      >
+                        {copiedSql ? (
+                          <>
+                            <Check className="text-green-400" size={12} />
+                            <span>تم نسخ كود SQL!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={12} />
+                            <span>نسخ كود إنشاء الجداول</span>
+                          </>
+                        )}
+                      </button>
+                      
+                      <button 
+                        type="button" 
+                        onClick={handleRestoreDefaultDb} 
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-red-950/40 hover:bg-red-900/40 text-red-400 rounded-lg font-bold border border-red-950/30 transition active:scale-95"
+                      >
+                        <RefreshCw size={12} />
+                        <span>استعادة السيرفر الافتراضي</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <form onSubmit={handleUserSubmit} className="space-y-4 mt-6">
                   {!isLoginView && (
                     <>
@@ -317,6 +605,21 @@ const SignUpPage: React.FC<SignUpPageProps> = ({ onPasswordSuccess, users, setUs
                 </form>
                 <p className="text-center text-sm text-slate-400 mt-6">{isLoginView ? 'ليس لديك حساب؟' : 'لديك حساب بالفعل؟'}{' '}<a href="#" onClick={toggleView} className="font-bold text-indigo-400 hover:underline">{isLoginView ? 'أنشئ حساباً' : 'تسجيل الدخول'}</a></p>
                 <div className="mt-4 text-center"><Link to="/employee-login" className="text-sm text-slate-400 hover:text-indigo-400 hover:underline">تسجيل دخول الموظفين</Link></div>
+                <div className="mt-3 text-center border-t border-slate-800 pt-3">
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setShowAdminTab(true);
+                      setActiveTab('admin');
+                      setAdminPhone('admin');
+                      setAdminPassword('admin');
+                    }} 
+                    className="text-xs text-slate-400 hover:text-red-400 hover:underline inline-flex items-center gap-1 transition-colors"
+                  >
+                    <Shield size={12} />
+                    <span>هل أنت المدير العام (الادمن)؟ اضغط هنا للدخول المباشر السريع</span>
+                  </button>
+                </div>
               </div>
             )}
             {activeTab === 'admin' && (

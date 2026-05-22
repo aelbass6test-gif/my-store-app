@@ -315,7 +315,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     const normalizedItems = (order.items || []).map(item => ({
       ...item,
       productId: item.productId.startsWith('wuilt-') ? item.productId : `wuilt-${item.productId}`,
-      price: (item.price === 0 && order.items.length === 1 && order.productPrice > 0) ? order.productPrice : item.price
+      price: (item.price === 0 && (order.items || []).length === 1 && order.productPrice > 0) ? order.productPrice : item.price
     }));
 
     return {
@@ -343,7 +343,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     const orderData = editingOrder || newOrder;
     if (!orderData.shippingCompany && !orderData.governorate && !orderData.shippingArea) return;
 
-    const options = settings.shippingOptions[orderData.shippingCompany!] || [];
+    const options = settings?.shippingOptions?.[orderData.shippingCompany!] || [];
     const effectiveOptions = options.length > 0 ? options : generateEgyptShippingOptions();
 
     const selectedOpt = effectiveOptions.find(o => o.label === (orderData.governorate || orderData.shippingArea)) || effectiveOptions[0];
@@ -691,7 +691,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     let newStockDeducted = isCurrentlyDeducted;
 
     if (shouldBeDeducted && !isCurrentlyDeducted) {
-        order.items.forEach(orderItem => {
+        (order.items || []).forEach(orderItem => {
             const pIdx = updatedProducts.findIndex(p => p.id === orderItem.productId);
             if (pIdx > -1) {
                 updatedProducts[pIdx] = {
@@ -702,7 +702,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         });
         newStockDeducted = true;
     } else if (!shouldBeDeducted && isCurrentlyDeducted) {
-        order.items.forEach(orderItem => {
+        (order.items || []).forEach(orderItem => {
             const pIdx = updatedProducts.findIndex(p => p.id === orderItem.productId);
             if (pIdx > -1) {
                 updatedProducts[pIdx] = {
@@ -1877,10 +1877,10 @@ const OrderCard = ({
       <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border border-slate-100 dark:border-slate-800/50 mb-8">
         <div className="flex items-center justify-between flex-row-reverse mb-4">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">محتويات الطلب</span>
-          <span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-[9px] font-black">{order.items.length} قطع</span>
+          <span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-[9px] font-black">{(order.items || []).length} قطع</span>
         </div>
         <div className="space-y-3">
-          {order.items.slice(0, 2).map((item, idx) => {
+          {(order.items || []).slice(0, 2).map((item, idx) => {
             const product = settings.products.find(p => p.id === item.productId);
             return (
               <div key={idx} className="flex gap-3 items-center flex-row-reverse">
@@ -1896,9 +1896,9 @@ const OrderCard = ({
               </div>
             );
           })}
-          {order.items.length > 2 && (
+          {(order.items || []).length > 2 && (
             <button onClick={onShowSummary} className="w-full text-center py-2 bg-white dark:bg-slate-800/50 rounded-xl text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:bg-slate-100 transition-all">
-                + {order.items.length - 2} منتجات أخرى
+                + {(order.items || []).length - 2} منتجات أخرى
             </button>
           )}
         </div>
@@ -2074,11 +2074,11 @@ const ProductDetailsList: React.FC<{ order: Order }> = ({ order }) => {
     return (
         <div className="bg-slate-50 dark:bg-slate-900/40 rounded-[2.5rem] p-6 border border-slate-100 dark:border-slate-800 shadow-inner w-full max-w-xl mx-auto my-4 space-y-6">
             <h5 className="text-sm font-black text-slate-400 flex items-center justify-end gap-2 px-4 italic uppercase tracking-wider">
-                تفاصيل المنتجات ({order.items.length}) <Info size={14} />
+                تفاصيل المنتجات ({(order.items || []).length}) <Info size={14} />
             </h5>
             
             <div className="space-y-4">
-                {order.items.map((item, idx) => (
+                {(order.items || []).map((item, idx) => (
                     <div key={idx} className="bg-white dark:bg-slate-900 p-4 rounded-3xl flex items-center gap-4 flex-row-reverse border border-slate-50 dark:border-slate-800 shadow-sm group hover:border-indigo-200 transition-colors">
                         <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 overflow-hidden flex-shrink-0 border border-slate-100 dark:border-slate-700">
                              {item.thumbnail ? (
@@ -2245,10 +2245,10 @@ const OrderRow = ({
                 <ChevronDown size={14} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-[9px] font-black">
                     <Package size={10} />
-                    <span>{order.items.length} قطع</span>
+                    <span>{(order.items || []).length} قطع</span>
                 </div>
                 <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">
-                {order.items.length > 0 ? order.items[0].name.substring(0, 15) + '...' : '---'}
+                {(order.items || []).length > 0 ? (order.items || [])[0].name.substring(0, 15) + '...' : '---'}
                 </div>
             </div>
         </div>
@@ -3302,7 +3302,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
 };
 interface OrderConfirmationSummaryProps { order: Order; settings: Settings; onClose: () => void; }
 const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ order, settings, onClose }) => {
-    const compFees = settings.companySpecificFees[order.shippingCompany];
+    const compFees = settings?.companySpecificFees?.[order.shippingCompany];
     const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0;
     const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0;
     const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
@@ -3391,7 +3391,7 @@ const ConfirmationModal: React.FC<{ title: string; description: string; onConfir
 );
 interface OrderPreConfirmationModalProps { order: Omit<Order, 'id'>; settings: Settings; onConfirm: () => void; onCancel: () => void; }
 const OrderPreConfirmationModal: React.FC<OrderPreConfirmationModalProps> = ({ order, settings, onConfirm, onCancel }) => {
-    const compFees = settings.companySpecificFees[order.shippingCompany];
+    const compFees = settings?.companySpecificFees?.[order.shippingCompany];
     const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0;
     const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0;
     const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
@@ -3472,7 +3472,7 @@ const AutoWhatsappModal: React.FC<{
         let msg = defaultTemplate;
         msg = msg.replace(/\[اسم العميل\]/g, order.customerName || 'عميلنا العزيز');
         msg = msg.replace(/\[اسم المتجر\]/g, 'متجرنا');
-        msg = msg.replace(/\[اسم المنتج\]/g, order.items.map(i => i.name).join(' و '));
+        msg = msg.replace(/\[اسم المنتج\]/g, (order.items || []).map(i => i.name).join(' و '));
         msg = msg.replace(/\[حالة الطلب\]/g, newStatus.replace(/_/g, ' '));
         setMessage(msg);
     }, [order, newStatus, defaultTemplate, settings]);

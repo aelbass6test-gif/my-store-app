@@ -55,7 +55,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
     // Current calculation is sum of transactions, ensuring amounts are numbers
     // Deposits and Withdrawals in 'pending' status do NOT affect the live balance
     // This satisfies the requirement that the balance doesn't drop/increase until approval
-    const liveBalance = wallet.transactions.reduce((sum, t) => {
+    const liveBalance = (wallet?.transactions || []).reduce((sum, t) => {
         const amount = Number(t.amount) || 0;
         
         // Exclude transactions that come from the Supply Wallet (they were already deducted from main during funding or never entered main)
@@ -75,7 +75,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
     }, 0);
 
     // Calculate sum of pending withdrawals for UI display
-    const pendingWithdrawalsSum = wallet.transactions.reduce((sum, t) => {
+    const pendingWithdrawalsSum = (wallet?.transactions || []).reduce((sum, t) => {
         if (t.type === 'سحب' && t.status === 'pending') {
             return sum + (Number(t.amount) || 0);
         }

@@ -62,8 +62,8 @@ export const calculateOrderProfitLoss = (order: Order, settings: Settings): { pr
   if (order.status === 'تم_التحصيل' || order.status === 'مدفوعة') {
     const codFee = order.status === 'مدفوعة' ? 0 : calculateCodFee(order, settings);
     const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : effectiveInspectionCost;
-    const totalItemsRevenue = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const totalItemsCost = order.items.reduce((sum, item) => sum + (item.cost * item.quantity), 0);
+    const totalItemsRevenue = (order.items || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalItemsCost = (order.items || []).reduce((sum, item) => sum + (item.cost * item.quantity), 0);
     profit = (totalItemsRevenue - totalItemsCost - insuranceFee - inspectionAdjustment - codFee);
   } else if (order.status === 'مرتجع' || order.status === 'فشل_التوصيل' || order.status === 'تمت_الاعادة_لشركة_الشحن') {
     const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;

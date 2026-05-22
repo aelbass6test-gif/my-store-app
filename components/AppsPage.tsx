@@ -6,6 +6,7 @@ interface AppsPageProps {
   storeId: string;
   storeData: StoreData | null;
   onUpdateSettings: (settings: any) => void;
+  onUpdateOrders?: (orders: any) => void;
   onRefresh?: () => Promise<void>;
   hostUrl: string;
 }
@@ -74,7 +75,7 @@ const AVAILABLE_APPS = [
   }
 ];
 
-export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefresh, hostUrl }: AppsPageProps) {
+export default function AppsPage({ storeId, storeData, onUpdateSettings, onUpdateOrders, onRefresh, hostUrl }: AppsPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -135,22 +136,30 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
       onUpdateSettings(updatedSettings);
   };
 
-  const updateSyncTime = (appId: string, syncType: 'orders' | 'products') => {
-    if (!storeData) return;
-    const currentConfigs = (storeData.settings as any).platformConfigs || {};
-    const fieldName = syncType === 'orders' ? 'lastSync' : 'lastProductSync';
-    
-    const updatedSettings = {
-        ...storeData.settings,
-        platformConfigs: {
-            ...currentConfigs,
-            [appId]: {
-                ...currentConfigs[appId],
-                [fieldName]: new Date().toLocaleString('ar-EG')
-            }
+  const updateSyncTime = (appId: string, syncType: 'orders' | 'products', additionalData?: any) => {
+    onUpdateSettings((prev: any) => {
+        const currentConfigs = prev.platformConfigs || {};
+        const fieldName = syncType === 'orders' ? 'lastSync' : 'lastProductSync';
+        
+        let newProducts = prev.products || [];
+        if (additionalData?.items && additionalData.items.length > 0) {
+            const existingMap = new Map(newProducts.map((p: any) => [p.id, p]));
+            additionalData.items.forEach((item: any) => existingMap.set(item.id, item));
+            newProducts = Array.from(existingMap.values());
         }
-    };
-    onUpdateSettings(updatedSettings);
+
+        return {
+            ...prev,
+            products: newProducts,
+            platformConfigs: {
+                ...currentConfigs,
+                [appId]: {
+                    ...currentConfigs[appId],
+                    [fieldName]: new Date().toLocaleString('ar-EG')
+                }
+            }
+        };
+    });
   };
 
   const handleSyncOrders = async (appId: string) => {
@@ -164,9 +173,19 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
         const data = await response.json();
 
         if (response.ok) {
-            if (onRefresh) await onRefresh();
+            if (data.items && data.items.length > 0 && onUpdateOrders) {
+                onUpdateOrders((prev: any) => {
+                    const newOrders = prev || [];
+                    const existingMap = new Map(newOrders.map((o: any) => [o.id, o]));
+                    data.items.forEach((item: any) => existingMap.set(item.id, item));
+                    return Array.from(existingMap.values());
+                });
+            }
             updateSyncTime(appId, 'orders');
-            alert(`نجحت المزامنة! تم استيراد ${data.inserted} طلب جديد.`);
+            // Background refresh to true up any other fields if needed, 
+            // the state is already optimistic so auto-save won't wipe it locally.
+            if (onRefresh) onRefresh();
+            alert(`نجحت المزامنة! تم إضافة/تحديث ${data.updated + data.inserted} طلب.`);
         } else {
             alert(`خطأ في المزامنة: ${data.error}`);
         }
@@ -193,9 +212,8 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onRefre
         const data = await response.json();
 
         if (response.ok) {
-            if (onRefresh) await onRefresh();
-            updateSyncTime(appId, 'products');
-            alert(isSelective ? `تم استيراد ${data.inserted} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.inserted} منتج.`);
+            updateSyncTime(appId, 'products', { items: data.items });
+            alert(isSelective ? `تم استيراد ${data.updated + data.inserted} منتج بنجاح!` : `نجحت المزامنة! تم تحديث/إضافة ${data.updated + data.inserted} منتج.`);
             if (isSelective) setShowSelectiveModal(false);
         } else {
             alert(`خطأ في مزامنة المنتجات: ${data.error}`);

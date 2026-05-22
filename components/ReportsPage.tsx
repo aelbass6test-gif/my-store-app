@@ -63,15 +63,15 @@ const SalesSummaryReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ o
             return d.getMonth() === prevMonth && d.getFullYear() === prevYear;
         });
 
-        const getRevenue = (os: Order[]) => os.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة').reduce((sum, o) => sum + (o.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) + o.shippingFee - (o.discount || 0)), 0);
+        const getRevenue = (os: Order[]) => os.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة').reduce((sum, o) => sum + ((o.items || []).reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) + o.shippingFee - (o.discount || 0)), 0);
         
         const currentRevenue = getRevenue(currentMonthOrders);
         const prevRevenue = getRevenue(prevMonthOrders);
         const revenueGrowth = prevRevenue > 0 ? ((currentRevenue - prevRevenue) / prevRevenue) * 100 : 0;
 
         const collectedOrders = orders.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة');
-        const totalProductRevenue = collectedOrders.reduce((sum, o) => sum + o.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0), 0);
-        const totalRevenue = collectedOrders.reduce((sum, o) => sum + (o.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) + o.shippingFee - (o.discount || 0)), 0);
+        const totalProductRevenue = collectedOrders.reduce((sum, o) => sum + (o.items || []).reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0), 0);
+        const totalRevenue = collectedOrders.reduce((sum, o) => sum + ((o.items || []).reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) + o.shippingFee - (o.discount || 0)), 0);
         const totalOrders = orders.length;
         const avgOrderValue = collectedOrders.length > 0 ? totalRevenue / collectedOrders.length : 0;
         
@@ -83,7 +83,7 @@ const SalesSummaryReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ o
             else totalLoss += Math.abs(net);
         });
 
-        const totalExpenses = wallet.transactions.filter(t => t.category?.startsWith('expense_')).reduce((sum, t) => sum + t.amount, 0);
+        const totalExpenses = (wallet?.transactions || []).filter(t => t.category?.startsWith('expense_')).reduce((sum, t) => sum + t.amount, 0);
         
         // Daily Sales for Chart
         const last7Days = [...Array(7)].map((_, i) => {
@@ -96,7 +96,7 @@ const SalesSummaryReport: React.FC<Omit<ReportsPageProps, 'activeStore'>> = ({ o
             const dayOrders = orders.filter(o => o.date.startsWith(date) && (o.status === 'تم_التحصيل' || o.status === 'مدفوعة'));
             return {
                 date: date.split('-').slice(1).join('/'),
-                revenue: dayOrders.reduce((sum, o) => sum + (o.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) + o.shippingFee), 0)
+                revenue: dayOrders.reduce((sum, o) => sum + ((o.items || []).reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) + o.shippingFee), 0)
             };
         });
 
@@ -347,17 +347,17 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
                                     const isInsured = order.isInsured ?? true;
                                     const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
 
-                                    const productsList = order.items.map(i => `${i.name} (الكمية: ${i.quantity})`).join(' + ') || order.productName;
+                                    const productsList = (order.items || []).map(i => `${i.name} (الكمية: ${i.quantity})`).join(' + ') || order.productName;
 
                                     return (
                                         <tr key={order.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 text-xs">
                                             <td className="px-4 py-3 font-bold text-slate-800 dark:text-white">{order.customerName}</td>
                                             <td className="px-4 py-3 text-slate-500 max-w-[200px] truncate" title={productsList}>{productsList}</td>
-                                            <td className="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-300">{order.items.reduce((sum, item) => sum + item.quantity, 0)}</td>
+                                            <td className="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-300">{(order.items || []).reduce((sum, item) => sum + item.quantity, 0)}</td>
                                             <td className="px-4 py-3 font-mono">{order.productPrice.toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono">{order.shippingFee.toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono">{(insuranceFee + inspectionCost).toLocaleString()}</td>
-                                            <td className="px-4 py-3 font-mono">{order.items.reduce((sum, item) => sum + (item.cost * item.quantity), 0).toLocaleString()}</td>
+                                            <td className="px-4 py-3 font-mono">{(order.items || []).reduce((sum, item) => sum + (item.cost * item.quantity), 0).toLocaleString()}</td>
                                             <td className="px-4 py-3">
                                                 <span className="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 rounded-full whitespace-nowrap">
                                                     {order.status.replace(/_/g, ' ')}
@@ -413,9 +413,9 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
             const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : inspectionCost;
 
-            totalRevenue += order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.shippingFee;
+            totalRevenue += (order.items || []).reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.shippingFee;
             totalShippingRevenue += order.shippingFee;
-            totalCogs += order.items.reduce((sum, item) => sum + (item.cost * item.quantity), 0);
+            totalCogs += (order.items || []).reduce((sum, item) => sum + (item.cost * item.quantity), 0);
             totalInsuranceFees += insuranceFee;
             totalInspectionFees += inspectionAdjustment;
             totalCodFees += codFee;
@@ -470,7 +470,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             totalLoss += loss;
         });
 
-        const totalExpenses = wallet.transactions.filter(t => t.category?.startsWith('expense_')).reduce((sum, t) => sum + t.amount, 0);
+        const totalExpenses = (wallet?.transactions || []).filter(t => t.category?.startsWith('expense_')).reduce((sum, t) => sum + t.amount, 0);
         
         const finalNet = totalProfit - totalLoss - totalExpenses;
 
@@ -505,10 +505,10 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
 
         // Expense Categories for Pie Chart
         const expenseCategories = [
-            { name: 'إعلانات', value: wallet.transactions.filter(t => t.category === 'expense_ads').reduce((sum, t) => sum + t.amount, 0), color: '#4f46e5' },
-            { name: 'رواتب', value: wallet.transactions.filter(t => t.category === 'expense_salary').reduce((sum, t) => sum + t.amount, 0), color: '#06b6d4' },
-            { name: 'إيجار', value: wallet.transactions.filter(t => t.category === 'expense_rent').reduce((sum, t) => sum + t.amount, 0), color: '#8b5cf6' },
-            { name: 'أخرى', value: wallet.transactions.filter(t => t.category === 'expense_other').reduce((sum, t) => sum + t.amount, 0), color: '#ec4899' },
+            { name: 'إعلانات', value: (wallet?.transactions || []).filter(t => t.category === 'expense_ads').reduce((sum, t) => sum + t.amount, 0), color: '#4f46e5' },
+            { name: 'رواتب', value: (wallet?.transactions || []).filter(t => t.category === 'expense_salary').reduce((sum, t) => sum + t.amount, 0), color: '#06b6d4' },
+            { name: 'إيجار', value: (wallet?.transactions || []).filter(t => t.category === 'expense_rent').reduce((sum, t) => sum + t.amount, 0), color: '#8b5cf6' },
+            { name: 'أخرى', value: (wallet?.transactions || []).filter(t => t.category === 'expense_other').reduce((sum, t) => sum + t.amount, 0), color: '#ec4899' },
         ].filter(c => c.value > 0);
 
         // Carrier Performance
@@ -1320,8 +1320,8 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
         orders.forEach(order => {
             const { profit, loss } = calculateOrderProfitLoss(order, settings);
             if (order.status === 'تم_التحصيل' || order.status === 'مدفوعة') {
-                const totalItemsRevenue = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                const totalItemsCost = order.items.reduce((sum, item) => sum + (item.cost * item.quantity), 0);
+                const totalItemsRevenue = (order.items || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                const totalItemsCost = (order.items || []).reduce((sum, item) => sum + (item.cost * item.quantity), 0);
                 grossMargin += (totalItemsRevenue - totalItemsCost);
                 operationalFees += (totalItemsRevenue - totalItemsCost) - profit;
             } else if (['مرتجع', 'فشل_التوصيل', 'تمت_الاعادة_لشركة_الشحن', 'مرتجع_جزئي', 'مرتجع_بعد_الاستلام'].includes(order.status)) {
@@ -1329,7 +1329,7 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
             }
         });
 
-        const adminExpenses = wallet.transactions
+        const adminExpenses = (wallet?.transactions || [])
             .filter(t => {
                 const isExpenseCategory = t.category?.startsWith('expense_') || (settings.expenseCategories || []).includes(t.category || '');
                 const isManualWithdrawal = t.category === 'manual_withdrawal';
@@ -1867,7 +1867,7 @@ const InventoryReport: React.FC<{ activeStore?: Store; settings: Settings }> = (
                                         <td className="px-4 py-3 font-medium text-slate-800 dark:text-white">{o.supplierName}</td>
                                         <td className="px-4 py-3 font-bold text-emerald-600 dark:text-emerald-400">{o.totalCost.toLocaleString('ar-EG')} ج.م</td>
                                         <td className="px-4 py-3 text-slate-600 dark:text-slate-300 flex items-center gap-2">
-                                            <div className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-mono font-bold">{o.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}</div>
+                                            <div className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-mono font-bold">{(o.items || []).reduce((sum: number, item: any) => sum + item.quantity, 0)}</div>
                                             منتج
                                         </td>
                                         <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]">{o.paymentMethod === 'cash' ? 'نقدي' : o.paymentMethod === 'credit' ? 'آجل' : 'غير محدد'}</td>
@@ -1962,12 +1962,12 @@ const FinalReport: React.FC<ReportsPageProps> = ({ orders, settings, wallet, act
 
         collectedOrders.forEach(order => {
             const { profit } = calculateOrderProfitLoss(order, settings);
-            totalProductRevenue += order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            totalProductRevenue += (order.items || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
             totalShippingRevenue += order.shippingFee;
-            totalCogs += order.items.reduce((sum, item) => sum + (item.cost * item.quantity), 0);
+            totalCogs += (order.items || []).reduce((sum, item) => sum + (item.cost * item.quantity), 0);
             totalProfit += profit;
             
-            order.items.forEach(item => {
+            (order.items || []).forEach(item => {
                 const product = settings.products.find(p => p.id === item.productId);
                 if (product?.profitMode === 'commission' && product.basePrice !== undefined) {
                     totalExtraMarkup += (item.price - product.basePrice) * item.quantity;
@@ -1981,10 +1981,10 @@ const FinalReport: React.FC<ReportsPageProps> = ({ orders, settings, wallet, act
             totalLoss += loss;
         });
 
-        const totalExpenses = wallet.transactions.filter(t => t.category?.startsWith('expense_')).reduce((sum, t) => sum + t.amount, 0);
+        const totalExpenses = (wallet?.transactions || []).filter(t => t.category?.startsWith('expense_')).reduce((sum, t) => sum + t.amount, 0);
         const finalNet = totalProfit - totalLoss - totalExpenses;
 
-        const inventoryValue = settings.products.reduce((sum, p) => {
+        const inventoryValue = (settings?.products || []).reduce((sum, p) => {
             if (p.hasVariants && p.variants) return sum + p.variants.reduce((vSum, v) => vSum + (getLatestProductCost(v.id, settings) * (v.stockQuantity || 0)), 0);
             return sum + (getLatestProductCost(p.id, settings) * (p.stockQuantity || 0));
         }, 0);

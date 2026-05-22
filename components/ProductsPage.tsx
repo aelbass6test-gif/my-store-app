@@ -55,7 +55,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
   const [importPreview, setImportPreview] = useState<{ products: Product[], errors: string[] } | null>(null);
   const [isParsingCsv, setIsParsingCsv] = useState(false);
 
-  const isPlatformConnected = settings.integration?.platform !== 'none';
+  const isPlatformConnected = settings.integration?.platform !== 'none' || Object.values(settings.platformConfigs || {}).some((c: any) => c.isActive);
 
   const filteredProducts = settings.products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -172,7 +172,13 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
         throw new Error(result.error || 'فشلت المزامنة');
       }
 
-      if (onRefresh) onRefresh();
+      if (result.items && result.items.length > 0) {
+          setSettings(prev => {
+              const existingMap = new Map(prev.products.map(p => [p.id, p]));
+              result.items.forEach((item: any) => existingMap.set(item.id, item as Product));
+              return { ...prev, products: Array.from(existingMap.values()) };
+          });
+      }
       
       const now = new Date();
       setLastSync(now);
@@ -241,7 +247,13 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'فشلت المزامنة');
 
-      if (onRefresh) onRefresh();
+      if (result.items && result.items.length > 0) {
+          setSettings(prev => {
+              const existingMap = new Map(prev.products.map(p => [p.id, p]));
+              result.items.forEach((item: any) => existingMap.set(item.id, item as Product));
+              return { ...prev, products: Array.from(existingMap.values()) };
+          });
+      }
       
       setSyncStatus({ 
         type: 'success', 

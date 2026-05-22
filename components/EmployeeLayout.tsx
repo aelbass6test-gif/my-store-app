@@ -4,7 +4,8 @@ import { User, Store, StoreData } from '../types';
 import { Wind, LogOut, Settings, User as UserIcon, Sun, Moon, Monitor, Replace, ChevronDown, Check, LayoutDashboard, PhoneForwarded, Download, MessageSquare, History } from 'lucide-react';
 import FloatingChat, { FloatingChatHandles } from './FloatingChat';
 import IosInstallPrompt from './IosInstallPrompt';
-import { supabase } from '../services/supabaseClient';
+import { db } from '../services/firebaseClient';
+import { doc, setDoc, deleteDoc, onSnapshot, collection, query, where } from 'firebase/firestore';
 
 interface EmployeeLayoutProps {
     currentUser: User | null;
@@ -35,29 +36,45 @@ const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({ currentUser, onLogout, 
     useEffect(() => {
         if (!currentUser || !activeStoreId) return;
 
-        const channel = supabase.channel(`presence:${activeStoreId}`);
+        const presenceDocRef = doc(db, 'presence', `${activeStoreId}_${currentUser.phone}`);
 
-        channel
-            .on('presence', { event: 'sync' }, () => {
-                const state = channel.presenceState();
-                const users: Record<string, { lastSeen: number }> = {};
-                Object.keys(state).forEach(key => {
-                    const presence = state[key][0] as any;
-                    users[presence.userId] = { lastSeen: presence.lastSeen };
-                });
-                setOnlineUsers(users);
-            })
-            .subscribe(async (status) => {
-                if (status === 'SUBSCRIBED') {
-                    await channel.track({
-                        userId: currentUser.phone,
-                        lastSeen: Date.now(),
-                    });
+        const updateStatus = async () => {
+            try {
+                await setDoc(presenceDocRef, {
+                    userId: currentUser.phone,
+                    storeId: activeStoreId,
+                    lastSeen: Date.now()
+                }, { merge: true });
+            } catch (err) {
+                console.warn('Failed to update presence status:', err);
+            }
+        };
+
+        updateStatus();
+        const interval = setInterval(updateStatus, 15000); // update every 15s
+
+        // Listen for all active presences in this store
+        const q = query(collection(db, 'presence'), where('storeId', '==', activeStoreId));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const usersMap: Record<string, { lastSeen: number }> = {};
+            const now = Date.now();
+            snapshot.docs.forEach(docSnap => {
+                const data = docSnap.data();
+                // Filter out statuses stale for more than 45 seconds (offline threshold)
+                if (data.lastSeen && (now - data.lastSeen) < 45000) {
+                    usersMap[data.userId] = { lastSeen: data.lastSeen };
                 }
             });
+            setOnlineUsers(usersMap);
+        }, (error) => {
+            console.error('Error listening to presence snapshot:', error);
+        });
 
         return () => {
-            supabase.removeChannel(channel);
+            clearInterval(interval);
+            unsubscribe();
+            // clean up presence
+            deleteDoc(presenceDocRef).catch(err => console.warn('Clean presence doc failed:', err));
         };
     }, [currentUser, activeStoreId]);
 

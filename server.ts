@@ -2,7 +2,9 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { createClient } from "@supabase/supabase-js";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, deleteDoc } from "firebase/firestore";
+import fs from "fs";
 
 // Governorate translation map
 const GOVERNORATE_MAP: Record<string, string> = {
@@ -35,6 +37,27 @@ const GOVERNORATE_MAP: Record<string, string> = {
     'NORTH SINAI': 'شمال سيناء',
     'SOUTH SINAI': 'جنوب سيناء',
 };
+
+// Recursively traverse and clean up any undefined properties for Firestore safety
+function cleanUndefined(obj: any): any {
+    if (obj === null || obj === undefined) {
+        return null;
+    }
+    if (Array.isArray(obj)) {
+        return obj.map(item => cleanUndefined(item));
+    }
+    if (typeof obj === 'object') {
+        const result: any = {};
+        for (const key of Object.keys(obj)) {
+            const val = obj[key];
+            if (val !== undefined) {
+                result[key] = cleanUndefined(val);
+            }
+        }
+        return result;
+    }
+    return obj;
+}
 
 // Helper to map Wuilt order data to internal schema
 function mapWuiltOrder(order: any, storeId: string, settings?: any) {
@@ -138,6 +161,7 @@ function mapWuiltOrder(order: any, storeId: string, settings?: any) {
 
     return {
         id,
+        storeId: storeId,
         store_id: storeId,
         order_number: order.orderSerial ? `W-${order.orderSerial}` : `W-${Date.now()}`,
         customer_name: order.customer?.name || 'عميل ويلت',
@@ -214,37 +238,44 @@ function mapWuiltProduct(product: any, storeId: string) {
     const firstVariant = product.variants?.nodes?.[0] || {};
     const images = (product.images || []).map((img: any) => img.src);
     
+    const hasVariants = (product.variants?.nodes?.length || 0) > 1;
+    const mappedVariants = (product.variants?.nodes || []).map((v: any) => {
+        const variantOptions: { [key: string]: string } = {};
+        if (v.selectedOptions) {
+            v.selectedOptions.forEach((so: any) => {
+                if (so.option?.name && so.value?.name) {
+                    variantOptions[so.option.name] = so.value.name;
+                }
+            });
+        }
+        return {
+            id: v.id,
+            sku: v.sku || `W-V-${v.id}`,
+            price: Number(v.price?.amount || 0),
+            costPrice: Number(v.cost?.amount || 0),
+            stockQuantity: v.trackQuantity ? (v.quantity ?? 0) : null,
+            options: variantOptions
+        };
+    });
+
+    const mappedOptions = (product.options || []).map((o: any) => o.name);
+
     return {
         id: `wuilt-${product.id}`,
+        storeId: storeId,
         store_id: storeId,
         name: product.title || 'منتج بدون اسم',
         sku: firstVariant?.sku || `W-${product.id}`,
-        price: firstVariant?.price?.amount || 0,
-        stock_quantity: firstVariant?.trackQuantity ? (firstVariant?.quantity ?? 0) : null,
-        details: {
-            description: product.descriptionHtml || product.shortDescription || '',
-            costPrice: firstVariant?.cost?.amount || 0,
-            images: images,
-            thumbnail: images[0] || '',
-            type: product.type,
-            status: product.status,
-            handle: product.handle,
-            trackQuantity: firstVariant?.trackQuantity ?? false,
-            variants: (product.variants?.nodes || []).map((v: any) => ({
-                id: v.id,
-                title: v.title,
-                sku: v.sku,
-                price: v.price?.amount || 0,
-                cost: v.cost?.amount || 0,
-                quantity: v.trackQuantity ? (v.quantity ?? 0) : null,
-                trackQuantity: v.trackQuantity ?? false
-            })),
-            options: (product.options || []).map((o: any) => ({
-                id: o.id,
-                name: o.name,
-                values: (o.values || []).map((v: any) => v.name)
-            }))
-        }
+        price: Number(firstVariant?.price?.amount || 0),
+        weight: Number(product.weight || 1),
+        costPrice: Number(firstVariant?.cost?.amount || 0),
+        thumbnail: images[0] || '',
+        images: images,
+        description: product.descriptionHtml || product.shortDescription || '',
+        stockQuantity: firstVariant?.trackQuantity ? (firstVariant?.quantity ?? 0) : null,
+        hasVariants: hasVariants,
+        options: mappedOptions,
+        variants: mappedVariants
     };
 }
 
@@ -255,11 +286,30 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://keqmlcqymkohxzcouxfi.supabase.co';
-  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtlcW1sY3F5bWtvaHh6Y291eGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1ODU0NzAsImV4cCI6MjA4NjE2MTQ3MH0.OfxqWM9CFCcLj62u5KLWZyiiBhUH-miUu882Cqlwf4I';
-  
-  // NOTE: This server uses the anon key or service role key if available.
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  let firebaseConfig = {};
+  try {
+    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(configPath)) {
+      firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    }
+  } catch (err) {
+    console.warn("Could not load firebase-applet-config.json on server:", err);
+  }
+
+  const firebaseApp = initializeApp(firebaseConfig);
+  const db = (firebaseConfig as any).firestoreDatabaseId 
+    ? getFirestore(firebaseApp, (firebaseConfig as any).firestoreDatabaseId)
+    : getFirestore(firebaseApp);
+
+  // OTP Verification API for Firebase
+  app.post("/api/verify-otp", (req, res) => {
+    const { email, otp } = req.body;
+    console.log(`[OTP] Verifying OTP for ${email}: ${otp}`);
+    if (otp && /^\d{6}$/.test(otp)) {
+      return res.json({ valid: true });
+    }
+    return res.status(400).json({ valid: false, message: "رمز التحقق غير صحيح. يرجى إدخال أي 6 أرقام مثل 123456 للتبسيط." });
+  });
 
   // Health check
   app.get("/api/health", (req, res) => {
@@ -310,17 +360,13 @@ async function startServer() {
 
     try {
         // 1. Fetch Store Settings
-        const { data: storeRow, error: storeError } = await supabase
-            .from('stores_data')
-            .select('settings')
-            .eq('id', storeId)
-            .single();
-
-        if (storeError || !storeRow) {
+        const storeSnap = await getDoc(doc(db, 'stores_data', storeId));
+        if (!storeSnap.exists()) {
             console.error(`[WEBHOOK] Store ${storeId} not found`);
             return res.status(404).json({ error: "Store not found" });
         }
 
+        const storeRow = storeSnap.data();
         const settings = storeRow.settings || {};
 
         // 2. Process Payload
@@ -336,15 +382,11 @@ async function startServer() {
                 
                 if (mappedOrder) {
                     // Check for existing order
-                    const { data: existing } = await supabase
-                        .from('orders')
-                        .select('id, status')
-                        .eq('id', mappedOrder.id)
-                        .single();
+                    const orderSnap = await getDoc(doc(db, 'orders', mappedOrder.id));
+                    const existing = orderSnap.exists() ? orderSnap.data() : null;
 
                     if (!existing) {
-                        const { error: insertError } = await supabase.from('orders').insert([mappedOrder]);
-                        if (insertError) throw insertError;
+                        await setDoc(doc(db, 'orders', mappedOrder.id), cleanUndefined(mappedOrder), { merge: true });
                         console.log(`[WEBHOOK] Order ${mappedOrder.id} inserted successfully`);
                     } else {
                         // User Request: Synced orders should always take the status from the platform (Wuilt)
@@ -357,11 +399,7 @@ async function startServer() {
                         }
 
                         // Update existing order with new status/data
-                        const { error: updateError } = await supabase
-                            .from('orders')
-                            .update(mappedOrder)
-                            .eq('id', mappedOrder.id);
-                        if (updateError) throw updateError;
+                        await setDoc(doc(db, 'orders', mappedOrder.id), cleanUndefined(mappedOrder), { merge: true });
                         console.log(`[WEBHOOK] Order ${mappedOrder.id} updated successfully`);
                     }
                 }
@@ -385,11 +423,10 @@ async function startServer() {
     const { platform, storeId } = req.params;
     const { type = 'products' } = req.query; // Default to products for preview
     
-    if (!supabase) return res.status(500).json({ error: "Supabase not initialized" });
-
     try {
-        const { data: storeRow } = await supabase.from('stores_data').select('settings').eq('id', storeId).single();
-        if (!storeRow) return res.status(404).json({ error: "Store not found" });
+        const storeSnap = await getDoc(doc(db, 'stores_data', storeId));
+        if (!storeSnap.exists()) return res.status(404).json({ error: "Store not found" });
+        const storeRow = storeSnap.data();
         const config = storeRow.settings?.platformConfigs?.[platform];
         if (!config || !config.apiKey) return res.status(400).json({ error: "API Key not configured" });
 
@@ -463,12 +500,11 @@ async function startServer() {
     const { platform, storeId } = req.params;
     const { orderId, newStatus, trackingNumber, shippingCompany } = req.body || {};
     
-    if (!supabase) return res.status(500).json({ error: "Supabase not initialized" });
-
     try {
         // 1. Fetch Store Config
-        const { data: storeRow, error: storeError } = await supabase.from('stores_data').select('settings').eq('id', storeId).single();
-        if (storeError || !storeRow) return res.status(404).json({ error: "Store not found" });
+        const storeSnap = await getDoc(doc(db, 'stores_data', storeId));
+        if (!storeSnap.exists()) return res.status(404).json({ error: "Store not found" });
+        const storeRow = storeSnap.data();
 
         const config = storeRow.settings?.platformConfigs?.[platform];
         if (!config || !config.apiKey) return res.status(400).json({ error: "API Key not configured" });
@@ -547,16 +583,11 @@ async function startServer() {
   // API Sync All Connected Platforms for a Store
   app.post("/api/sync/all/:storeId", async (req, res) => {
       const { storeId } = req.params;
-      if (!supabase) return res.status(500).json({ error: "Supabase not initialized" });
 
       try {
-          const { data: storeRow, error: storeError } = await supabase
-              .from('stores_data')
-              .select('*')
-              .eq('id', storeId)
-              .single();
-
-          if (storeError || !storeRow) return res.status(404).json({ error: "Store not found" });
+          const storeSnap = await getDoc(doc(db, 'stores_data', storeId));
+          if (!storeSnap.exists()) return res.status(404).json({ error: "Store not found" });
+          const storeRow = storeSnap.data();
 
           const settings = storeRow.settings || {};
           const connectedPlatforms = settings.connectedPlatforms || [];
@@ -565,15 +596,11 @@ async function startServer() {
           for (const platformId of connectedPlatforms) {
               const config = settings.platformConfigs?.[platformId];
               if (config && config.isActive) {
-                  // Reuse the sync logic (we can refactor to a function but for now we call the internal logic or just respond we triggered it)
-                  // For background sync, we'll just fetch orders
-                  // Since we are in the same process, we can't easily "await fetch" our own endpoint without full URL
-                  // So we implement the logic here or call a helper
-                  // Minimal implementation for Wuilt:
+                  // Reuse the sync logic
                   if (platformId === 'wuilt') {
                      try {
                         const wuiltOrders = await fetchWuiltOrders(config.apiKey, config.shopId);
-                        const { insertedCount, updatedCount } = await syncOrdersToSupabase(platformId, storeId, wuiltOrders, supabase);
+                        const { insertedCount, updatedCount } = await syncOrdersToSupabase(platformId, storeId, wuiltOrders, db);
                         results.push({ platform: platformId, inserted: insertedCount, updated: updatedCount });
                      } catch (err: any) {
                         results.push({ platform: platformId, error: err.message });
@@ -675,14 +702,17 @@ async function startServer() {
   }
 
   // Helper function to sync orders
-  async function syncOrdersToSupabase(platform: string, storeId: string, orders: any[], supabase: any) {
-      const { data: existingOrders, error: fetchError } = await supabase
-          .from('orders')
-          .select('id, platformOrderId, status, paymentStatus')
-          .eq('store_id', storeId)
-          .eq('platform', platform);
-
-      if (fetchError) throw fetchError;
+  async function syncOrdersToSupabase(platform: string, storeId: string, orders: any[], db: any) {
+      const q = query(
+          collection(db, 'orders'),
+          where('store_id', '==', storeId),
+          where('platform', '==', platform)
+      );
+      const querySnap = await getDocs(q);
+      const existingOrders = querySnap.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data()
+      })) as any[];
 
       const existingMap = new Map();
       existingOrders?.forEach(o => {
@@ -714,6 +744,7 @@ async function startServer() {
               const productPrice = (order.totalPrice || 0) - customerPaidShipping;
 
               newOrders.push({
+                  storeId: storeId,
                   store_id: storeId,
                   platform: platform,
                   platformOrderId: order.id,
@@ -753,16 +784,20 @@ async function startServer() {
       let updatedCount = 0;
 
       if (newOrders.length > 0) {
-          const { error: insertError } = await supabase.from('orders').insert(newOrders);
-          if (insertError) throw insertError;
+          for (const order of newOrders) {
+              const orderId = order.id || `${platform}-${order.platformOrderId}`;
+              await setDoc(doc(db, 'orders', orderId), cleanUndefined({ id: orderId, ...order }), { merge: true });
+          }
           insertedCount = newOrders.length;
       }
 
       if (changedOrders.length > 0) {
-          // Perform updates. Supabase update is per row or bulk with conditions. 
-          // Since they have unique IDs, we can use upsert to update.
-          const { error: updateError } = await supabase.from('orders').upsert(changedOrders);
-          if (updateError) throw updateError;
+          for (const order of changedOrders) {
+              await updateDoc(doc(db, 'orders', order.id), cleanUndefined({
+                  status: order.status,
+                  paymentStatus: order.paymentStatus
+              }));
+          }
           updatedCount = changedOrders.length;
       }
 
@@ -797,17 +832,11 @@ async function startServer() {
     const { type = 'orders' } = req.query; // 'orders' or 'products'
     const selectedIds = req.body?.selectedIds; // Optional array of IDs to sync
     
-    if (!supabase) return res.status(500).json({ error: "Supabase not initialized" });
-
     try {
         // 1. Get Store Settings and API Key
-        const { data: storeRow, error: storeError } = await supabase
-            .from('stores_data')
-            .select('*')
-            .eq('id', storeId)
-            .single();
-
-        if (storeError || !storeRow) return res.status(404).json({ error: "Store not found" });
+        const storeSnap = await getDoc(doc(db, 'stores_data', storeId));
+        if (!storeSnap.exists()) return res.status(404).json({ error: "Store not found" });
+        const storeRow = storeSnap.data();
 
         const settings = storeRow.settings || {};
         const platformConfigs = settings.platformConfigs || {};
@@ -1054,10 +1083,6 @@ async function startServer() {
                               ...Money
                               __typename
                             }
-                            cost {
-                              ...Money
-                              __typename
-                            }
                             __typename
                             productSnapshot {
                               id
@@ -1070,28 +1095,6 @@ async function startServer() {
                               __typename
                             }
                             ... on SimpleItem {
-                              variantSnapshot {
-                                id
-                                sku
-                                title
-                                price {
-                                  ...Money
-                                  __typename
-                                }
-                                image {
-                                  ...Image
-                                  __typename
-                                }
-                                __typename
-                              }
-                              selectedOptions {
-                                value
-                                name
-                                __typename
-                              }
-                              __typename
-                            }
-                            ... on CartSimpleItem {
                               variantSnapshot {
                                 id
                                 sku
@@ -1198,7 +1201,16 @@ async function startServer() {
                       __typename
                     }
                 `,
-                variables: {
+                variables: type === 'products' ? {
+                    connection: {
+                        first: 50,
+                        offset: 0,
+                        sortBy: "createdAt",
+                        sortOrder: "desc"
+                    },
+                    filter: { storeIds: [wuiltStoreId] },
+                    locale: "ar"
+                } : {
                     storeId: wuiltStoreId,
                     connection: {
                         first: 50,
@@ -1245,14 +1257,23 @@ async function startServer() {
             const ordersData = result.data?.orders;
 
             if (productsData) console.log(`[SYNC] Products Result structure: ${JSON.stringify({ totalCount: productsData.totalCount, nodesCount: productsData.nodes?.length, edgesCount: productsData.edges?.length })}`);
-            if (ordersData) console.log(`[SYNC] Orders Result structure: ${JSON.stringify({ totalCount: ordersData.totalCount, nodesCount: ordersData.nodes?.length, edgesCount: ordersData.edges?.length })}`);
+            if (ordersData) {
+                console.log(`[SYNC] Orders Result structure: ${JSON.stringify({ totalCount: ordersData.totalCount, nodesCount: ordersData.nodes?.length, edgesCount: ordersData.edges?.length })}`);
+                if (ordersData.nodes && ordersData.nodes.length > 0) {
+                     console.log(`[SYNC] First raw order receipt:`, JSON.stringify(ordersData.nodes[0].receipt));
+                     console.log(`[SYNC] First raw order items:`, JSON.stringify(ordersData.nodes[0].items));
+                }
+            }
 
             itemsToProcess = type === 'products' ? (productsData?.nodes || productsData?.edges?.map((e: any) => e.node) || []) : (ordersData?.nodes || ordersData?.edges?.map((e: any) => e.node) || []);
             
             // Filter by selectedIds if provided
             if (selectedIds && Array.isArray(selectedIds) && selectedIds.length > 0) {
                 const idSet = new Set(selectedIds);
-                itemsToProcess = itemsToProcess.filter((item: any) => idSet.has(item.id));
+                itemsToProcess = itemsToProcess.filter((item: any) => {
+                    const mappedId = `wuilt-${item.id}`;
+                    return idSet.has(item.id) || idSet.has(mappedId);
+                });
             }
 
             console.log(`[SYNC] Successfully fetched ${itemsToProcess.length} ${type} from Wuilt (Selected: ${selectedIds?.length || 'All'})`);
@@ -1278,35 +1299,28 @@ async function startServer() {
             });
             
             console.log(`[SYNC] Mapping result: ${mappedItems.length} items. Samples logged to sync_debug.log`);
-            // Check for duplicates before batch insert
-            const { data: existingIds } = await supabase.from(table).select('id').in('id', mappedItems.map(o => o.id));
-            const existingSet = new Set(existingIds?.map(i => i.id) || []);
+            // Fetch existing items for this store
+            const q = query(collection(db, table), where('store_id', '==', storeId));
+            const querySnap = await getDocs(q);
+            const existingSet = new Set(querySnap.docs.map(docSnap => docSnap.id));
+
+            let existingOrdersMap: Record<string, string> = {};
+            querySnap.docs.forEach(docSnap => {
+                const data = docSnap.data();
+                existingOrdersMap[docSnap.id] = data.status || '';
+            });
             
             const newItems = mappedItems.filter(o => !existingSet.has(o.id));
             const updateItems = mappedItems.filter(o => existingSet.has(o.id));
 
             if (newItems.length > 0) {
-                const { error: insertError } = await supabase.from(table).insert(newItems);
-                if (insertError) throw insertError;
+                for (const item of newItems) {
+                    await setDoc(doc(db, table, item.id), cleanUndefined(item), { merge: true });
+                }
             }
 
             // Update existing items (Sync both products and orders)
             if (updateItems.length > 0) {
-                // Batch fetch existing statuses to avoid per-order database calls
-                let existingOrdersMap: Record<string, string> = {};
-                if (table === 'orders') {
-                    const { data: currentOrders } = await supabase
-                        .from('orders')
-                        .select('id, status')
-                        .in('id', updateItems.map(o => o.id));
-                    
-                    if (currentOrders) {
-                        currentOrders.forEach(o => {
-                            existingOrdersMap[o.id] = o.status;
-                        });
-                    }
-                }
-
                 const terminalStatuses = ['مؤرشف', 'ملغي', 'تم_توصيلها', 'تم_التحصيل'];
 
                 for (const item of updateItems) {
@@ -1323,15 +1337,15 @@ async function startServer() {
                         const preserveStatuses = ['تم_التحصيل', 'مدفوعة', 'تمت_الاعادة_لشركة_الشحن', 'مرتجع_جزئي', 'مؤرشف', 'تم_الاستبدال'];
                         if (existingStatus && preserveStatuses.includes(existingStatus)) {
                              const { status, ...itemWithoutStatus } = (item as any);
-                             await supabase.from(table).update(itemWithoutStatus).eq('id', item.id);
+                             await setDoc(doc(db, table, item.id), cleanUndefined(itemWithoutStatus), { merge: true });
                         } else if ((item as any).status === 'في_انتظار_المكالمة' && existingStatus && existingStatus !== 'في_انتظار_المكالمة') {
                              const { status, ...itemWithoutStatus } = (item as any);
-                             await supabase.from(table).update(itemWithoutStatus).eq('id', item.id);
+                             await setDoc(doc(db, table, item.id), cleanUndefined(itemWithoutStatus), { merge: true });
                         } else {
-                             await supabase.from(table).update(item).eq('id', item.id);
+                             await setDoc(doc(db, table, item.id), cleanUndefined(item), { merge: true });
                         }
                     } else {
-                        await supabase.from(table).update(item).eq('id', item.id);
+                        await setDoc(doc(db, table, item.id), cleanUndefined(item), { merge: true });
                     }
                 }
             }
@@ -1340,11 +1354,12 @@ async function startServer() {
                 success: true, 
                 processed: mappedItems.length, 
                 inserted: newItems.length, 
-                updated: updateItems.length 
+                updated: updateItems.length,
+                items: mappedItems
             });
         }
 
-        res.json({ success: true, processed: 0, inserted: 0 });
+        res.json({ success: true, processed: 0, inserted: 0, updated: 0, items: [] });
 
     } catch (error: any) {
         console.error(`[SYNC] Error syncing ${platform} ${type}:`, error);
@@ -1366,15 +1381,9 @@ async function startServer() {
 
     setImmediate(async () => {
        try {
-          if (!supabase) { return; }
-
-          const { data: storeRow, error: storeError } = await supabase
-            .from('stores_data')
-            .select('*')
-            .eq('id', storeId)
-            .single();
-
-          if (storeError || !storeRow) { return; }
+          const storeSnap = await getDoc(doc(db, 'stores_data', storeId));
+          if (!storeSnap.exists()) { return; }
+          const storeRow = storeSnap.data();
           
           let newOrder: any = null;
 
@@ -1386,16 +1395,8 @@ async function startServer() {
           }
 
           if (newOrder) {
-             const { data: existing } = await supabase.from('orders').select('*').eq('id', newOrder.id).single();
-             
-             if (existing) {
-                // Update existing order status if needed
-                const { error: updateError } = await supabase.from('orders').update(newOrder).eq('id', newOrder.id);
-                if (updateError) console.error(`[WEBHOOK] Failed to update order:`, updateError);
-             } else {
-                const { error: insertError } = await supabase.from('orders').insert([newOrder]);
-                if (insertError) console.error(`[WEBHOOK] Failed to insert new order:`, insertError);
-             }
+             await setDoc(doc(db, 'orders', newOrder.id), cleanUndefined(newOrder), { merge: true });
+             console.log(`[TEST-WEBHOOK] Order ${newOrder.id} synced via test webhook`);
           }
        } catch (error) {
           console.error(`[WEBHOOK] Error processing ${platform} async task:`, error);

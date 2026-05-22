@@ -85,7 +85,7 @@ const IncomeStatement = ({ orders, settings, wallet }: Omit<Props, 'activeStore'
         let inspectionFees = 0;
 
         completedOrders.forEach(o => {
-            o.items.forEach(item => {
+            (o.items || []).forEach(item => {
                 productRevenue += item.price * item.quantity;
                 const cost = getLatestProductCost(item.productId, settings);
                 cogs += cost * item.quantity;
@@ -97,11 +97,11 @@ const IncomeStatement = ({ orders, settings, wallet }: Omit<Props, 'activeStore'
         });
 
         // Expenses from wallet
-        const expenseTxs = wallet.transactions.filter(t => t.type === 'سحب' && t.category && t.category.startsWith('expense_'));
+        const expenseTxs = (wallet?.transactions || []).filter(t => t.type === 'سحب' && t.category && t.category.startsWith('expense_'));
         const totalExpenses = expenseTxs.reduce((sum, t) => sum + t.amount, 0);
 
         // Losses from returns
-        const returnTxs = wallet.transactions.filter(t => t.category === 'return' && t.type === 'سحب');
+        const returnTxs = (wallet?.transactions || []).filter(t => t.category === 'return' && t.type === 'سحب');
         const totalReturnFees = returnTxs.reduce((sum, t) => sum + t.amount, 0);
 
         const totalRevenue = productRevenue + shippingRevenue;
@@ -200,7 +200,7 @@ const ReportRow = ({ label, value, isBold, isLarge, highlight, color = 'slate' }
 const BalanceSheet = ({ orders, settings, wallet }: Omit<Props, 'activeStore'>) => {
     const stats = useMemo(() => {
         // Assets - Calculate cash balance dynamically from transactions for accuracy
-        const cashBalance = wallet.transactions.reduce((sum, t) => {
+        const cashBalance = (wallet?.transactions || []).reduce((sum, t) => {
             const amount = Number(t.amount) || 0;
             if (t.category === 'supply_purchase' || t.category === 'supply_deposit') return sum;
             if (t.type === 'إيداع') return t.status === 'completed' ? sum + amount : sum;

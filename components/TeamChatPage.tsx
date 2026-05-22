@@ -1,11 +1,8 @@
-
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { supabase } from '../services/supabaseClient';
+import React, { useState, useEffect, useRef } from 'react';
+import { db } from '../services/firebaseClient';
+import { collection, addDoc, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { User, Settings, ChatMessage, Employee } from '../types';
-// FIX: Import `MessageSquare` icon from `lucide-react` to fix 'Cannot find name' error.
-import { Send, User as UserIcon, Search, CornerDownLeft, MessageSquare, Paperclip } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Send, User as UserIcon, MessageSquare, Paperclip } from 'lucide-react';
 
 interface TeamChatPageProps {
   currentUser: User | null;
@@ -24,14 +21,13 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
   const notificationSound = useRef(new Audio('https://actions.google.com/sounds/v1/notifications/beep_short.ogg'));
 
   useEffect(() => {
-    // Filter out the current user from the employee list, assuming currentUser.email or phone matches employee.email or phone
+    // Filter out current user
     if (currentUser) {
       setEmployees(settings.employees.filter(e => e.email !== currentUser.email));
     }
   }, [settings.employees, currentUser]);
 
   useEffect(() => {
-    // Scroll to bottom when new messages arrive
     if (chatBodyRef.current) {
       chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
     }
@@ -45,61 +41,56 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
 
     setLoading(true);
 
-    const fetchMessages = async () => {
-      let query = supabase
-        .from('chat_messages')
-        .select('*')
-        .eq('store_id', activeStoreId);
+    // Set up standard query. We order by createdAt to get proper sequence.
+    const q = query(
+      collection(db, 'chat_messages'),
+      where('storeId', '==', activeStoreId),
+      orderBy('createdAt', 'asc')
+    );
 
-      if (activeChat === 'general') {
-        query = query.eq('receiver_id', 'general');
-      } else {
-        query = query.or(`and(sender_id.eq.${currentUser.phone},receiver_id.eq.${activeChat.id}),and(sender_id.eq.${activeChat.id},receiver_id.eq.${currentUser.phone})`);
-      }
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const allMsgs = snapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          store_id: d.storeId || '',
+          sender_id: d.senderId || '',
+          receiver_id: d.receiverId || '',
+          content: d.content || '',
+          is_read: d.isRead || false,
+          created_at: d.createdAt?.seconds ? new Date(d.createdAt.seconds * 1000).toISOString() : new Date().toISOString()
+        } as ChatMessage;
+      });
 
-      const { data, error } = await query.order('created_at', { ascending: true });
-      
-      if (error) {
-        console.error('Error fetching messages:', error);
-      } else {
-        setMessages(data || []);
-      }
+      // Pure client-side grouping filter for security/simplicity to avoid complex compound Firestore index builds
+      const filtered = allMsgs.filter(msg => {
+        if (activeChat === 'general') {
+          return msg.receiver_id === 'general';
+        } else {
+          return (
+            (msg.sender_id === currentUser.phone && msg.receiver_id === activeChat.id) ||
+            (msg.sender_id === activeChat.id && msg.receiver_id === currentUser.phone)
+          );
+        }
+      });
+
+      setMessages(filtered);
       setLoading(false);
-    };
 
-    fetchMessages();
-
-    const channel = supabase.channel(`team-chat:${activeStoreId}:${currentUser.phone}:${activeChat === 'general' ? 'general' : activeChat.id}`);
-    const subscription = channel
-      .on('postgres_changes', { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'chat_messages',
-          filter: `store_id=eq.${activeStoreId}`
-      }, 
-      (payload) => {
-          const newMessage = payload.new as ChatMessage;
-          let isRelevant = false;
-          if (activeChat === 'general') {
-            if (newMessage.receiver_id === 'general') {
-              isRelevant = true;
-            }
-          } else if ((newMessage.sender_id === currentUser.phone && newMessage.receiver_id === activeChat.id) || 
-              (newMessage.sender_id === activeChat.id && newMessage.receiver_id === currentUser.phone)) {
-              isRelevant = true;
-          }
-          
-          if (isRelevant) {
-            setMessages(prev => [...prev, newMessage]);
-            if (newMessage.sender_id !== currentUser.phone) {
-                notificationSound.current.play().catch(e => console.error('Error playing sound:', e));
-            }
-          }
-      })
-      .subscribe();
+      // Sound notification for incoming messages
+      if (filtered.length > 0) {
+        const lastMsg = filtered[filtered.length - 1];
+        if (lastMsg.sender_id !== currentUser.phone) {
+          notificationSound.current.play().catch(e => console.warn('Audio play blocked:', e));
+        }
+      }
+    }, (error) => {
+      console.error('Error listening to chat messages:', error);
+      setLoading(false);
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubscribe();
     };
   }, [activeChat, currentUser, activeStoreId]);
 
@@ -109,18 +100,17 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
     const content = newMessage;
     setNewMessage('');
 
-    const { error } = await supabase
-      .from('chat_messages')
-      .insert({
-          store_id: activeStoreId,
-          sender_id: currentUser.phone,
-          receiver_id: activeChat === 'general' ? 'general' : activeChat.id,
-          content: content,
+    try {
+      await addDoc(collection(db, 'chat_messages'), {
+        storeId: activeStoreId,
+        senderId: currentUser.phone,
+        receiverId: activeChat === 'general' ? 'general' : activeChat.id,
+        content: content,
+        createdAt: new Date()
       });
-
-    if (error) {
-      console.error('Error sending message:', error);
-      setNewMessage(content); // Re-add message to input if sending failed
+    } catch (err) {
+      console.error('Error sending message:', err);
+      setNewMessage(content); // Restore message
     }
   };
 
@@ -173,8 +163,8 @@ const TeamChatPage: React.FC<TeamChatPageProps> = ({ currentUser, activeStoreId,
               </div>
 
               <div ref={chatBodyRef} className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-100/50 dark:bg-slate-950">
-                {loading ? <p>جاري تحميل الرسائل...</p> : messages.map(msg => (
-                  <div key={msg.id} className={`flex items-end gap-2 ${msg.sender_id === currentUser?.phone ? 'justify-end' : 'justify-start'}`}>
+                {loading ? <p>جاري تحميل الرسائل...</p> : messages.map((msg, index) => (
+                  <div key={msg.id || index} className={`flex items-end gap-2 ${msg.sender_id === currentUser?.phone ? 'justify-end' : 'justify-start'}`}>
                     {msg.sender_id !== currentUser?.phone && <div className="w-8 h-8 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-500 flex-shrink-0"><UserIcon size={16}/></div>}
                     <div className={`max-w-[70%] p-3 rounded-2xl text-sm ${msg.sender_id === currentUser?.phone ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white rounded-bl-none shadow-sm'}`}>
                       {msg.content}

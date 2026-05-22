@@ -1,36 +1,117 @@
-import { supabase } from './supabaseClient';
-import { Store, StoreData, User, Product, Order, Transaction, Supplier, SupplyOrder, Review, AbandonedCart, ActivityLog, Employee, DiscountCode, Collection, CustomPage, PaymentMethod, CustomerProfile, GlobalOption, ShippingCarrierIntegration } from '../types';
+import { db } from './firebaseClient';
+import { 
+    collection, 
+    doc, 
+    getDoc, 
+    getDocs, 
+    setDoc, 
+    deleteDoc, 
+    query, 
+    where, 
+    getDocFromServer,
+    updateDoc
+} from 'firebase/firestore';
+import { 
+    Store, 
+    StoreData, 
+    User, 
+    Product, 
+    Order, 
+    Transaction, 
+    Supplier, 
+    SupplyOrder, 
+    Review, 
+    AbandonedCart, 
+    ActivityLog, 
+    Employee, 
+    DiscountCode, 
+    Collection, 
+    CustomPage, 
+    PaymentMethod, 
+    CustomerProfile, 
+    GlobalOption, 
+    ShippingCarrierIntegration 
+} from '../types';
 import { INITIAL_SETTINGS } from '../constants';
 
 const LOCAL_STORAGE_PREFIX = 'wuilt_backup_';
 
-// --- Supabase Restriction / Egress Quota Exceeded Status Tracker ---
-let isSupabaseRestricted = localStorage.getItem('supabase_restricted') === 'true';
+// --- Error Handling & Metrics ---
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
 
-export const getSupabaseRestrictedStatus = (): boolean => {
-    return isSupabaseRestricted;
-};
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+  }
+}
 
-export const setSupabaseRestricted = (restricted: boolean) => {
-    isSupabaseRestricted = restricted;
-    if (restricted) {
-        localStorage.setItem('supabase_restricted', 'true');
-    } else {
-        localStorage.removeItem('supabase_restricted');
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: localStorage.getItem('currentUserPhone') || null,
+      email: null,
+      emailVerified: null,
+      isAnonymous: null
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+// Recursively traverse and clean up any undefined properties for Firestore safety
+export function cleanUndefined<T>(obj: T): T {
+    if (obj === null || obj === undefined) {
+        return null as any;
     }
-    window.dispatchEvent(new Event('supabase_restricted_changed'));
+    if (Array.isArray(obj)) {
+        return obj.map(item => cleanUndefined(item)) as any;
+    }
+    if (typeof obj === 'object') {
+        const result: any = {};
+        for (const key of Object.keys(obj)) {
+            const val = (obj as any)[key];
+            if (val !== undefined) {
+                result[key] = cleanUndefined(val);
+            }
+        }
+        return result;
+    }
+    return obj;
+}
+
+// Check connection to Firestore (mandatory on initial boot)
+export const checkSupabaseConnection = async (): Promise<boolean> => {
+    try {
+        await getDocFromServer(doc(db, 'stores_data', 'connection_test'));
+        return true;
+    } catch (error: any) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+            console.error("Please check your Firebase configuration or network status.");
+        }
+        return false;
+    }
 };
 
-export const isRestrictionError = (error: any): boolean => {
-    if (!error) return false;
-    const msg = String(error.message || '').toLowerCase();
-    return msg.includes('exceed_egress_quota') || 
-           msg.includes('restricted due to') || 
-           msg.includes('quota') || 
-           msg.includes('payment required') ||
-           msg.includes('egress') ||
-           msg.includes('violat');
-};
+// --- Backward Compatibility Placeholders for Restriction Alerts ---
+export const getSupabaseRestrictedStatus = (): boolean => false;
+export const setSupabaseRestricted = (restricted: boolean) => {};
+export const isRestrictionError = (error: any): boolean => false;
 
 // --- Local Storage Helpers (Backup) ---
 const getLocal = (key: string) => {
@@ -45,377 +126,103 @@ const getLocal = (key: string) => {
 
 const saveLocal = (key: string, data: any) => {
     try {
-        if (!isSupabaseRestricted && key !== 'global' && data && data.settings) {
-            // It's a store data object. Let's make it lighter for backup to avoid quota errors.
-            const liteData = {
-                ...data,
-                settings: {
-                    ...data.settings,
-                    // Replace large, non-critical arrays with empty ones for the local backup.
-                    // The primary source of truth is the database.
-                    products: [],
-                    supplyOrders: [],
-                    reviews: [],
-                    abandonedCarts: [],
-                    activityLogs: [],
-                },
-                // Also, truncate transactional data for local backup
-                orders: data.orders ? data.orders.slice(0, 50) : [],
-                wallet: data.wallet ? {
-                    ...data.wallet,
-                    transactions: data.wallet.transactions ? data.wallet.transactions.slice(0, 100) : []
-                } : { balance: 0, transactions: [] },
-                customers: data.customers ? data.customers.slice(0, 100) : []
-            };
-
-            localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(liteData));
-
-        } else {
-            // For global data (users, etc.), or when Supabase is restricted (local is primary), save it completely as it's usually small.
-            localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(data));
-        }
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(data));
     } catch (e) {
-        // If it still fails, log a warning. The app can function without local backup.
-        console.warn(`LocalStorage backup for '${key}' failed, likely due to storage limits. The app will continue, relying on the primary database.`, e);
+        console.warn(`LocalStorage backup failed for key '${key}'. Reliance on the primary Firebase database will continue.`, e);
     }
 };
 
-// FIX: Define fetchLegacyDocument to resolve "Cannot find name" error.
-const fetchLegacyDocument = async (docId: string): Promise<any> => {
-    if (isSupabaseRestricted) {
-        return getLocal(docId);
-    }
-    try {
-        const { data, error } = await supabase
-            .from('documents')
-            .select('content')
-            .eq('id', docId)
-            .single();
-
-        if (error || !data) {
-            if (isRestrictionError(error)) {
-                setSupabaseRestricted(true);
-            }
-            console.warn(`Legacy document ${docId} not found.`);
-            return getLocal(docId); // Fallback to local storage if not in DB
-        }
-        return data.content;
-    } catch (err) {
-        if (isRestrictionError(err)) {
-            setSupabaseRestricted(true);
-        }
-        console.error(`Error fetching legacy document ${docId}:`, err);
-        return getLocal(docId); // Fallback to local storage on error
-    }
-};
-
-
-export const checkSupabaseConnection = async (): Promise<boolean> => {
-    if (isSupabaseRestricted) {
-        return false;
-    }
-    try {
-        const { error } = await supabase.from('stores_data').select('id').limit(1);
-        if (error) {
-            if (isRestrictionError(error)) {
-                setSupabaseRestricted(true);
-            }
-            return false;
-        }
-        return true;
-    } catch (e: any) {
-        if (isRestrictionError(e)) {
-            setSupabaseRestricted(true);
-        }
-        return false;
-    }
-};
-
-/**
- * Ensures a parent record for the store exists in the `stores_data` table.
- * This is crucial to call before any operation that has a foreign key constraint on `stores_data`.
- */
 export const ensureStoreRecordExists = async (storeId: string, storeName: string): Promise<{ success: boolean, error?: string }> => {
-    if (isSupabaseRestricted) {
-        return { success: true };
-    }
     try {
-        const { error } = await supabase
-            .from('stores_data')
-            .upsert({ id: storeId, name: storeName }, { onConflict: 'id' });
-        if (error) {
-            if (isRestrictionError(error)) {
-                setSupabaseRestricted(true);
-                return { success: true };
-            }
-            throw error;
-        }
-        console.log(`Ensured store record exists for ${storeId}`);
+        const storeRef = doc(db, 'stores_data', storeId);
+        await setDoc(storeRef, { id: storeId, name: storeName }, { merge: true });
         return { success: true };
     } catch (err: any) {
-        if (isRestrictionError(err)) {
-            setSupabaseRestricted(true);
-            return { success: true };
-        }
         console.error("Failed to ensure store record exists:", err);
         return { success: false, error: err.message };
     }
 };
 
-// --- Relational Data Functions ---
+// --- Relational Data Functions using Firestore ---
 
 export const getStoreData = async (storeId: string): Promise<StoreData | null> => {
-    if (isSupabaseRestricted) {
-        console.warn(`[LOCAL MODE] Supabase restricted. Loading store ${storeId} from local storage backup.`);
-        const localData = getLocal(storeId);
-        if (localData && (!localData.settings.products || localData.settings.products.length === 0) && INITIAL_SETTINGS.products.length > 0) {
-            console.log(`No products found in local backup for store ${storeId}. Seeding from initial settings.`);
-            localData.settings.products = INITIAL_SETTINGS.products;
-        }
-        return localData;
-    }
-
     try {
-        // Fetching for ALL 17 Tables in chunks to prevent 'TypeError: Failed to fetch'
-        // caused by overwhelming AI Studio proxy / browser connection limits
-        const storeRes = await supabase.from('stores_data').select('settings, name').eq('id', storeId).single();
-        const productsRes = await supabase.from('products').select('*').eq('store_id', storeId);
-        const ordersRes = await supabase.from('orders').select('*').eq('store_id', storeId);
-        const transactionsRes = await supabase.from('transactions').select('*').eq('store_id', storeId);
-        
-        const suppliersRes = await supabase.from('suppliers').select('*').eq('store_id', storeId);
-        const supplyOrdersRes = await supabase.from('supply_orders').select('*').eq('store_id', storeId);
-        const reviewsRes = await supabase.from('reviews').select('*').eq('store_id', storeId);
-        const abandonedCartsRes = await supabase.from('abandoned_carts').select('*').eq('store_id', storeId);
-        
-        const activityLogsRes = await supabase.from('activity_logs').select('*').eq('store_id', storeId);
-        const employeesRes = await supabase.from('employees').select('*, users(full_name, email)').eq('store_id', storeId);
-        const discountsRes = await supabase.from('discount_codes').select('*').eq('store_id', storeId);
-        const collectionsRes = await supabase.from('collections').select('*').eq('store_id', storeId);
-        
-        const pagesRes = await supabase.from('custom_pages').select('*').eq('store_id', storeId);
-        const paymentMethodsRes = await supabase.from('payment_methods').select('*').eq('store_id', storeId);
-        const customersRes = await supabase.from('customers').select('*').eq('store_id', storeId);
-        const globalOptionsRes = await supabase.from('global_options').select('*').eq('store_id', storeId);
-        const shippingIntRes = await supabase.from('shipping_integrations').select('*').eq('store_id', storeId);
+        // Fetch static settings
+        const storeSnap = await getDoc(doc(db, 'stores_data', storeId)).catch(err => {
+            handleFirestoreError(err, OperationType.GET, `stores_data/${storeId}`);
+            throw err;
+        });
 
-        const resList = [
-            storeRes, productsRes, ordersRes, transactionsRes, suppliersRes, supplyOrdersRes,
-            reviewsRes, abandonedCartsRes, activityLogsRes, employeesRes, discountsRes,
-            collectionsRes, pagesRes, paymentMethodsRes, customersRes, globalOptionsRes, shippingIntRes
-        ];
-
-        const restrictionError = resList.find(res => res.error && isRestrictionError(res.error));
-        if (restrictionError) {
-            console.warn("[LOCAL MODE] Egress quota exceeded detected in load queries. Switching to local-only fallback.", restrictionError.error);
-            setSupabaseRestricted(true);
-            const localData = getLocal(storeId);
-            if (localData && (!localData.settings.products || localData.settings.products.length === 0) && INITIAL_SETTINGS.products.length > 0) {
-                localData.settings.products = INITIAL_SETTINGS.products;
-            }
-            return localData;
-        }
-
-        if (storeRes.error || !storeRes.data) {
-            console.log(`Store ${storeId} not found in relational DB, trying legacy...`);
-            const legacyData = await fetchLegacyDocument(storeId);
-            // Also check legacy data for products
-            if (legacyData && (!legacyData.settings.products || legacyData.settings.products.length === 0) && INITIAL_SETTINGS.products.length > 0) {
-                console.log(`No products found in legacy data for store ${storeId}. Seeding from initial settings.`);
-                legacyData.settings.products = INITIAL_SETTINGS.products;
-            }
-            return legacyData;
-        }
-
-        // --- Reconstruct Data Types ---
-
-        let products: Product[] = (productsRes.data || []).map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            sku: p.sku,
-            price: p.price,
-            stockQuantity: p.stock_quantity,
-            ...p.details
-        }));
-        
-        // If no products are found in the database, seed them from the initial settings.
-        // This acts as a one-time migration for existing stores.
-        if (products.length === 0 && INITIAL_SETTINGS.products.length > 0) {
-            console.log(`No products found in DB for store ${storeId}. Seeding from initial settings.`);
-            products = INITIAL_SETTINGS.products;
-        }
-
-        const orders: Order[] = (ordersRes.data || []).map((o: any) => ({
-            id: o.id,
-            orderNumber: o.order_number,
-            customerName: o.customer_name,
-            status: o.status,
-            date: o.date,
-            ...o.details
-        }));
-
-        const transactions: Transaction[] = (transactionsRes.data || []).map((t: any) => ({
-            id: t.id,
-            type: t.type,
-            amount: t.amount,
-            date: t.date,
-            category: t.category,
-            note: t.note,
-            status: t.details?.status || t.status, // Fallback to t.status if exists, else from details
-            ...t.details
-        }));
-
-        const suppliers: Supplier[] = (suppliersRes.data || []).map((s: any) => {
-            let extraInfo = {};
+        // Safe fetch collections with storeId filtering
+        const fetchCollection = async <T>(collectionName: string): Promise<T[]> => {
             try {
-                if (s.notes && s.notes.startsWith('{') && s.notes.endsWith('}')) {
-                    extraInfo = JSON.parse(s.notes);
+                let snap = await getDocs(query(collection(db, collectionName), where('storeId', '==', storeId)));
+                let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+                if (items.length === 0) {
+                    const snap_snake = await getDocs(query(collection(db, collectionName), where('store_id', '==', storeId)));
+                    items = snap_snake.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
                 }
-            } catch (e) {
-                // Not JSON, just regular notes
+                return items;
+            } catch (err) {
+                handleFirestoreError(err, OperationType.LIST, collectionName);
+                return [];
             }
+        };
 
-            return {
-                id: s.id,
-                name: s.name,
-                phone: s.phone,
-                address: s.address,
-                notes: extraInfo && (extraInfo as any).notes !== undefined ? (extraInfo as any).notes : s.notes,
-                ...(extraInfo as any)
-            };
-        });
+        const [
+            products,
+            orders,
+            transactions,
+            suppliers,
+            supplyOrders,
+            reviews,
+            abandonedCarts,
+            activityLogs,
+            employees,
+            discountCodes,
+            collectionsList,
+            customPages,
+            paymentMethods,
+            customers,
+            globalOptions,
+            shippingIntegrations
+        ] = await Promise.all([
+            fetchCollection<Product>('products'),
+            fetchCollection<Order>('orders'),
+            fetchCollection<Transaction>('transactions'),
+            fetchCollection<Supplier>('suppliers'),
+            fetchCollection<SupplyOrder>('supply_orders'),
+            fetchCollection<Review>('reviews'),
+            fetchCollection<AbandonedCart>('abandoned_carts'),
+            fetchCollection<ActivityLog>('activity_logs'),
+            fetchCollection<Employee>('employees'),
+            fetchCollection<DiscountCode>('discount_codes'),
+            fetchCollection<Collection>('collections'),
+            fetchCollection<CustomPage>('custom_pages'),
+            fetchCollection<PaymentMethod>('payment_methods'),
+            fetchCollection<CustomerProfile>('customers'),
+            fetchCollection<GlobalOption>('global_options'),
+            fetchCollection<ShippingCarrierIntegration>('shipping_integrations')
+        ]);
 
-        const supplyOrders: SupplyOrder[] = (supplyOrdersRes.data || []).map((s: any) => {
-            let itemsList = s.items || [];
-            let metadata = {};
-            
-            // Sync fallback: if items is packed with metadata (to bypass missing columns)
-            if (s.items && !Array.isArray(s.items) && s.items._is_packed) {
-                itemsList = s.items.data || [];
-                metadata = s.items.metadata || {};
-            }
+        const storeSettings = storeSnap.exists() ? (storeSnap.data().settings || {}) : {};
+        const storeName = storeSnap.exists() ? (storeSnap.data().name || '') : '';
 
-            return {
-                id: s.id,
-                supplierId: s.supplier_id,
-                totalCost: s.total_cost,
-                date: s.date,
-                items: itemsList,
-                status: s.status,
-                ...metadata
-            };
-        });
+        // Products seeding fallback for new database
+        let finalProducts = products;
+        if (finalProducts.length === 0 && INITIAL_SETTINGS.products.length > 0) {
+            finalProducts = INITIAL_SETTINGS.products;
+        }
 
-        const reviews: Review[] = (reviewsRes.data || []).map((r: any) => ({
-            id: r.id,
-            productId: r.product_id,
-            customerName: r.customer_name,
-            rating: r.rating,
-            comment: r.comment,
-            status: r.status,
-            date: r.date
-        }));
-
-        const abandonedCarts: AbandonedCart[] = (abandonedCartsRes.data || []).map((c: any) => ({
-            id: c.id,
-            customerName: c.customer_name,
-            customerPhone: c.customer_phone,
-            totalValue: c.total_value,
-            date: c.date,
-            items: c.items
-        }));
-
-        const activityLogs: ActivityLog[] = (activityLogsRes.data || []).map((l: any) => ({
-            id: l.id,
-            user: l.user_name,
-            action: l.action,
-            details: l.details,
-            timestamp: l.timestamp,
-            date: l.date
-        }));
-
-        const employees: Employee[] = (employeesRes.data || []).map((e: any) => ({
-            id: e.phone,
-            name: e.users?.full_name || 'مستخدم غير معروف',
-            email: e.users?.email || 'بريد غير معروف',
-            permissions: e.permissions || [],
-            status: e.status
-        }));
-
-        const discountCodes: DiscountCode[] = (discountsRes.data || []).map((d: any) => ({
-            id: d.id,
-            code: d.code,
-            type: d.type,
-            value: d.value,
-            active: d.active,
-            usageCount: d.usage_count
-        }));
-
-        const collections: Collection[] = (collectionsRes.data || []).map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            description: c.description,
-            image: c.image
-        }));
-
-        const customPages: CustomPage[] = (pagesRes.data || []).map((p: any) => ({
-            id: p.id,
-            title: p.title,
-            slug: p.slug,
-            content: p.content,
-            isActive: p.is_active
-        }));
-
-        const paymentMethods: PaymentMethod[] = (paymentMethodsRes.data || []).map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            details: p.details,
-            instructions: p.instructions,
-            type: p.type,
-            active: p.active,
-            logoUrl: p.logo_url
-        }));
-
-        const customers: CustomerProfile[] = (customersRes.data || []).map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            phone: c.phone,
-            address: c.address,
-            loyaltyPoints: c.loyalty_points,
-            totalSpent: c.total_spent,
-            firstOrderDate: c.first_order_date,
-            lastOrderDate: c.last_order_date,
-            notes: c.notes,
-            // derived fields for UI
-            totalOrders: c.orders_count || 0,
-            successfulOrders: 0, // Should be recalculated from orders if critical
-            returnedOrders: 0,
-            averageOrderValue: (c.orders_count || 0) > 0 ? c.total_spent / c.orders_count : 0
-        }));
-
-        const globalOptions: GlobalOption[] = (globalOptionsRes.data || []).map((g: any) => ({
-            id: g.id,
-            name: g.name,
-            values: g.values || []
-        }));
-
-        const shippingIntegrations: ShippingCarrierIntegration[] = (shippingIntRes.data || []).map((s: any) => ({
-            id: s.id,
-            provider: s.provider,
-            apiKey: s.api_key,
-            apiSecret: s.api_secret,
-            accountNumber: s.account_number,
-            isConnected: s.is_connected
-        }));
-
-        const walletSettingsObj = storeRes.data?.settings?.wallet_settings;
-        const withdrawRequestsArr = storeRes.data?.settings?.withdraw_requests || [];
-        const supplyBalanceNum = storeRes.data?.settings?.supply_balance || 0;
+        const walletSettingsObj = storeSettings.wallet_settings;
+        const withdrawRequestsArr = storeSettings.withdraw_requests || [];
+        const supplyBalanceNum = storeSettings.supply_balance || 0;
 
         const fullData: StoreData = {
             settings: {
-                ...storeRes.data.settings,
-                products: products,
+                ...INITIAL_SETTINGS,
+                ...storeSettings,
+                products: finalProducts,
                 suppliers: suppliers,
                 supplyOrders: supplyOrders,
                 reviews: reviews,
@@ -423,7 +230,7 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
                 activityLogs: activityLogs,
                 employees: employees,
                 discountCodes: discountCodes,
-                collections: collections,
+                collections: collectionsList,
                 customPages: customPages,
                 paymentMethods: paymentMethods,
                 globalOptions: globalOptions,
@@ -446,27 +253,12 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
 
     } catch (err: any) {
         console.error("Error loading relational data:", err);
-        if (isRestrictionError(err)) {
-            setSupabaseRestricted(true);
-        }
-        const localData = getLocal(storeId);
-        // Also check local storage data for products
-        if (localData && (!localData.settings.products || localData.settings.products.length === 0) && INITIAL_SETTINGS.products.length > 0) {
-            console.log(`No products found in local backup for store ${storeId}. Seeding from initial settings.`);
-            localData.settings.products = INITIAL_SETTINGS.products;
-        }
-        return localData;
+        return getLocal(storeId);
     }
 };
 
 export const saveStoreData = async (store: Store, data: StoreData): Promise<{ success: boolean, error?: string }> => {
     saveLocal(store.id, data);
-
-    if (isSupabaseRestricted) {
-        console.warn(`[LOCAL MODE] Supabase restricted. Saved store ${store.id} to local storage only.`);
-        return { success: true };
-    }
-
     try {
         await ensureStoreRecordExists(store.id, store.name);
 
@@ -479,335 +271,238 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         
         const { orders = [], wallet = { balance: 0, transactions: [] }, customers = [] } = data;
 
-        const cleanSettingsFinal = {
+        const cleanSettingsFinal = cleanUndefined({
             ...cleanSettings,
-            wallet_settings: wallet.settings,
-            withdraw_requests: wallet.withdrawRequests,
-            supply_balance: wallet.supplyBalance
-        };
+            wallet_settings: wallet.settings || null,
+            withdraw_requests: wallet.withdrawRequests || [],
+            supply_balance: wallet.supplyBalance || 0
+        });
 
-        
-        // --- Handle Deletions by Syncing ---
-        const syncAndDelete = async (tableName: string, stateItems: any[], dbIdColumn = 'id', stateIdColumn = 'id') => {
-            let query = supabase
-                .from(tableName)
-                .select(`${dbIdColumn}${tableName === 'orders' ? ', details' : ''}`)
-                .eq('store_id', store.id);
-            
-            const { data: dbItems, error: fetchError } = await query;
-
-            if (fetchError) {
-                if (isRestrictionError(fetchError)) {
-                    setSupabaseRestricted(true);
-                    console.warn(`[LOCAL MODE] Egress quota exceeded detected during sync of table ${tableName}. Switching to local-only.`);
-                } else {
-                    console.error(`Sync Fetch Error on table '${tableName}'. Deletion sync skipped. Error: ${fetchError.message}`);
+        // --- Deletion & Synchronization logic ---
+        const syncCollection = async (collectionName: string, stateItems: any[], idField = 'id') => {
+            try {
+                let snap = await getDocs(query(collection(db, collectionName), where('storeId', '==', store.id)));
+                if (snap.empty) {
+                    snap = await getDocs(query(collection(db, collectionName), where('store_id', '==', store.id)));
                 }
-                return; // Don't throw, just log and continue
-            }
+                
+                const existingDbDocs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const stateIds = new Set(stateItems.map(item => String(item[idField] || `${store.id}_${item.phone}`)));
 
-            const dbIds = new Set(dbItems.map((item: any) => item[dbIdColumn]));
-            const stateIds = new Set(stateItems.map(item => item[stateIdColumn]));
-            
-            // If it's the orders table, filter out synced ones that are NOT in state
-            const idsToDelete = [...dbItems]
-                .filter((item: any) => {
-                    if (tableName === 'orders') {
-                        // We previously protected synced orders here, but it caused issues with intentional deletions.
-                        // Now we allow any item missing from state to be deleted.
-                    }
-                    return !stateIds.has(item[dbIdColumn]);
-                })
-                .map((item: any) => item[dbIdColumn]);
+                // 1. Delete items not present in incoming state
+                const deletePromises = snap.docs
+                    .filter(doc => !stateIds.has(doc.id))
+                    .map(doc => deleteDoc(doc.ref).catch(err => handleFirestoreError(err, OperationType.DELETE, `${collectionName}/${doc.id}`)));
+                
+                await Promise.all(deletePromises);
 
-            if (idsToDelete.length > 0) {
-                const { error: deleteError } = await supabase
-                    .from(tableName)
-                    .delete()
-                    .eq('store_id', store.id)
-                    .in(dbIdColumn, idsToDelete);
+                // 2. Put / Upsert items in state 
+                const upsertPromises = stateItems.map(async (item) => {
+                    const docId = String(item[idField] || `${store.id}_${item.phone}`);
+                    const docRef = doc(db, collectionName, docId);
+                    
+                    const payload = cleanUndefined({ 
+                        ...item, 
+                        storeId: store.id,
+                        store_id: store.id 
+                    });
+                    await setDoc(docRef, payload, { merge: true }).catch(err => {
+                        handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${docId}`);
+                    });
+                });
 
-                if (deleteError) {
-                    if (isRestrictionError(deleteError)) {
-                        setSupabaseRestricted(true);
-                        console.warn(`[LOCAL MODE] Egress quota exceeded detected during delete sync of table ${tableName}. Switching to local-only.`);
-                    } else {
-                        console.error(`Sync Delete Error on table '${tableName}'. Some items may not have been deleted. Error: ${deleteError.message}`);
-                    }
-                }
+                await Promise.all(upsertPromises);
+            } catch (err) {
+                console.error(`Error syncing collection ${collectionName}:`, err);
             }
         };
 
-        // Execute all sync operations in parallel to improve performance
+        // Parallel processing of all synchronization targets
         await Promise.all([
-            syncAndDelete('products', products),
-            syncAndDelete('orders', orders),
-            syncAndDelete('transactions', wallet.transactions),
-            syncAndDelete('suppliers', suppliers),
-            syncAndDelete('supply_orders', supplyOrders),
-            syncAndDelete('reviews', reviews),
-            syncAndDelete('abandoned_carts', abandonedCarts),
-            syncAndDelete('employees', employees, 'phone', 'id'),
-            syncAndDelete('discount_codes', discountCodes),
-            syncAndDelete('collections', collections),
-            syncAndDelete('custom_pages', customPages),
-            syncAndDelete('payment_methods', paymentMethods),
-            syncAndDelete('customers', customers),
-            syncAndDelete('global_options', globalOptions),
-            syncAndDelete('shipping_integrations', shippingIntegrations)
+            syncCollection('products', products),
+            syncCollection('orders', orders),
+            syncCollection('transactions', wallet.transactions),
+            syncCollection('suppliers', suppliers),
+            syncCollection('supply_orders', supplyOrders),
+            syncCollection('reviews', reviews),
+            syncCollection('abandoned_carts', abandonedCarts),
+            syncCollection('employees', employees, 'phone'),
+            syncCollection('discount_codes', discountCodes),
+            syncCollection('collections', collections),
+            syncCollection('custom_pages', customPages),
+            syncCollection('payment_methods', paymentMethods),
+            syncCollection('customers', customers),
+            syncCollection('global_options', globalOptions),
+            syncCollection('shipping_integrations', shippingIntegrations)
         ]);
-        // --- End of Deletion Logic ---
 
-        // --- Handle Upserts ---
-        const saveArray = async (table: string, payload: any[], onConflict: string = 'id') => {
-            if (payload && payload.length > 0) {
-                const uniquePayload = Array.from(new Map(payload.map(item => [String(item.id || `${item.store_id}_${item.phone}`), item])).values());
-                if (uniquePayload.length === 0) return;
-                const { error } = await supabase.from(table).upsert(uniquePayload, { onConflict });
-                if (error) throw new Error(`${table} save failed: ${error.message}`);
-            }
-        };
+        // Save store general settings meta record
+        const storeRef = doc(db, 'stores_data', store.id);
+        const storePayload = cleanUndefined({ settings: cleanSettingsFinal, name: store.name });
+        await setDoc(storeRef, storePayload, { merge: true }).catch(err => {
+            handleFirestoreError(err, OperationType.WRITE, `stores_data/${store.id}`);
+            throw err;
+        });
 
-        const productsPayload = products.map(p => {
-            const { id, name, sku, price, stockQuantity, ...details } = p;
-            return { id, store_id: store.id, name, sku, price, stock_quantity: stockQuantity, details };
-        });
-        const ordersPayload = orders.map(o => {
-            const { id, orderNumber, customerName, status, date, ...details } = o;
-            const total_price = o.totalAmountOverride ?? (o.productPrice + o.shippingFee - (o.discount || 0));
-            return { id, store_id: store.id, order_number: orderNumber, customer_name: customerName, status, date, total_price, details };
-        });
-        const transactionsPayload = wallet.transactions.map(t => {
-            const { status, ...rest } = t;
-            return { 
-                id: t.id, 
-                store_id: store.id, 
-                type: t.type, 
-                amount: t.amount, 
-                date: t.date, 
-                category: t.category, 
-                note: t.note, 
-                details: { ...t.details, status }
-            };
-        });
-        const suppliersPayload = suppliers.map(s => {
-            const { id, name, phone, address, notes, ...extra } = s;
-            let finalNotes = notes;
-            if (Object.keys(extra).length > 0) finalNotes = JSON.stringify({ notes, ...extra });
-            return { id, store_id: store.id, name, phone, address, notes: finalNotes };
-        });
-        const supplyOrdersPayload = supplyOrders.map(so => { 
-            const { id, supplierId, totalCost, date, items, status, ...metadata } = so; 
-            return { id, store_id: store.id, supplier_id: supplierId, total_cost: totalCost, date, items: { _is_packed: true, data: items, metadata }, status };
-        });
-        const reviewsPayload = reviews.map(r => { const { productId, customerName, ...rest } = r; return { ...rest, store_id: store.id, product_id: productId, customer_name: customerName }; });
-        const abandonedCartsPayload = abandonedCarts.map(ac => ({ id: ac.id, store_id: store.id, customer_name: ac.customerName, customer_phone: ac.customerPhone, total_value: ac.totalValue, date: ac.date, items: ac.items }));
-        const activityLogsPayload = activityLogs.map(al => ({ id: al.id, store_id: store.id, user_name: al.user, action: al.action, details: al.details, timestamp: al.timestamp, date: al.date }));
-        const employeesPayload = employees.map(e => ({ store_id: store.id, phone: e.id, permissions: e.permissions, status: e.status }));
-        const discountsPayload = discountCodes.map(d => { const { usageCount, ...rest } = d; return { ...rest, store_id: store.id, usage_count: usageCount }; });
-        const collectionsPayload = collections.map(c => ({ ...c, store_id: store.id }));
-        const pagesPayload = customPages.map(p => { const { isActive, ...rest } = p; return { ...rest, store_id: store.id, is_active: isActive }; });
-        const paymentsPayload = paymentMethods.map(p => { const { logoUrl, ...rest } = p; return { ...rest, store_id: store.id, logo_url: logoUrl }; });
-        const customersPayload = customers.map(c => ({
-            id: c.id, store_id: store.id, name: c.name, phone: c.phone, address: c.address,
-            loyalty_points: c.loyaltyPoints, total_spent: c.totalSpent,
-            first_order_date: c.firstOrderDate, last_order_date: c.lastOrderDate, notes: c.notes
-        }));
-        const globalOptionsPayload = globalOptions.map(g => ({ ...g, store_id: store.id }));
-        const shippingIntegrationsPayload = shippingIntegrations.map(si => { const { apiKey, apiSecret, accountNumber, isConnected, ...rest } = si; return { ...rest, store_id: store.id, api_key: apiKey, api_secret: apiSecret, account_number: accountNumber, is_connected: isConnected }; });
-        
-        // Execute saves in parallel
-        await Promise.all([
-            saveArray('products', productsPayload),
-            saveArray('orders', ordersPayload),
-            saveArray('transactions', transactionsPayload),
-            saveArray('suppliers', suppliersPayload),
-            saveArray('supply_orders', supplyOrdersPayload),
-            saveArray('reviews', reviewsPayload),
-            saveArray('abandoned_carts', abandonedCartsPayload),
-            saveArray('activity_logs', activityLogsPayload),
-            saveArray('employees', employeesPayload, 'store_id,phone'),
-            saveArray('discount_codes', discountsPayload),
-            saveArray('collections', collectionsPayload),
-            saveArray('custom_pages', pagesPayload),
-            saveArray('payment_methods', paymentsPayload),
-            saveArray('customers', customersPayload),
-            saveArray('global_options', globalOptionsPayload),
-            saveArray('shipping_integrations', shippingIntegrationsPayload)
-        ]);
-        
-        const { error: storeError } = await supabase
-            .from('stores_data')
-            .update({ settings: cleanSettingsFinal, name: store.name })
-            .eq('id', store.id);
-        if (storeError) throw storeError;
-
-        console.log(`Successfully saved all relational data for store ${store.id}`);
+        console.log(`Successfully saved and synced to Firebase for store ${store.id}`);
         return { success: true };
+
     } catch (err: any) {
-        console.error(`Failed to save relational data for store ${store.id}:`, err);
-        if (isRestrictionError(err)) {
-            setSupabaseRestricted(true);
-            console.warn("[LOCAL MODE] Egress quota exceeded detected during save. Falling back to local storage only.");
-            return { success: true };
-        }
+        console.error(`Failed to save store data to Firebase:`, err);
         return { success: false, error: err.message };
     }
 };
 
 export const getGlobalData = async (): Promise<{ users: User[], loyaltyData: any } | null> => {
-    if (isSupabaseRestricted) {
-        return getLocal('global');
-    }
     try {
-        const { data, error } = await supabase
-            .from('users')
-            .select('*');
+        const queryUsers = collection(db, 'users');
+        const snap = await getDocs(queryUsers).catch(err => {
+            handleFirestoreError(err, OperationType.LIST, 'users');
+            throw err;
+        });
 
-        if (error) {
-            if (isRestrictionError(error)) {
-                setSupabaseRestricted(true);
-                return getLocal('global');
-            }
-            console.error("Error fetching users from Supabase:", error);
-            throw error;
+        const dbUsers: User[] = snap.docs.map(doc => {
+            const data = doc.data();
+            return {
+                fullName: data.fullName || '',
+                phone: doc.id,
+                password: data.password || '',
+                email: data.email || '',
+                stores: data.stores || [],
+                sites: data.sites || [],
+                isAdmin: data.isAdmin || false,
+                isBanned: data.isBanned || false,
+                joinDate: data.joinDate || ''
+            };
+        });
+
+        const localGlobal = getLocal('global');
+        const localUsers: User[] = localGlobal?.users || [];
+
+        // Dual-merge to prevent lock-outs when swapping to a fresh cloud instance
+        const mergedUsersMap = new Map<string, User>();
+        localUsers.forEach(u => { if (u && u.phone) mergedUsersMap.set(u.phone, u); });
+        dbUsers.forEach(u => { if (u && u.phone) mergedUsersMap.set(u.phone, u); });
+
+        const finalUsers = Array.from(mergedUsersMap.values());
+
+        // Perform migration upsert if local users don't exist in the database
+        const needsUpload = finalUsers.some(fu => !dbUsers.some(du => du.phone === fu.phone));
+        if (needsUpload && finalUsers.length > 0) {
+            console.log(`[MIGRATION] Migrating local users to Firestore...`);
+            const migrationPromises = finalUsers.map(async (u) => {
+                const userRef = doc(db, 'users', u.phone);
+                const userPayload = cleanUndefined({
+                    fullName: u.fullName,
+                    password: u.password,
+                    email: u.email,
+                    stores: u.stores || [],
+                    sites: u.sites || [],
+                    isAdmin: u.isAdmin || false,
+                    isBanned: u.isBanned || false,
+                    joinDate: u.joinDate
+                });
+                await setDoc(userRef, userPayload, { merge: true }).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${u.phone}`));
+            });
+            await Promise.all(migrationPromises);
         }
 
-        if (!data) {
-            console.log('No users found, trying local storage.');
-            return getLocal('global');
-        }
-
-        const users: User[] = data.map((u: any) => ({
-            fullName: u.full_name,
-            phone: u.phone,
-            password: u.password,
-            email: u.email,
-            stores: u.stores,
-            sites: u.sites,
-            isAdmin: u.is_admin,
-            isBanned: u.is_banned,
-            joinDate: u.join_date,
-        }));
-        
-        const globalData = { users, loyaltyData: {} };
+        const globalData = { users: finalUsers, loyaltyData: {} };
         saveLocal('global', globalData);
         return globalData;
 
     } catch (err: any) {
-        console.error("Error fetching global data:", err);
-        if (isRestrictionError(err)) {
-            setSupabaseRestricted(true);
-        }
+        console.error("Error fetching global data from Firestore:", err);
         return getLocal('global');
     }
 };
 
 export const saveGlobalData = async (data: { users: User[], loyaltyData: any }): Promise<{ success: boolean, error?: string }> => {
     saveLocal('global', data);
-    if (isSupabaseRestricted) {
-        return { success: true };
-    }
     try {
-        const usersToUpsert = data.users.map(u => ({
-            phone: u.phone,
-            full_name: u.fullName,
-            password: u.password,
-            email: u.email,
-            stores: u.stores,
-            sites: u.sites,
-            is_admin: u.isAdmin || false,
-            is_banned: u.isBanned || false,
-            join_date: u.joinDate
-        }));
+        const savePromises = data.users.map(async (u) => {
+            if (!u.phone) return;
+            const userRef = doc(db, 'users', u.phone);
+            const userPayload = cleanUndefined({
+                fullName: u.fullName,
+                password: u.password,
+                email: u.email,
+                stores: u.stores || [],
+                sites: u.sites || [],
+                isAdmin: u.isAdmin || false,
+                isBanned: u.isBanned || false,
+                joinDate: u.joinDate || ''
+            });
+            await setDoc(userRef, userPayload, { merge: true }).catch(err => {
+                handleFirestoreError(err, OperationType.WRITE, `users/${u.phone}`);
+            });
+        });
 
-        const { error } = await supabase
-            .from('users')
-            .upsert(usersToUpsert, { onConflict: 'phone' });
-        
-        if (error) {
-            if (isRestrictionError(error)) {
-                setSupabaseRestricted(true);
-                return { success: true };
-            }
-            console.error("Error upserting users to Supabase:", error);
-            throw error;
-        }
+        await Promise.all(savePromises);
         return { success: true };
     } catch (err: any) {
-        console.error("Error saving global data:", err);
-        if (isRestrictionError(err)) {
-            setSupabaseRestricted(true);
-            return { success: true };
-        }
+        console.error("Error saving global data to Firestore:", err);
         return { success: false, error: err.message };
     }
 };
 
-// FIX: Implement clearStoreData to resolve export error.
 export const clearStoreData = async (storeId: string, targets: string[]): Promise<{ success: boolean, error?: string }> => {
     try {
-        const tablesToDeleteFrom = targets.map(target => {
+        const collectionsToClear = targets.map(target => {
             switch (target) {
-                case 'orders': return 'orders';
-                case 'products': return 'products';
-                case 'customers': return 'customers';
-                case 'wallet': return 'transactions';
-                case 'activity': return 'activity_logs';
-                case 'coupons': return 'discount_codes';
-                case 'reviews': return 'reviews';
-                case 'abandoned_carts': return 'abandoned_carts';
-                case 'shipping': return 'shipping_integrations';
-                case 'pages': return 'custom_pages';
-                case 'suppliers': return 'suppliers';
-                case 'supply_orders': return 'supply_orders';
-                case 'global_options': return 'global_options';
-                case 'payment_methods': return 'payment_methods';
-                case 'collections': return 'collections';
-                case 'employees': return 'employees';
-                case 'partner_withdrawals': return []; // Handled below by updating settings
-                case 'settings': return ['discount_codes', 'reviews', 'abandoned_carts', 'global_options', 'custom_pages', 'payment_methods', 'collections', 'suppliers', 'supply_orders', 'shipping_integrations'];
-                default: return null;
+                case 'orders': return ['orders'];
+                case 'products': return ['products'];
+                case 'customers': return ['customers'];
+                case 'wallet': return ['transactions'];
+                case 'activity': return ['activity_logs'];
+                case 'coupons': return ['discount_codes'];
+                case 'reviews': return ['reviews'];
+                case 'abandoned_carts': return ['abandoned_carts'];
+                case 'shipping': return ['shipping_integrations'];
+                case 'pages': return ['custom_pages'];
+                case 'suppliers': return ['suppliers'];
+                case 'supply_orders': return ['supply_orders'];
+                case 'global_options': return ['global_options'];
+                case 'payment_methods': return ['payment_methods'];
+                case 'collections': return ['collections'];
+                case 'employees': return ['employees'];
+                case 'settings': return [
+                    'discount_codes', 'reviews', 'abandoned_carts', 'global_options', 
+                    'custom_pages', 'payment_methods', 'collections', 'suppliers', 
+                    'supply_orders', 'shipping_integrations'
+                ];
+                default: return [];
             }
-        }).flat().filter(Boolean) as string[];
+        }).flat();
 
-        for (const table of tablesToDeleteFrom) {
-            const { error } = await supabase
-                .from(table)
-                .delete()
-                .eq('store_id', storeId);
-            if (error) throw new Error(`Failed to clear table ${table}: ${error.message}`);
-        }
+        const clearPromises = collectionsToClear.map(async (colName) => {
+            const q = query(collection(db, colName), where('storeId', '==', storeId));
+            const snap = await getDocs(q);
+            const deleteDocs = snap.docs.map(doc => deleteDoc(doc.ref));
+            await Promise.all(deleteDocs);
+        });
 
-        // Special handling for nested settings data
+        await Promise.all(clearPromises);
+
+        // Reset partner and wallet metrics
         if (targets.includes('partner_withdrawals')) {
-            const { data: storeRes, error: fetchError } = await supabase
-                .from('stores_data')
-                .select('settings')
-                .eq('id', storeId)
-                .single();
-
-            if (!fetchError && storeRes) {
+            const storeRef = doc(db, 'stores_data', storeId);
+            const storeSnap = await getDoc(storeRef);
+            if (storeSnap.exists()) {
+                const settings = storeSnap.data().settings || {};
                 const updatedSettings = {
-                    ...storeRes.settings,
+                    ...settings,
                     partnerTransactions: [],
                     withdraw_requests: [],
                     supply_balance: 0
                 };
-                const { error: updateError } = await supabase
-                    .from('stores_data')
-                    .update({ settings: updatedSettings })
-                    .eq('id', storeId);
-                if (updateError) throw updateError;
+                await updateDoc(storeRef, { settings: updatedSettings });
             }
         }
-        
+
         if (targets.includes('settings')) {
-            const { error } = await supabase
-                .from('stores_data')
-                .update({ settings: INITIAL_SETTINGS })
-                .eq('id', storeId);
-            if (error) throw error;
+            const storeRef = doc(db, 'stores_data', storeId);
+            await updateDoc(storeRef, { settings: INITIAL_SETTINGS });
         }
 
         return { success: true };
@@ -816,41 +511,29 @@ export const clearStoreData = async (storeId: string, targets: string[]): Promis
     }
 };
 
-// FIX: Implement migrateAllLegacyDataToRelational to resolve export error.
 export const migrateAllLegacyDataToRelational = async (users: User[]): Promise<{ success: boolean, summary: string, error?: string }> => {
     let summaryLog: string[] = [];
     try {
-        summaryLog.push(`Starting migration for ${users.length} users.`);
-
-        const usersToUpsert = users.map(u => {
-            const { stores, sites, ...userMetadata } = u;
-            return {
-                id: u.phone,
-                email: u.email,
-                user_metadata: userMetadata
-            };
-        });
-
+        summaryLog.push(`Starting migration for ${users.length} users into Firestore.`);
+        // Legacy stores are already backup formats, save directly to Firestore
         for (const user of users) {
             if (!user.stores) continue;
             for (const store of user.stores) {
                 summaryLog.push(`-- Processing store: ${store.name} (${store.id})`);
-                const legacyData = await fetchLegacyDocument(store.id);
+                const legacyData = getLocal(store.id);
                 if (legacyData) {
                     const { success, error } = await saveStoreData(store, legacyData);
                     if (!success) {
-                        summaryLog.push(`--- FAILED to migrate data for store ${store.id}: ${error}`);
+                        summaryLog.push(`--- FAILED to migrate store ${store.id}: ${error}`);
                     } else {
-                        summaryLog.push(`--- Successfully migrated data for store ${store.id}.`);
+                        summaryLog.push(`--- Successfully migrated store ${store.id}.`);
                     }
                 } else {
-                    summaryLog.push(`--- No legacy data found for store ${store.id}, skipping.`);
+                    summaryLog.push(`--- No local data found for store ${store.id}, skipping.`);
                 }
             }
         }
-        
         return { success: true, summary: summaryLog.join('\n') };
-
     } catch (err: any) {
         summaryLog.push(`\n** MIGRATION FAILED **: ${err.message}`);
         return { success: false, summary: summaryLog.join('\n'), error: err.message };
