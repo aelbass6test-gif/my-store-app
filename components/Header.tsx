@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { User, Store } from '../types';
-import { Menu, ChevronDown, User as UserIcon, Settings, LogOut, ExternalLink, Replace, Sun, Moon, Monitor } from 'lucide-react';
+import { Menu, ChevronDown, User as UserIcon, Settings, LogOut, ExternalLink, Replace, Sun, Moon, Monitor, ShieldAlert } from 'lucide-react';
+import { getSupabaseRestrictedStatus } from '../services/databaseService';
 
 const PATH_TITLES: { [key: string]: string } = {
     '/': 'الرئيسية',
@@ -42,6 +43,7 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onLogout, onToggleSidebar,
     const userMenuRef = useRef<HTMLDivElement>(null);
     const location = useLocation();
     const navigate = useNavigate();
+    const [isRestricted, setIsRestricted] = useState(getSupabaseRestrictedStatus());
 
     const handleManageStoresClick = () => {
         if (currentUser?.isAdmin) {
@@ -66,6 +68,14 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onLogout, onToggleSidebar,
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
+
+    useEffect(() => {
+        const handleRestrictionChange = () => {
+            setIsRestricted(getSupabaseRestrictedStatus());
+        };
+        window.addEventListener('supabase_restricted_changed', handleRestrictionChange);
+        return () => window.removeEventListener('supabase_restricted_changed', handleRestrictionChange);
+    }, []);
     
     const handleLogout = () => {
         setIsUserMenuOpen(false);
@@ -85,11 +95,20 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onLogout, onToggleSidebar,
     <button onClick={onToggleSidebar} className="md:hidden p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-500">
         <Menu size={24} />
     </button>
-    <div className="flex items-center gap-2 sm:gap-3">
+    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
         <h1 className="text-lg sm:text-xl font-display font-black text-slate-900 dark:text-white tracking-tight">{pageTitle}</h1>
         {activeStore && (
             <span className="hidden sm:inline-block px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black rounded-lg border border-slate-200 dark:border-slate-700">
                 ID: {activeStore.id}
+            </span>
+        )}
+        {isRestricted && (
+            <span 
+                title="تم تجاوز حصة Supabase المحددة للمشروع. التطبيق يعمل حالياً في الوضع الاحتياطي المحلي الآمن للحفاظ على بياناتك وعملك دون توقف."
+                className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 text-xs font-bold rounded-xl border border-amber-200/80 dark:border-amber-900/30 animate-pulse cursor-help"
+            >
+                <ShieldAlert size={14} className="animate-bounce" />
+                <span>الوضع المحلي نشط</span>
             </span>
         )}
     </div>

@@ -4,6 +4,34 @@ import { INITIAL_SETTINGS } from '../constants';
 
 const LOCAL_STORAGE_PREFIX = 'wuilt_backup_';
 
+// --- Supabase Restriction / Egress Quota Exceeded Status Tracker ---
+let isSupabaseRestricted = localStorage.getItem('supabase_restricted') === 'true';
+
+export const getSupabaseRestrictedStatus = (): boolean => {
+    return isSupabaseRestricted;
+};
+
+export const setSupabaseRestricted = (restricted: boolean) => {
+    isSupabaseRestricted = restricted;
+    if (restricted) {
+        localStorage.setItem('supabase_restricted', 'true');
+    } else {
+        localStorage.removeItem('supabase_restricted');
+    }
+    window.dispatchEvent(new Event('supabase_restricted_changed'));
+};
+
+export const isRestrictionError = (error: any): boolean => {
+    if (!error) return false;
+    const msg = String(error.message || '').toLowerCase();
+    return msg.includes('exceed_egress_quota') || 
+           msg.includes('restricted due to') || 
+           msg.includes('quota') || 
+           msg.includes('payment required') ||
+           msg.includes('egress') ||
+           msg.includes('violat');
+};
+
 // --- Local Storage Helpers (Backup) ---
 const getLocal = (key: string) => {
     try {
@@ -17,7 +45,7 @@ const getLocal = (key: string) => {
 
 const saveLocal = (key: string, data: any) => {
     try {
-        if (key !== 'global' && data && data.settings) {
+        if (!isSupabaseRestricted && key !== 'global' && data && data.settings) {
             // It's a store data object. Let's make it lighter for backup to avoid quota errors.
             const liteData = {
                 ...data,
@@ -43,7 +71,7 @@ const saveLocal = (key: string, data: any) => {
             localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(liteData));
 
         } else {
-            // For global data (users, etc.), save it completely as it's usually small.
+            // For global data (users, etc.), or when Supabase is restricted (local is primary), save it completely as it's usually small.
             localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(data));
         }
     } catch (e) {
@@ -54,6 +82,9 @@ const saveLocal = (key: string, data: any) => {
 
 // FIX: Define fetchLegacyDocument to resolve "Cannot find name" error.
 const fetchLegacyDocument = async (docId: string): Promise<any> => {
+    if (isSupabaseRestricted) {
+        return getLocal(docId);
+    }
     try {
         const { data, error } = await supabase
             .from('documents')
@@ -62,11 +93,17 @@ const fetchLegacyDocument = async (docId: string): Promise<any> => {
             .single();
 
         if (error || !data) {
+            if (isRestrictionError(error)) {
+                setSupabaseRestricted(true);
+            }
             console.warn(`Legacy document ${docId} not found.`);
             return getLocal(docId); // Fallback to local storage if not in DB
         }
         return data.content;
     } catch (err) {
+        if (isRestrictionError(err)) {
+            setSupabaseRestricted(true);
+        }
         console.error(`Error fetching legacy document ${docId}:`, err);
         return getLocal(docId); // Fallback to local storage on error
     }
@@ -74,10 +111,22 @@ const fetchLegacyDocument = async (docId: string): Promise<any> => {
 
 
 export const checkSupabaseConnection = async (): Promise<boolean> => {
+    if (isSupabaseRestricted) {
+        return false;
+    }
     try {
         const { error } = await supabase.from('stores_data').select('id').limit(1);
-        return !error;
-    } catch (e) {
+        if (error) {
+            if (isRestrictionError(error)) {
+                setSupabaseRestricted(true);
+            }
+            return false;
+        }
+        return true;
+    } catch (e: any) {
+        if (isRestrictionError(e)) {
+            setSupabaseRestricted(true);
+        }
         return false;
     }
 };
@@ -87,14 +136,27 @@ export const checkSupabaseConnection = async (): Promise<boolean> => {
  * This is crucial to call before any operation that has a foreign key constraint on `stores_data`.
  */
 export const ensureStoreRecordExists = async (storeId: string, storeName: string): Promise<{ success: boolean, error?: string }> => {
+    if (isSupabaseRestricted) {
+        return { success: true };
+    }
     try {
         const { error } = await supabase
             .from('stores_data')
             .upsert({ id: storeId, name: storeName }, { onConflict: 'id' });
-        if (error) throw error;
+        if (error) {
+            if (isRestrictionError(error)) {
+                setSupabaseRestricted(true);
+                return { success: true };
+            }
+            throw error;
+        }
         console.log(`Ensured store record exists for ${storeId}`);
         return { success: true };
     } catch (err: any) {
+        if (isRestrictionError(err)) {
+            setSupabaseRestricted(true);
+            return { success: true };
+        }
         console.error("Failed to ensure store record exists:", err);
         return { success: false, error: err.message };
     }
@@ -103,6 +165,16 @@ export const ensureStoreRecordExists = async (storeId: string, storeName: string
 // --- Relational Data Functions ---
 
 export const getStoreData = async (storeId: string): Promise<StoreData | null> => {
+    if (isSupabaseRestricted) {
+        console.warn(`[LOCAL MODE] Supabase restricted. Loading store ${storeId} from local storage backup.`);
+        const localData = getLocal(storeId);
+        if (localData && (!localData.settings.products || localData.settings.products.length === 0) && INITIAL_SETTINGS.products.length > 0) {
+            console.log(`No products found in local backup for store ${storeId}. Seeding from initial settings.`);
+            localData.settings.products = INITIAL_SETTINGS.products;
+        }
+        return localData;
+    }
+
     try {
         // Fetching for ALL 17 Tables in chunks to prevent 'TypeError: Failed to fetch'
         // caused by overwhelming AI Studio proxy / browser connection limits
@@ -126,6 +198,23 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
         const customersRes = await supabase.from('customers').select('*').eq('store_id', storeId);
         const globalOptionsRes = await supabase.from('global_options').select('*').eq('store_id', storeId);
         const shippingIntRes = await supabase.from('shipping_integrations').select('*').eq('store_id', storeId);
+
+        const resList = [
+            storeRes, productsRes, ordersRes, transactionsRes, suppliersRes, supplyOrdersRes,
+            reviewsRes, abandonedCartsRes, activityLogsRes, employeesRes, discountsRes,
+            collectionsRes, pagesRes, paymentMethodsRes, customersRes, globalOptionsRes, shippingIntRes
+        ];
+
+        const restrictionError = resList.find(res => res.error && isRestrictionError(res.error));
+        if (restrictionError) {
+            console.warn("[LOCAL MODE] Egress quota exceeded detected in load queries. Switching to local-only fallback.", restrictionError.error);
+            setSupabaseRestricted(true);
+            const localData = getLocal(storeId);
+            if (localData && (!localData.settings.products || localData.settings.products.length === 0) && INITIAL_SETTINGS.products.length > 0) {
+                localData.settings.products = INITIAL_SETTINGS.products;
+            }
+            return localData;
+        }
 
         if (storeRes.error || !storeRes.data) {
             console.log(`Store ${storeId} not found in relational DB, trying legacy...`);
@@ -355,8 +444,11 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
         saveLocal(storeId, fullData);
         return fullData;
 
-    } catch (err) {
+    } catch (err: any) {
         console.error("Error loading relational data:", err);
+        if (isRestrictionError(err)) {
+            setSupabaseRestricted(true);
+        }
         const localData = getLocal(storeId);
         // Also check local storage data for products
         if (localData && (!localData.settings.products || localData.settings.products.length === 0) && INITIAL_SETTINGS.products.length > 0) {
@@ -369,6 +461,11 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
 
 export const saveStoreData = async (store: Store, data: StoreData): Promise<{ success: boolean, error?: string }> => {
     saveLocal(store.id, data);
+
+    if (isSupabaseRestricted) {
+        console.warn(`[LOCAL MODE] Supabase restricted. Saved store ${store.id} to local storage only.`);
+        return { success: true };
+    }
 
     try {
         await ensureStoreRecordExists(store.id, store.name);
@@ -400,7 +497,12 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             const { data: dbItems, error: fetchError } = await query;
 
             if (fetchError) {
-                console.error(`Sync Fetch Error on table '${tableName}'. Deletion sync skipped. Error: ${fetchError.message}`);
+                if (isRestrictionError(fetchError)) {
+                    setSupabaseRestricted(true);
+                    console.warn(`[LOCAL MODE] Egress quota exceeded detected during sync of table ${tableName}. Switching to local-only.`);
+                } else {
+                    console.error(`Sync Fetch Error on table '${tableName}'. Deletion sync skipped. Error: ${fetchError.message}`);
+                }
                 return; // Don't throw, just log and continue
             }
 
@@ -426,7 +528,12 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
                     .in(dbIdColumn, idsToDelete);
 
                 if (deleteError) {
-                    console.error(`Sync Delete Error on table '${tableName}'. Some items may not have been deleted. Error: ${deleteError.message}`);
+                    if (isRestrictionError(deleteError)) {
+                        setSupabaseRestricted(true);
+                        console.warn(`[LOCAL MODE] Egress quota exceeded detected during delete sync of table ${tableName}. Switching to local-only.`);
+                    } else {
+                        console.error(`Sync Delete Error on table '${tableName}'. Some items may not have been deleted. Error: ${deleteError.message}`);
+                    }
                 }
             }
         };
@@ -539,17 +646,29 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
         return { success: true };
     } catch (err: any) {
         console.error(`Failed to save relational data for store ${store.id}:`, err);
+        if (isRestrictionError(err)) {
+            setSupabaseRestricted(true);
+            console.warn("[LOCAL MODE] Egress quota exceeded detected during save. Falling back to local storage only.");
+            return { success: true };
+        }
         return { success: false, error: err.message };
     }
 };
 
 export const getGlobalData = async (): Promise<{ users: User[], loyaltyData: any } | null> => {
+    if (isSupabaseRestricted) {
+        return getLocal('global');
+    }
     try {
         const { data, error } = await supabase
             .from('users')
             .select('*');
 
         if (error) {
+            if (isRestrictionError(error)) {
+                setSupabaseRestricted(true);
+                return getLocal('global');
+            }
             console.error("Error fetching users from Supabase:", error);
             throw error;
         }
@@ -575,14 +694,20 @@ export const getGlobalData = async (): Promise<{ users: User[], loyaltyData: any
         saveLocal('global', globalData);
         return globalData;
 
-    } catch (err) {
+    } catch (err: any) {
         console.error("Error fetching global data:", err);
+        if (isRestrictionError(err)) {
+            setSupabaseRestricted(true);
+        }
         return getLocal('global');
     }
 };
 
 export const saveGlobalData = async (data: { users: User[], loyaltyData: any }): Promise<{ success: boolean, error?: string }> => {
     saveLocal('global', data);
+    if (isSupabaseRestricted) {
+        return { success: true };
+    }
     try {
         const usersToUpsert = data.users.map(u => ({
             phone: u.phone,
@@ -601,12 +726,20 @@ export const saveGlobalData = async (data: { users: User[], loyaltyData: any }):
             .upsert(usersToUpsert, { onConflict: 'phone' });
         
         if (error) {
+            if (isRestrictionError(error)) {
+                setSupabaseRestricted(true);
+                return { success: true };
+            }
             console.error("Error upserting users to Supabase:", error);
             throw error;
         }
         return { success: true };
     } catch (err: any) {
         console.error("Error saving global data:", err);
+        if (isRestrictionError(err)) {
+            setSupabaseRestricted(true);
+            return { success: true };
+        }
         return { success: false, error: err.message };
     }
 };

@@ -1949,8 +1949,143 @@ const InventoryReport: React.FC<{ activeStore?: Store; settings: Settings }> = (
     );
 };
 
+const FinalReport: React.FC<ReportsPageProps> = ({ orders, settings, wallet, activeStore }) => {
+    const stats = useMemo(() => {
+        const collectedOrders = orders.filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة');
+        const failedOrders = orders.filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status));
+
+        let totalProductRevenue = 0;
+        let totalExtraMarkup = 0;
+        let totalShippingRevenue = 0;
+        let totalCogs = 0;
+        let totalProfit = 0;
+
+        collectedOrders.forEach(order => {
+            const { profit } = calculateOrderProfitLoss(order, settings);
+            totalProductRevenue += order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            totalShippingRevenue += order.shippingFee;
+            totalCogs += order.items.reduce((sum, item) => sum + (item.cost * item.quantity), 0);
+            totalProfit += profit;
+            
+            order.items.forEach(item => {
+                const product = settings.products.find(p => p.id === item.productId);
+                if (product?.profitMode === 'commission' && product.basePrice !== undefined) {
+                    totalExtraMarkup += (item.price - product.basePrice) * item.quantity;
+                }
+            });
+        });
+
+        let totalLoss = 0;
+        failedOrders.forEach(order => {
+            const { loss } = calculateOrderProfitLoss(order, settings);
+            totalLoss += loss;
+        });
+
+        const totalExpenses = wallet.transactions.filter(t => t.category?.startsWith('expense_')).reduce((sum, t) => sum + t.amount, 0);
+        const finalNet = totalProfit - totalLoss - totalExpenses;
+
+        const inventoryValue = settings.products.reduce((sum, p) => {
+            if (p.hasVariants && p.variants) return sum + p.variants.reduce((vSum, v) => vSum + (getLatestProductCost(v.id, settings) * (v.stockQuantity || 0)), 0);
+            return sum + (getLatestProductCost(p.id, settings) * (p.stockQuantity || 0));
+        }, 0);
+
+        const inventorySalesValue = settings.products.reduce((sum, p) => {
+            if (p.hasVariants && p.variants) return sum + p.variants.reduce((vSum, v) => vSum + (v.price * (v.stockQuantity || 0)), 0);
+            return sum + (p.price * (p.stockQuantity || 0));
+        }, 0);
+
+        const partners = settings.partners || [];
+        const partnerTransactions = settings.partnerTransactions || [];
+        const totalCapital = partnerTransactions
+            .filter(t => t.type === 'capital_addition')
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        const pendingCollection = orders.filter(o => o.status === 'تم_توصيلها' && !o.collectionProcessed).reduce((sum, o) => sum + (o.productPrice + o.shippingFee), 0);
+
+        const partnerPerformance = partners.map(partner => {
+             const partnerTx = partnerTransactions.filter(t => t.partnerId === partner.id);
+             const distributions = partnerTx.filter(t => t.type === 'profit_distribution').reduce((sum, t) => sum + t.amount, 0);
+             const currentProfitShare = (finalNet * (partner.profitRatio || 0)) / 100;
+             const undistributedShare = Math.max(0, currentProfitShare - distributions);
+             return { ...partner, currentBalance: partner.balance || 0 };
+        });
+
+        return { totalProductRevenue, totalExtraMarkup, totalShippingRevenue, totalCogs, totalLoss, totalExpenses, finalNet, inventoryValue, inventorySalesValue, partnerPerformance, totalCapital, pendingCollection };
+    }, [orders, settings, wallet]);
+
+    return (
+        <div className="bg-slate-900 p-8 rounded-3xl text-white shadow-2xl relative overflow-hidden mt-8">
+            <h2 className="text-2xl font-black mb-8 flex items-center gap-3">
+                <FileText className="text-blue-400" /> التقرير الختامي الشامل
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-2">رأس المال</p>
+                    <p className="text-2xl font-black text-blue-400">{stats.totalCapital.toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                </div>
+                <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-2">إجمالي المبيعات (كلي)</p>
+                    <p className="text-2xl font-black">{(stats.totalProductRevenue + stats.totalExtraMarkup + stats.totalShippingRevenue).toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                </div>
+                <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-2">مستحقات الشحن (الاستلام)</p>
+                    <p className="text-2xl font-black text-amber-400">{stats.pendingCollection.toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                </div>
+                <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-2">الصافي النهائي</p>
+                    <p className="text-3xl font-black text-emerald-400">{stats.finalNet.toLocaleString('ar-EG')} <span className="text-base font-normal">ج.م</span></p>
+                </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-2">إجمالي تكلفة البضاعة (COGS)</p>
+                    <p className="text-2xl font-black text-red-400">{stats.totalCogs.toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                </div>
+                <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-2">إجمالي الخسائر (مرتجع)</p>
+                    <p className="text-2xl font-black text-red-400">{stats.totalLoss.toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                </div>
+                <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-2">إجمالي المصروفات الإدارية</p>
+                    <p className="text-2xl font-black text-amber-400">{stats.totalExpenses.toLocaleString('ar-EG')} <span className="text-sm font-normal">ج.م</span></p>
+                </div>
+                
+                <div className="lg:col-span-3 border-t border-slate-700 pt-6 mt-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                        <p className="text-slate-400 text-xs font-bold uppercase mb-4">قيمة البضاعة المتاحة (في المخازن)</p>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                                <p className="text-slate-400 text-[10px]">بسعر الشراء</p>
+                                <p className="font-black">{stats.inventoryValue.toLocaleString('ar-EG')} ج.م</p>
+                            </div>
+                            <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                                <p className="text-slate-400 text-[10px]">بسعر البيع</p>
+                                <p className="font-black text-emerald-300">{stats.inventorySalesValue.toLocaleString('ar-EG')} ج.م</p>
+                            </div>
+                        </div>
+                        </div>
+                        <div>
+                        <p className="text-slate-400 text-xs font-bold uppercase mb-4">أرصدة وعهدة الشركاء</p>
+                        <div className="space-y-2">
+                            {stats.partnerPerformance.map(p => (
+                                <div key={p.id} className="flex justify-between items-center bg-slate-800 p-2 rounded-lg text-sm">
+                                    <span className="font-bold">{p.name}</span>
+                                    <span className={`${p.currentBalance >= 0 ? 'text-emerald-400' : 'text-red-400'} font-black tabular-nums`}>
+                                        {p.currentBalance.toLocaleString('ar-EG')} ج.م
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                        </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const ReportsPage: React.FC<ReportsPageProps> = ({ orders, settings, wallet, activeStore }) => {
-    const [activeTab, setActiveTab] = useState<'summary' | 'losses' | 'comprehensive' | 'partners' | 'inventory' | 'accounting'>('summary');
+    const [activeTab, setActiveTab] = useState<'summary' | 'losses' | 'comprehensive' | 'final' | 'partners' | 'inventory' | 'accounting'>('summary');
 
     return (
         <div className="space-y-6 sm:space-y-8 pb-12">
@@ -1966,6 +2101,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ orders, settings, wallet, act
                 <button onClick={() => setActiveTab('summary')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'summary' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>ملخص المبيعات</button>
                 <button onClick={() => setActiveTab('losses')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'losses' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>تقرير الخسائر</button>
                 <button onClick={() => setActiveTab('comprehensive')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'comprehensive' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>التقرير الشامل</button>
+                <button onClick={() => setActiveTab('final')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'final' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>التقرير الختامي الشامل</button>
                 <button onClick={() => setActiveTab('partners')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'partners' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>تقرير الشركاء</button>
                 <button onClick={() => setActiveTab('inventory')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'inventory' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 dark:shadow-none' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>المشتريات والمخزون</button>
                 <button onClick={() => setActiveTab('accounting')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'accounting' ? 'bg-purple-600 text-white shadow-lg shadow-purple-200 dark:shadow-none' : 'text-purple-600 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-900/30 border border-purple-200 dark:border-purple-800/50'}`}>الحسابات الختامية 📊</button>
@@ -1975,6 +2111,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ orders, settings, wallet, act
                 {activeTab === 'summary' && <SalesSummaryReport orders={orders} settings={settings} wallet={wallet} />}
                 {activeTab === 'losses' && <LossesReport orders={orders} settings={settings} activeStore={activeStore} />}
                 {activeTab === 'comprehensive' && <ComprehensiveReport orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
+                {activeTab === 'final' && <FinalReport orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
                 {activeTab === 'partners' && <PartnersFinancialReport orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
                 {activeTab === 'inventory' && <InventoryReport activeStore={activeStore} settings={settings} />}
                 {activeTab === 'accounting' && <AccountingReports orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
