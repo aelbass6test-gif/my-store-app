@@ -21,15 +21,10 @@ const UniversalInstallPrompt: React.FC<UniversalInstallPromptProps> = ({
   useEffect(() => {
     // Show prompt if not standalone and not dismissed
     if (!isStandalone && !dismissed) {
-      // Small delay to not annoy the user immediately
-      const timer = setTimeout(() => {
-        if (installPrompt || isIos) {
-          setIsVisible(true);
-        }
-      }, 3000);
-      return () => clearTimeout(timer);
+      // Show immediately for the user to see it
+      setIsVisible(true);
     }
-  }, [isStandalone, dismissed, installPrompt, isIos]);
+  }, [isStandalone, dismissed]);
 
   const handleDismiss = () => {
     setIsVisible(false);
@@ -67,21 +62,23 @@ const UniversalInstallPrompt: React.FC<UniversalInstallPromptProps> = ({
 
           <div className="flex gap-4 items-start">
             <div className="flex-shrink-0 w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-              {isIos ? <Smartphone size={24} /> : <Download size={24} />}
+              {isIos ? <Smartphone size={24} /> : (!installPrompt ? <Monitor size={24} /> : <Download size={24} />)}
             </div>
             
             <div className="flex-1 space-y-1">
-              <h3 className="font-bold text-slate-800 dark:text-white">تثبيت التطبيق على جهازك</h3>
+              <h3 className="font-bold text-slate-800 dark:text-white">تثبيت مدير الأوردرات الذكي</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                 {isIos 
-                  ? 'يمكنك إضافة التطبيق للشاشة الرئيسية للوصول إليه بسرعة كالبرامج المستقلة.'
-                  : 'قم بتثبيت CRM Wuilt كبرنامج مستقل لفتحه من سطح المكتب وتلقي التنبيهات.'}
+                  ? 'يمكنك إضافة التطبيق للشاشة الرئيسية للوصول إليه بسرعة كالبرامج المستقلة. سيتم حفظ بياناتك محلياً على هذا الهاتف.'
+                  : (!installPrompt && !isIos) 
+                    ? 'يمكنك تثبيت التطبيق يدوياً من قائمة المتصفح لفتحه كبرنامج مستقل على سطح المكتب. هذا يضمن بقاء بياناتك محفوظة على هذا الجهاز.'
+                    : 'قم بتثبيت التطبيق كبرنامج مستقل لفتحه من سطح المكتب. سيتم حفظ كافة الطلبات والبيانات محلياً على جهازك لتجنب فقدانها.'}
               </p>
             </div>
           </div>
 
           <div className="mt-4 flex gap-2">
-            {!isIos ? (
+            {installPrompt && !isIos ? (
               <button 
                 onClick={handleInstallClick}
                 className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
@@ -89,15 +86,30 @@ const UniversalInstallPrompt: React.FC<UniversalInstallPromptProps> = ({
                 <Download size={14} />
                 تثبيت الآن
               </button>
-            ) : (
+            ) : isIos ? (
               <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5 text-[10px] text-slate-600 dark:text-slate-300 flex flex-col gap-1">
                 <div className="flex items-center gap-2">
                   <Share size={12} className="text-blue-500" />
-                  <span>1. اضغط على أيقونة المشاركة</span>
+                  <span>1. اضغط على أيقونة المشاركة بالأسفل</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <PlusSquare size={12} />
                   <span>2. اختر "إضافة للشاشة الرئيسية"</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-2.5 text-[10px] text-slate-600 dark:text-slate-300 flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-indigo-500 rounded-full" />
+                  <span>1. اضغط على أيقونة (⋮) بالأعلى (كما في صورتك)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-indigo-500 rounded-full" />
+                  <span>2. اختر "حفظ ومشاركة" (Save and share)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-indigo-500 rounded-full" />
+                  <span>3. ثم اضغط على "تثبيت" (Install)</span>
                 </div>
               </div>
             )}

@@ -10,12 +10,12 @@ export class AppDatabase extends Dexie {
 
   constructor() {
     super('SmartOrderManagerDB');
-    this.version(1).stores({
-      orders: 'id, orderNumber, date, status, customerPhone',
-      settings: 'id', // We'll use a fixed ID for global settings if needed, or store per-store
+    this.version(2).stores({
+      orders: 'id, store_id, orderNumber, date, status, customerPhone',
+      settings: 'id', 
       wallet: 'id',
       treasury: 'id',
-      customers: 'id, phone, name',
+      customers: 'id, store_id, phone, name',
     });
   }
 }

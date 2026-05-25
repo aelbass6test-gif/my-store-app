@@ -357,16 +357,16 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
 
     const selectedOpt = effectiveOptions.find(o => o.label === (orderData.governorate || orderData.shippingArea)) || effectiveOptions[0];
     if (selectedOpt) {
-      let baseFee = selectedOpt.price || 0;
+      let baseFee = selectedOpt.deliveryPrice || 0;
       let extraKgPrice = selectedOpt.extraKgPrice || 0;
       if (orderData.city) {
           const cityOpt = selectedOpt.cities?.find((c: any) => c.name === orderData.city);
           if (cityOpt) {
               if (cityOpt.useParentFees) {
-                  baseFee = selectedOpt.price || 0;
+                  baseFee = selectedOpt.deliveryPrice || 0;
                   extraKgPrice = selectedOpt.extraKgPrice || 0;
-              } else if (cityOpt.shippingPrice !== undefined && cityOpt.shippingPrice !== null) {
-                  baseFee = cityOpt.shippingPrice;
+              } else if (cityOpt.deliveryPrice !== undefined && cityOpt.deliveryPrice !== null) {
+                  baseFee = cityOpt.deliveryPrice;
                   extraKgPrice = cityOpt.extraKgPrice || 0;
               }
           }
@@ -683,13 +683,33 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     const useCustom = compFees?.useCustomFees ?? false;
     
     if ((newStatus === 'تم_الارسال' || newStatus === 'قيد_الشحن') && !updatedOrderData.shippingAndInsuranceDeducted) {
-        newTransactions.push({ id: `ship_${orderToUpdate.id}`, type: 'سحب', amount: orderToUpdate.shippingFee, date: new Date().toISOString(), note: `إصدار بوليصة شحن أوردر #${orderToUpdate.orderNumber}`, category: 'shipping', status: 'completed' });
+        newTransactions.push({ 
+            id: `ship_${orderToUpdate.id}`, 
+            type: 'سحب', 
+            amount: orderToUpdate.shippingFee, 
+            date: new Date().toISOString(), 
+            note: `إصدار بوليصة شحن أوردر #${orderToUpdate.orderNumber}`, 
+            category: 'shipping', 
+            status: 'completed',
+            orderId: orderToUpdate.id,
+            orderNumber: orderToUpdate.orderNumber
+        });
         
         const insuranceRate = useCustom ? compFees!.insuranceFeePercent : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
         let insuranceFee = 0;
         if (orderToUpdate.isInsured && insuranceRate > 0) {
             insuranceFee = calculateInsuranceFee(orderToUpdate, insuranceRate, settings);
-            newTransactions.push({ id: `insure_${orderToUpdate.id}`, type: 'سحب', amount: insuranceFee, date: new Date().toISOString(), note: `خصم رسوم تأمين أوردر #${orderToUpdate.orderNumber}`, category: 'insurance', status: 'completed' });
+            newTransactions.push({ 
+                id: `insure_${orderToUpdate.id}`, 
+                type: 'سحب', 
+                amount: insuranceFee, 
+                date: new Date().toISOString(), 
+                note: `خصم رسوم تأمين أوردر #${orderToUpdate.orderNumber}`, 
+                category: 'insurance', 
+                status: 'completed',
+                orderId: orderToUpdate.id,
+                orderNumber: orderToUpdate.orderNumber
+            });
         }
 
         const bostaVatAmount = calculateBostaVat(orderToUpdate, insuranceFee, settings);
@@ -703,14 +723,26 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                 date: new Date().toISOString(), 
                 note: `خصم ضريبة القيمة المضافة لطلب شحن (${vatPercentageText}) #${orderToUpdate.orderNumber}`, 
                 category: 'expense_other', 
-                status: 'completed' 
+                status: 'completed',
+                orderId: orderToUpdate.id,
+                orderNumber: orderToUpdate.orderNumber
             });
         }
 
         if (orderToUpdate.includeInspectionFee && !updatedOrderData.inspectionFeeDeducted) {
             const feeAmount = useCustom ? compFees!.inspectionFee : (settings.enableInspection ? settings.inspectionFee : 0);
             if (feeAmount > 0) {
-                newTransactions.push({ id: `insp_${orderToUpdate.id}`, type: 'سحب', amount: feeAmount, date: new Date().toISOString(), note: `خصم رسوم معاينة أوردر #${orderToUpdate.orderNumber}`, category: 'inspection', status: 'completed' });
+                newTransactions.push({ 
+                    id: `insp_${orderToUpdate.id}`, 
+                    type: 'سحب', 
+                    amount: feeAmount, 
+                    date: new Date().toISOString(), 
+                    note: `خصم رسوم معاينة أوردر #${orderToUpdate.orderNumber}`, 
+                    category: 'inspection', 
+                    status: 'completed',
+                    orderId: orderToUpdate.id,
+                    orderNumber: orderToUpdate.orderNumber
+                });
                 updatedOrderData.inspectionFeeDeducted = true;
             }
         }
@@ -722,7 +754,17 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         if (applyReturnFee) {
             const returnFeeAmount = useCustom ? compFees!.returnShippingFee : settings.returnShippingFee;
             if (returnFeeAmount > 0) {
-                newTransactions.push({ id: `return_${orderToUpdate.id}`, type: 'سحب', amount: returnFeeAmount, date: new Date().toISOString(), note: `خصم مصاريف مرتجع أوردر #${orderToUpdate.orderNumber}`, category: 'return', status: 'completed' });
+                newTransactions.push({ 
+                    id: `return_${orderToUpdate.id}`, 
+                    type: 'سحب', 
+                    amount: returnFeeAmount, 
+                    date: new Date().toISOString(), 
+                    note: `خصم مصاريف مرتجع أوردر #${orderToUpdate.orderNumber}`, 
+                    category: 'return', 
+                    status: 'completed',
+                    orderId: orderToUpdate.id,
+                    orderNumber: orderToUpdate.orderNumber
+                });
                 updatedOrderData.returnFeeDeducted = true;
             }
         }
@@ -852,11 +894,31 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     const baseAmountToCollect = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount);
     const totalCollected = baseAmountToCollect + (customerPaidInspection ? inspectionFee : 0);
     
-    newTransactions.push({ id: `collect_${order.id}`, type: 'إيداع', amount: totalCollected, date: new Date().toISOString(), note: `رصيد من الدفع عند الاستلام أوردر #${order.orderNumber}`, category: 'collection', status: 'completed' });
+    newTransactions.push({ 
+        id: `collect_${order.id}`, 
+        type: 'إيداع', 
+        amount: totalCollected, 
+        date: new Date().toISOString(), 
+        note: `رصيد من الدفع عند الاستلام أوردر #${order.orderNumber}`, 
+        category: 'collection', 
+        status: 'completed',
+        orderId: order.id,
+        orderNumber: order.orderNumber
+    });
 
     const codFee = calculateCodFee(order, settings);
     if (codFee > 0) {
-        newTransactions.push({ id: `cod_${order.id}`, type: 'سحب', amount: codFee, date: new Date().toISOString(), note: `خصم رسوم COD أوردر #${order.orderNumber}`, category: 'cod', status: 'completed' });
+        newTransactions.push({ 
+            id: `cod_${order.id}`, 
+            type: 'سحب', 
+            amount: codFee, 
+            date: new Date().toISOString(), 
+            note: `خصم رسوم COD أوردر #${order.orderNumber}`, 
+            category: 'cod', 
+            status: 'completed',
+            orderId: order.id,
+            orderNumber: order.orderNumber
+        });
     }
     
     const updatedOrderData = { ...order, status: 'تم_التحصيل' as OrderStatus, paymentStatus: 'مدفوع' as PaymentStatus, inspectionFeePaidByCustomer: customerPaidInspection, collectionProcessed: true };
@@ -3068,16 +3130,16 @@ const OrderModal: React.FC<OrderModalProps> = ({
     useEffect(() => {
         const selectedOption = shippingOptions.find(opt => opt.label === (orderData.governorate || orderData.shippingArea));
             if (selectedOption) {
-                let fee = selectedOption.price || 0;
+                let fee = selectedOption.deliveryPrice || 0;
                 let extraKgPrice = selectedOption.extraKgPrice || 0;
                 if (orderData.city) {
                     const cityOpt = selectedOption.cities?.find(c => c.name === orderData.city);
                     if (cityOpt) {
                         if (cityOpt.useParentFees) {
-                            fee = selectedOption.price || 0;
+                            fee = selectedOption.deliveryPrice || 0;
                             extraKgPrice = selectedOption.extraKgPrice || 0;
-                        } else if (cityOpt.shippingPrice !== undefined && cityOpt.shippingPrice !== null) {
-                            fee = cityOpt.shippingPrice;
+                        } else if (cityOpt.deliveryPrice !== undefined && cityOpt.deliveryPrice !== null) {
+                            fee = cityOpt.deliveryPrice;
                             extraKgPrice = cityOpt.extraKgPrice || 0;
                         }
                     }

@@ -18,29 +18,34 @@ export default defineConfig(({ mode }) => {
         VitePWA({
           registerType: 'autoUpdate',
           injectRegister: 'auto',
+          devOptions: {
+            enabled: true // Enable for testing
+          },
           workbox: {
-            globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+            globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json}'],
+            cleanupOutdatedCaches: true,
+            clientsClaim: true,
+            skipWaiting: true,
+            maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB
           },
           manifest: {
-            name: 'CRM Wuilt',
-            short_name: 'Wuilt',
+            name: 'Smart Orders Manager',
+            short_name: 'SmartOrder',
             description: 'نظام إدارة المتاجر المتكامل - يعمل بدون إنترنت',
-            theme_color: '#0f172a',
-            background_color: '#0f172a',
+            theme_color: '#4f46e5',
+            background_color: '#ffffff',
             display: 'standalone',
+            start_url: '/',
             icons: [
               {
                 src: 'https://cdn-icons-png.flaticon.com/512/3061/3061264.png',
-                sizes: '512x512',
-                type: 'image/png',
-                purpose: 'any'
+                sizes: '192x192',
+                type: 'image/png'
               },
               {
                 src: 'https://cdn-icons-png.flaticon.com/512/3061/3061264.png',
-                sizes: '192x192',
-                type: 'image/png',
-                purpose: 'any'
+                sizes: '512x512',
+                type: 'image/png'
               }
             ]
           }

@@ -945,7 +945,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
              const selectedOption = shippingOptions.find(opt => opt.label === editedGovernorate);
              if (selectedOption) {
                  const cityOption = selectedOption.cities?.find(c => c.name === editedCity);
-                 newShippingFee = cityOption && cityOption.shippingPrice > 0 ? cityOption.shippingPrice : selectedOption.price;
+                 newShippingFee = cityOption && cityOption.deliveryPrice > 0 ? cityOption.deliveryPrice : selectedOption.deliveryPrice;
              }
         }
 
@@ -977,7 +977,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         const selectedOption = shippingOptions.find(opt => opt.label === activeOrder.shippingArea);
         if (selectedOption) {
             const cityOption = selectedOption.cities?.find(c => c.name === activeOrder.city);
-            newShippingFee = cityOption && cityOption.shippingPrice > 0 ? cityOption.shippingPrice : selectedOption.price;
+            newShippingFee = cityOption && cityOption.deliveryPrice > 0 ? cityOption.deliveryPrice : selectedOption.deliveryPrice;
         }
 
         logAudit(activeOrder.id, 'shippingCompany', activeOrder.shippingCompany, editedShippingCompany);
@@ -1053,8 +1053,8 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         const selectedOption = shippingOptions.find(opt => opt.label === activeOrder.shippingArea);
         if (selectedOption) {
             const cityOption = selectedOption.cities?.find(c => c.name === activeOrder.city);
-            if (cityOption && cityOption.shippingPrice > 0) {
-                shippingFee = cityOption.shippingPrice;
+            if (cityOption && cityOption.deliveryPrice > 0) {
+                shippingFee = cityOption.deliveryPrice;
             }
         }
 
@@ -1697,7 +1697,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                     >
                                                         <option value="">اختر المحافظة...</option>
                                                         {activeShippingOptions.map(opt => (
-                                                            <option key={opt.id} value={opt.label}>{opt.label} ({opt.price} ج.م)</option>
+                                                            <option key={opt.id} value={opt.label}>{opt.label} ({opt.deliveryPrice} ج.م)</option>
                                                         ))}
                                                     </select>
                                                     {editedGovernorate && activeShippingOptions.find(opt => opt.label === editedGovernorate)?.cities && activeShippingOptions.find(opt => opt.label === editedGovernorate)!.cities!.length > 0 && (
@@ -1708,7 +1708,7 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
                                                         >
                                                             <option value="">اختر المدينة...</option>
                                                             {activeShippingOptions.find(opt => opt.label === editedGovernorate)?.cities?.map(city => (
-                                                                <option key={city.id} value={city.name}>{city.name} {city.shippingPrice > 0 ? `(${city.shippingPrice} ج.م)` : ''}</option>
+                                                                <option key={city.id} value={city.name}>{city.name} {city.deliveryPrice > 0 ? `(${city.deliveryPrice} ج.م)` : ''}</option>
                                                             ))}
                                                         </select>
                                                     )}

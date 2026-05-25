@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Settings, PlatformIntegration, Store } from '../types';
-import { Link2, CheckCircle2, Database, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe, CreditCard, Smartphone, Banknote, ShoppingBasket, LayoutDashboard, UserPlus, TrendingUp, Settings as SettingsIcon, Grid, UserCog } from 'lucide-react';
+import { Link2, CheckCircle2, Database, Upload, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe, CreditCard, Smartphone, Banknote, ShoppingBasket, LayoutDashboard, UserPlus, TrendingUp, Settings as SettingsIcon, Grid, UserCog } from 'lucide-react';
 import { clearStoreData } from '../services/databaseService';
 
 interface SettingsPageProps {
@@ -10,6 +10,59 @@ interface SettingsPageProps {
   onManualSave?: () => Promise<{ success: boolean, error?: string } | void>;
   activeStore?: Store;
 }
+
+const handleImportData = (file: File) => {
+  const storeId = localStorage.getItem('lastActiveStoreId');
+  if (!storeId) {
+    alert('يرجى اختيار متجر أولاً');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const content = e.target?.result as string;
+      const data = JSON.parse(content);
+      
+      // Basic validation
+      if (!data.orders && !data.settings) {
+        throw new Error('الملف لا يحتوي على بيانات متجر صحيحة');
+      }
+
+      const db = await import('../services/databaseService');
+      await db.saveLocal(storeId, data);
+      
+      alert('تم استعادة البيانات بنجاح! سيتم إعادة تحميل الصفحة لتطبيق التغييرات.');
+      window.location.reload();
+    } catch (err) {
+      alert('خطأ في قراءة ملف النسخة الاحتياطية: ' + (err as Error).message);
+    }
+  };
+  reader.readAsText(file);
+};
+
+const handleExportData = () => {
+  const storeId = localStorage.getItem('lastActiveStoreId');
+  if (!storeId) {
+    alert('يرجى اختيار متجر أولاً');
+    return;
+  }
+  
+  import('../services/databaseService').then(async (db) => {
+    const data = await db.getLocal(storeId);
+    if (!data) {
+      alert('لم يتم العثور على بيانات محلية لهذا المتجر للتصدير');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `backup_${storeId}_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+};
 
 const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onManualSave, activeStore }) => {
   
@@ -34,6 +87,40 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-right pb-12 px-4">
+      <div className="bg-gradient-to-l from-emerald-50 to-blue-50 dark:from-emerald-950/20 dark:to-blue-950/20 p-6 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 shadow-sm flex flex-col md:flex-row items-center gap-6 justify-between animate-in slide-in-from-top duration-700">
+        <div className="flex items-center gap-4">
+          <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-md">
+            <CheckCircle2 className="text-emerald-500 w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-lg font-black dark:text-white">نظام الحفظ المتقدم (Hybrid Database)</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-lg leading-relaxed">
+              تطبيقك يستخدم تقنية **IndexedDB** وهي قاعدة بيانات حقيقية مخزنة على الهارد ديسك الخاص بجهازك. البيانات لا تضيع حتى لو انقطع الإنترنت أو تم تحديث الصفحة. المزامنة السحابية هي فقط "نسخة إضافية" للتأمين والوصول من أجهزة أخرى.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+            <button 
+              onClick={handleExportData}
+              className="px-6 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs shadow-sm hover:shadow-md transition-all flex items-center gap-2 dark:text-white hover:bg-slate-50"
+            >
+              <Database size={16} className="text-indigo-500" /> تنزيل نسخة (Backup)
+            </button>
+            <label className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-sm hover:shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95">
+              <Upload size={16} /> رفع نسخة احتياطية
+              <input 
+                type="file" 
+                className="hidden" 
+                accept=".json"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImportData(file);
+                }}
+              />
+            </label>
+        </div>
+      </div>
+
       {onManualSave && (
           <DatabaseManagementCard onSync={onManualSave} />
       )}
@@ -48,6 +135,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
         isEnabled={settings.enablePlatformIntegration}
         onToggle={togglePlatformIntegration}
       />
+
+      <DangerZone activeStore={activeStore} />
     </div>
   );
 };

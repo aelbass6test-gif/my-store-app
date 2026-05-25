@@ -110,11 +110,15 @@ export const setSupabaseRestricted = (restricted: boolean) => {};
 export const isRestrictionError = (error: any): boolean => false;
 
 // --- Local IndexedDB Helpers ---
-const getLocal = async (key: string): Promise<any> => {
+export const getLocal = async (key: string): Promise<any> => {
     try {
         if (key === 'global') {
             const settings = await localDb.settings.get('global') as any;
-            return settings?.data || null;
+            if (settings?.data) return settings.data;
+            // Fallback to localStorage for emergency
+            const backup = localStorage.getItem('emergency_global_backup');
+            if (backup) return JSON.parse(backup);
+            return null;
         }
         
         const orders = await localDb.orders.where('store_id').equals(key).toArray();
@@ -123,29 +127,33 @@ const getLocal = async (key: string): Promise<any> => {
         const treasury = await localDb.treasury.get(key);
         const customers = await localDb.customers.where('store_id').equals(key).toArray();
 
-        // Safe fetch collections that are not in separate tables yet
-        const settings = settingsRecord?.data || null;
+        // Safe fetch settings, fallback to INITIAL_SETTINGS if store was created but settings lost
+        const settings = settingsRecord?.data || { ...INITIAL_SETTINGS };
 
-        if (!settings) return null;
-
-        return {
-            orders: orders,
+        const result = {
+            orders: orders || [],
             settings: settings,
             wallet: wallet || { balance: 0, transactions: [] },
             treasury: treasury,
             cart: [],
-            customers: customers
+            customers: customers || []
         };
+
+        return result;
     } catch (e) {
         console.error('IndexedDB read error', e);
+        // Emergency fallback from localStorage
+        const backup = localStorage.getItem(`emergency_store_backup_${key}`);
+        if (backup) return JSON.parse(backup);
         return null;
     }
 };
 
-const saveLocal = async (key: string, data: any) => {
+export const saveLocal = async (key: string, data: any) => {
     try {
         if (key === 'global') {
             await localDb.settings.put({ id: 'global', data } as any);
+            localStorage.setItem('emergency_global_backup', JSON.stringify(data));
             return;
         }
 
@@ -172,24 +180,47 @@ const saveLocal = async (key: string, data: any) => {
             const customersWithId = data.customers.map((c: any) => ({ ...c, store_id: storeId }));
             await localDb.customers.bulkPut(customersWithId);
         }
+        
+        // Final full backup to localStorage as string (limitations apply to size, but better than nothing)
+        try {
+            localStorage.setItem(`emergency_store_backup_${key}`, JSON.stringify(data));
+        } catch (storageErr) {
+            // Might fail if quota exceeded
+        }
     } catch (e) {
         console.warn(`IndexedDB backup failed for key '${key}'.`, e);
     }
 };
 
+// --- Utils ---
+const WITH_TIMEOUT = <T>(promise: Promise<T>, timeoutMs: number = 5000): Promise<T> => {
+    return Promise.race([
+        promise,
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error('العملية السحابية استغرقت وقتاً طويلاً')), timeoutMs))
+    ]);
+};
+
 export const ensureStoreRecordExists = async (storeId: string, storeName: string): Promise<{ success: boolean, error?: string }> => {
     try {
         const storeRef = doc(firebaseDb, 'stores_data', storeId);
-        await setDoc(storeRef, { id: storeId, name: storeName }, { merge: true });
+        await WITH_TIMEOUT(setDoc(storeRef, { id: storeId, name: storeName }, { merge: true }));
         return { success: true };
     } catch (err: any) {
         return { success: false, error: err.message };
     }
 };
 
-export const getStoreData = async (storeId: string): Promise<StoreData | null> => {
+export const getStoreData = async (storeId: string, forceRemote: boolean = false): Promise<StoreData | null> => {
+    if (!forceRemote) {
+        const local = await getLocal(storeId);
+        if (local) {
+            // Return local immediately
+            return local;
+        }
+    }
+
     try {
-        const storeSnap = await getDoc(doc(firebaseDb, 'stores_data', storeId)).catch(err => {
+        const storeSnap = await WITH_TIMEOUT(getDoc(doc(firebaseDb, 'stores_data', storeId))).catch(err => {
             handleFirestoreError(err, OperationType.GET, `stores_data/${storeId}`);
             throw err;
         });
@@ -352,7 +383,7 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
 
         const storeRef = doc(firebaseDb, 'stores_data', store.id);
         const storePayload = cleanUndefined({ settings: cleanSettingsFinal, name: store.name });
-        await setDoc(storeRef, storePayload, { merge: true }).catch(err => {
+        await WITH_TIMEOUT(setDoc(storeRef, storePayload, { merge: true })).catch(err => {
             handleFirestoreError(err, OperationType.WRITE, `stores_data/${store.id}`);
             throw err;
         });
@@ -363,7 +394,14 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
     }
 };
 
-export const getGlobalData = async (): Promise<{ users: User[], loyaltyData: any } | null> => {
+export const getGlobalData = async (forceRemote: boolean = false): Promise<{ users: User[], loyaltyData: any } | null> => {
+    if (!forceRemote) {
+        const local = await getLocal('global');
+        if (local && local.users && local.users.length > 0) {
+            return local;
+        }
+    }
+
     try {
         const queryUsers = collection(firebaseDb, 'users');
         const snap = await getDocs(queryUsers).catch(err => {

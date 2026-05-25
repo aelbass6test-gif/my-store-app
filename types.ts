@@ -21,27 +21,29 @@ export type PreparationStatus = 'بانتظار التجهيز' | 'جاهز';
 export interface CityOption {
   id: string;
   name: string;
-  shippingPrice: number;
+  deliveryPrice: number;
   extraKgPrice: number;
-  returnAfterPrice: number;
-  returnWithoutPrice: number;
+  returnPrice: number;
   exchangePrice: number;
-  useParentFees?: boolean; // New flag for price inheritance
-  active?: boolean; // New flag for soft delete/deactivation
+  cashCollectionPrice: number;
+  returnToSenderPrice: number;
+  useParentFees?: boolean; 
+  active?: boolean; 
 }
 
 export interface ShippingOption {
   id: string;
   label: string;      
   details: string;    
-  price: number;      
+  deliveryPrice: number;      
   extraKgPrice: number; 
-  returnAfterPrice: number;   
-  returnWithoutPrice: number; 
+  returnPrice: number;   
   exchangePrice: number;      
+  cashCollectionPrice: number;
+  returnToSenderPrice: number;
   baseWeight: number;
   cities?: CityOption[];
-  active?: boolean; // New flag for soft delete/deactivation
+  active?: boolean; 
 }
 
 export interface PlatformIntegration {

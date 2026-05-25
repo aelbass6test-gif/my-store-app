@@ -44,7 +44,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ settings, cart, onPlaceOrde
   const { subtotal, shippingFee, total } = useMemo(() => {
     const sub = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
     const selectedOption = shippingOptions.find(opt => opt.label === shippingArea);
-    const fee = selectedOption ? selectedOption.price : 0;
+    const fee = selectedOption ? selectedOption.deliveryPrice : 0;
     return { subtotal: sub, shippingFee: fee, total: Math.max(0, sub + fee - discountAmount) };
   }, [cart, shippingArea, shippingOptions, discountAmount]);
 

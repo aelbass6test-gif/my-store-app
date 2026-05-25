@@ -2,7 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertCircle, Loader2, Save, RefreshCw, CheckCircle } from 'lucide-react';
 
-export type SaveStatus = 'idle' | 'pending' | 'saving' | 'success' | 'error';
+export type SaveStatus = 'idle' | 'pending' | 'saving' | 'success' | 'error' | 'local_saved';
 
 interface GlobalSaveIndicatorProps {
   status: SaveStatus;
@@ -21,6 +21,7 @@ const GlobalSaveIndicator: React.FC<GlobalSaveIndicatorProps> = ({
   const isSaving = status === 'saving';
   const isPending = status === 'pending';
   const isSuccess = status === 'success';
+  const isLocalSaved = status === 'local_saved';
 
   return (
     <AnimatePresence>
@@ -32,32 +33,38 @@ const GlobalSaveIndicator: React.FC<GlobalSaveIndicatorProps> = ({
       >
         <button 
           onClick={onRetry}
-          disabled={isSaving || isSuccess}
+          disabled={isSaving}
           className={`
             flex items-center gap-3 px-4 py-2 rounded-full shadow-lg border backdrop-blur-md transition-all active:scale-95 group
             ${isError 
               ? 'bg-rose-50/90 dark:bg-rose-900/90 border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-800' 
               : isSaving 
               ? 'bg-indigo-50/90 dark:bg-indigo-900/90 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400'
-              : isSuccess
-              ? 'bg-emerald-50/90 dark:bg-emerald-900/90 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400'
+              : isSuccess || isLocalSaved
+              ? 'bg-emerald-50/90 dark:bg-emerald-900/90 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100'
               : 'bg-amber-50/90 dark:bg-amber-900/90 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-800'
             }
           `}
-          title={isError ? 'إعادة محاولة الحفظ' : isPending ? 'حفظ الآن' : ''}
+          title={isError ? 'إعادة محاولة الحفظ' : isPending ? 'حفظ الآن' : (isSuccess || isLocalSaved) ? 'مزامنة فورية الآن' : ''}
         >
           {isError ? (
             <AlertCircle size={16} className="flex-shrink-0" />
           ) : isSaving ? (
             <Loader2 size={16} className="animate-spin flex-shrink-0" />
-          ) : isSuccess ? (
+          ) : (isSuccess || isLocalSaved) ? (
             <CheckCircle size={16} className="flex-shrink-0" />
           ) : (
             <Save size={16} className="flex-shrink-0 group-hover:scale-110 transition-transform" />
           )}
           
           <span className="text-[11px] font-black whitespace-nowrap">
-            {message || (isError ? 'فشل الحفظ!' : isSaving ? 'جاري الحفظ...' : isSuccess ? 'تم الحفظ بنجاح' : 'تغييرات غير محفوظة...')}
+            {message || (
+              isError ? 'فشل المزامنة!' : 
+              isSaving ? 'جاري المزامنة...' : 
+              isLocalSaved ? 'محفوظ على الجهاز ✓' :
+              isSuccess ? 'تمت المزامنة بنجاح' : 
+              'تغييرات غير محفوظة...'
+            )}
           </span>
 
           {(isError || isPending) && (

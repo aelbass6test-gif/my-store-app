@@ -353,7 +353,13 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
     const ungrouped: any[] = [];
 
     filteredHistory.forEach(t => {
-      const orderNumMatch = t.note.match(/أوردر #([^ \)]+)/) || t.note.match(/الطلب #([^ \)]+)/);
+      // Improved regex to catch variations like "أوردر #", "الطلب #", "بطلب #", or just "#" at the end of a word
+      const orderNumMatch = t.note.match(/أوردر #([^ \(\)\[\]]+)/) || 
+                            t.note.match(/الطلب #([^ \(\)\[\]]+)/) ||
+                            t.note.match(/بطلب #([^ \(\)\[\]]+)/) ||
+                            t.note.match(/#([^ \(\)\[\]]+)$/) ||
+                            t.note.match(/#([^ \(\)\[\]]+) /);
+                            
       const supplyOrderMatch = t.note.match(/أمر:\s?([^ \)]+)/);
       const orderKey = t.orderNumber || t.orderId || (orderNumMatch ? orderNumMatch[1] : null);
       const supplyKey = supplyOrderMatch ? supplyOrderMatch[1] : null;
