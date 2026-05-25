@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Settings, Partner, PartnerTransaction, Wallet, Transaction, Order } from '../types';
-import { Plus, User, DollarSign, ArrowDownRight, ArrowUpLeft, Trash2, Edit2, Check, X, TrendingUp, Wallet as WalletIcon, PieChart, History, Activity, Info, AlertCircle, Package as PackageIcon, Truck } from 'lucide-react';
+import { Plus, User, DollarSign, ArrowDownRight, ArrowUpLeft, Trash2, Edit2, Check, X, TrendingUp, Wallet as WalletIcon, PieChart, History, Activity, Info, AlertCircle, Package as PackageIcon, Truck, Coins } from 'lucide-react';
 import { calculateOrderProfitLoss } from '../utils/financials';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -114,7 +114,8 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
   const totals = useMemo(() => {
      return {
         capital: transactions.filter(t => t.type === 'capital_addition' || t.type === 'supply_funding' || t.type === 'shipping_funding').reduce((a, b) => a + b.amount, 0),
-        loans: transactions.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((a, b) => a + b.amount, 0),
+        loans: transactions.filter(t => t.type === 'loan').reduce((a, b) => a + b.amount, 0),
+        advances: transactions.filter(t => t.type === 'customer_advance').reduce((a, b) => a + b.amount, 0),
         repayments: transactions.filter(t => t.type === 'repayment').reduce((a, b) => a + b.amount, 0),
         withdrawals: transactions.filter(t => t.type === 'profit_withdrawal').reduce((a, b) => a + b.amount, 0)
      };
@@ -487,9 +488,20 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
                 <div className="relative z-10 space-y-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-xl flex items-center justify-center"><ArrowDownRight size={20}/></div>
-                    <h5 className="font-bold text-slate-500 dark:text-slate-400">صافي المديونية / السلف</h5>
+                    <h5 className="font-bold text-slate-500 dark:text-slate-400">صافي مديونية السلف</h5>
                   </div>
                   <p className="text-4xl font-black text-rose-600 dark:text-rose-400 tracking-tight">{(totals.loans - totals.repayments).toLocaleString()} <span className="text-sm font-bold text-slate-400">ج.م</span></p>
+                </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative group overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10 text-teal-600 group-hover:scale-110 transition-transform"><Coins size={80}/></div>
+                <div className="relative z-10 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-teal-100 dark:bg-teal-900/30 text-teal-600 rounded-xl flex items-center justify-center"><Coins size={20}/></div>
+                    <h5 className="font-bold text-slate-500 dark:text-slate-400">إجمالي العرابين المستلمة</h5>
+                  </div>
+                  <p className="text-4xl font-black text-teal-600 dark:text-teal-400 tracking-tight">{totals.advances.toLocaleString()} <span className="text-sm font-bold text-slate-400">ج.م</span></p>
                 </div>
             </div>
         </div>

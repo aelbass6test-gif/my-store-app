@@ -1,4 +1,5 @@
-import { db } from './firebaseClient';
+import { db as firebaseDb } from './firebaseClient';
+import { db as localDb } from '../src/lib/db';
 import { 
     collection, 
     doc, 
@@ -30,7 +31,8 @@ import {
     PaymentMethod, 
     CustomerProfile, 
     GlobalOption, 
-    ShippingCarrierIntegration 
+    ShippingCarrierIntegration,
+    Treasury
 } from '../types';
 import { INITIAL_SETTINGS } from '../constants';
 
@@ -74,7 +76,6 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Recursively traverse and clean up any undefined properties for Firestore safety
 export function cleanUndefined<T>(obj: T): T {
     if (obj === null || obj === undefined) {
         return null as any;
@@ -95,97 +96,122 @@ export function cleanUndefined<T>(obj: T): T {
     return obj;
 }
 
-// Check connection to Firestore (mandatory on initial boot)
 export const checkSupabaseConnection = async (): Promise<boolean> => {
     try {
-        await getDocFromServer(doc(db, 'stores_data', 'connection_test'));
+        await getDocFromServer(doc(firebaseDb, 'stores_data', 'connection_test'));
         return true;
     } catch (error: any) {
-        if (error instanceof Error && error.message.includes('the client is offline')) {
-            console.error("Please check your Firebase configuration or network status.");
-        }
         return false;
     }
 };
 
-// --- Backward Compatibility Placeholders for Restriction Alerts ---
 export const getSupabaseRestrictedStatus = (): boolean => false;
 export const setSupabaseRestricted = (restricted: boolean) => {};
 export const isRestrictionError = (error: any): boolean => false;
 
-// --- Local Storage Helpers (Backup) ---
-const getLocal = (key: string) => {
+// --- Local IndexedDB Helpers ---
+const getLocal = async (key: string): Promise<any> => {
     try {
-        const item = localStorage.getItem(LOCAL_STORAGE_PREFIX + key);
-        return item ? JSON.parse(item) : null;
+        if (key === 'global') {
+            const settings = await localDb.settings.get('global') as any;
+            return settings?.data || null;
+        }
+        
+        const orders = await localDb.orders.where('store_id').equals(key).toArray();
+        const settingsRecord = await localDb.settings.get(key) as any;
+        const wallet = await localDb.wallet.get(key);
+        const treasury = await localDb.treasury.get(key);
+        const customers = await localDb.customers.where('store_id').equals(key).toArray();
+
+        // Safe fetch collections that are not in separate tables yet
+        const settings = settingsRecord?.data || null;
+
+        if (!settings) return null;
+
+        return {
+            orders: orders,
+            settings: settings,
+            wallet: wallet || { balance: 0, transactions: [] },
+            treasury: treasury,
+            cart: [],
+            customers: customers
+        };
     } catch (e) {
-        console.error('LocalStorage read error', e);
+        console.error('IndexedDB read error', e);
         return null;
     }
 };
 
-const saveLocal = (key: string, data: any) => {
+const saveLocal = async (key: string, data: any) => {
     try {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(data));
+        if (key === 'global') {
+            await localDb.settings.put({ id: 'global', data } as any);
+            return;
+        }
+
+        const storeId = key;
+        
+        if (data.orders) {
+            const ordersWithId = data.orders.map((o: any) => ({ ...o, store_id: storeId }));
+            await localDb.orders.bulkPut(ordersWithId);
+        }
+
+        if (data.settings) {
+            await localDb.settings.put({ id: storeId, data: data.settings } as any);
+        }
+
+        if (data.wallet) {
+            await localDb.wallet.put({ ...data.wallet, id: storeId });
+        }
+
+        if (data.treasury) {
+            await localDb.treasury.put({ ...data.treasury, id: storeId });
+        }
+
+        if (data.customers) {
+            const customersWithId = data.customers.map((c: any) => ({ ...c, store_id: storeId }));
+            await localDb.customers.bulkPut(customersWithId);
+        }
     } catch (e) {
-        console.warn(`LocalStorage backup failed for key '${key}'. Reliance on the primary Firebase database will continue.`, e);
+        console.warn(`IndexedDB backup failed for key '${key}'.`, e);
     }
 };
 
 export const ensureStoreRecordExists = async (storeId: string, storeName: string): Promise<{ success: boolean, error?: string }> => {
     try {
-        const storeRef = doc(db, 'stores_data', storeId);
+        const storeRef = doc(firebaseDb, 'stores_data', storeId);
         await setDoc(storeRef, { id: storeId, name: storeName }, { merge: true });
         return { success: true };
     } catch (err: any) {
-        console.error("Failed to ensure store record exists:", err);
         return { success: false, error: err.message };
     }
 };
 
-// --- Relational Data Functions using Firestore ---
-
 export const getStoreData = async (storeId: string): Promise<StoreData | null> => {
     try {
-        // Fetch static settings
-        const storeSnap = await getDoc(doc(db, 'stores_data', storeId)).catch(err => {
+        const storeSnap = await getDoc(doc(firebaseDb, 'stores_data', storeId)).catch(err => {
             handleFirestoreError(err, OperationType.GET, `stores_data/${storeId}`);
             throw err;
         });
 
-        // Safe fetch collections with storeId filtering
         const fetchCollection = async <T>(collectionName: string): Promise<T[]> => {
             try {
-                let snap = await getDocs(query(collection(db, collectionName), where('storeId', '==', storeId)));
+                let snap = await getDocs(query(collection(firebaseDb, collectionName), where('storeId', '==', storeId)));
                 let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
                 if (items.length === 0) {
-                    const snap_snake = await getDocs(query(collection(db, collectionName), where('store_id', '==', storeId)));
+                    const snap_snake = await getDocs(query(collection(firebaseDb, collectionName), where('store_id', '==', storeId)));
                     items = snap_snake.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
                 }
                 return items;
             } catch (err) {
-                handleFirestoreError(err, OperationType.LIST, collectionName);
                 return [];
             }
         };
 
         const [
-            products,
-            orders,
-            transactions,
-            suppliers,
-            supplyOrders,
-            reviews,
-            abandonedCarts,
-            activityLogs,
-            employees,
-            discountCodes,
-            collectionsList,
-            customPages,
-            paymentMethods,
-            customers,
-            globalOptions,
-            shippingIntegrations
+            products, orders, transactions, suppliers, supplyOrders, reviews, abandonedCarts, 
+            activityLogs, employees, discountCodes, collectionsList, customPages, 
+            paymentMethods, customers, globalOptions, shippingIntegrations
         ] = await Promise.all([
             fetchCollection<Product>('products'),
             fetchCollection<Order>('orders'),
@@ -208,7 +234,6 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
         const storeSettings = storeSnap.exists() ? (storeSnap.data().settings || {}) : {};
         const storeName = storeSnap.exists() ? (storeSnap.data().name || '') : '';
 
-        // Products seeding fallback for new database
         let finalProducts = products;
         if (finalProducts.length === 0 && INITIAL_SETTINGS.products.length > 0) {
             finalProducts = INITIAL_SETTINGS.products;
@@ -248,17 +273,15 @@ export const getStoreData = async (storeId: string): Promise<StoreData | null> =
             customers: customers
         };
 
-        saveLocal(storeId, fullData);
+        await saveLocal(storeId, fullData);
         return fullData;
-
     } catch (err: any) {
-        console.error("Error loading relational data:", err);
         return getLocal(storeId);
     }
 };
 
 export const saveStoreData = async (store: Store, data: StoreData): Promise<{ success: boolean, error?: string }> => {
-    saveLocal(store.id, data);
+    await saveLocal(store.id, data);
     try {
         await ensureStoreRecordExists(store.id, store.name);
 
@@ -278,34 +301,26 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             supply_balance: wallet.supplyBalance || 0
         });
 
-        // --- Deletion & Synchronization logic ---
         const syncCollection = async (collectionName: string, stateItems: any[], idField = 'id') => {
             try {
-                let snap = await getDocs(query(collection(db, collectionName), where('storeId', '==', store.id)));
+                let snap = await getDocs(query(collection(firebaseDb, collectionName), where('storeId', '==', store.id)));
                 if (snap.empty) {
-                    snap = await getDocs(query(collection(db, collectionName), where('store_id', '==', store.id)));
+                    snap = await getDocs(query(collection(firebaseDb, collectionName), where('store_id', '==', store.id)));
                 }
                 
                 const existingDbDocs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 const stateIds = new Set(stateItems.map(item => String(item[idField] || `${store.id}_${item.phone}`)));
 
-                // 1. Delete items not present in incoming state
                 const deletePromises = snap.docs
                     .filter(doc => !stateIds.has(doc.id))
                     .map(doc => deleteDoc(doc.ref).catch(err => handleFirestoreError(err, OperationType.DELETE, `${collectionName}/${doc.id}`)));
                 
                 await Promise.all(deletePromises);
 
-                // 2. Put / Upsert items in state 
                 const upsertPromises = stateItems.map(async (item) => {
                     const docId = String(item[idField] || `${store.id}_${item.phone}`);
-                    const docRef = doc(db, collectionName, docId);
-                    
-                    const payload = cleanUndefined({ 
-                        ...item, 
-                        storeId: store.id,
-                        store_id: store.id 
-                    });
+                    const docRef = doc(firebaseDb, collectionName, docId);
+                    const payload = cleanUndefined({ ...item, storeId: store.id, store_id: store.id });
                     await setDoc(docRef, payload, { merge: true }).catch(err => {
                         handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${docId}`);
                     });
@@ -317,7 +332,6 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             }
         };
 
-        // Parallel processing of all synchronization targets
         await Promise.all([
             syncCollection('products', products),
             syncCollection('orders', orders),
@@ -336,26 +350,22 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             syncCollection('shipping_integrations', shippingIntegrations)
         ]);
 
-        // Save store general settings meta record
-        const storeRef = doc(db, 'stores_data', store.id);
+        const storeRef = doc(firebaseDb, 'stores_data', store.id);
         const storePayload = cleanUndefined({ settings: cleanSettingsFinal, name: store.name });
         await setDoc(storeRef, storePayload, { merge: true }).catch(err => {
             handleFirestoreError(err, OperationType.WRITE, `stores_data/${store.id}`);
             throw err;
         });
 
-        console.log(`Successfully saved and synced to Firebase for store ${store.id}`);
         return { success: true };
-
     } catch (err: any) {
-        console.error(`Failed to save store data to Firebase:`, err);
         return { success: false, error: err.message };
     }
 };
 
 export const getGlobalData = async (): Promise<{ users: User[], loyaltyData: any } | null> => {
     try {
-        const queryUsers = collection(db, 'users');
+        const queryUsers = collection(firebaseDb, 'users');
         const snap = await getDocs(queryUsers).catch(err => {
             handleFirestoreError(err, OperationType.LIST, 'users');
             throw err;
@@ -376,22 +386,19 @@ export const getGlobalData = async (): Promise<{ users: User[], loyaltyData: any
             };
         });
 
-        const localGlobal = getLocal('global');
+        const localGlobal = await getLocal('global');
         const localUsers: User[] = localGlobal?.users || [];
 
-        // Dual-merge to prevent lock-outs when swapping to a fresh cloud instance
         const mergedUsersMap = new Map<string, User>();
         localUsers.forEach(u => { if (u && u.phone) mergedUsersMap.set(u.phone, u); });
         dbUsers.forEach(u => { if (u && u.phone) mergedUsersMap.set(u.phone, u); });
 
         const finalUsers = Array.from(mergedUsersMap.values());
 
-        // Perform migration upsert if local users don't exist in the database
         const needsUpload = finalUsers.some(fu => !dbUsers.some(du => du.phone === fu.phone));
         if (needsUpload && finalUsers.length > 0) {
-            console.log(`[MIGRATION] Migrating local users to Firestore...`);
             const migrationPromises = finalUsers.map(async (u) => {
-                const userRef = doc(db, 'users', u.phone);
+                const userRef = doc(firebaseDb, 'users', u.phone);
                 const userPayload = cleanUndefined({
                     fullName: u.fullName,
                     password: u.password,
@@ -407,22 +414,20 @@ export const getGlobalData = async (): Promise<{ users: User[], loyaltyData: any
             await Promise.all(migrationPromises);
         }
 
-        const globalData = { users: finalUsers, loyaltyData: {} };
-        saveLocal('global', globalData);
+        const globalData = { users: finalUsers, loyaltyData: {} } as { users: User[], loyaltyData: any };
+        await saveLocal('global', globalData);
         return globalData;
-
     } catch (err: any) {
-        console.error("Error fetching global data from Firestore:", err);
-        return getLocal('global');
+        return await getLocal('global') as { users: User[], loyaltyData: any } | null;
     }
 };
 
 export const saveGlobalData = async (data: { users: User[], loyaltyData: any }): Promise<{ success: boolean, error?: string }> => {
-    saveLocal('global', data);
+    await saveLocal('global', data);
     try {
         const savePromises = data.users.map(async (u) => {
             if (!u.phone) return;
-            const userRef = doc(db, 'users', u.phone);
+            const userRef = doc(firebaseDb, 'users', u.phone);
             const userPayload = cleanUndefined({
                 fullName: u.fullName,
                 password: u.password,
@@ -441,7 +446,6 @@ export const saveGlobalData = async (data: { users: User[], loyaltyData: any }):
         await Promise.all(savePromises);
         return { success: true };
     } catch (err: any) {
-        console.error("Error saving global data to Firestore:", err);
         return { success: false, error: err.message };
     }
 };
@@ -455,56 +459,18 @@ export const clearStoreData = async (storeId: string, targets: string[]): Promis
                 case 'customers': return ['customers'];
                 case 'wallet': return ['transactions'];
                 case 'activity': return ['activity_logs'];
-                case 'coupons': return ['discount_codes'];
-                case 'reviews': return ['reviews'];
-                case 'abandoned_carts': return ['abandoned_carts'];
-                case 'shipping': return ['shipping_integrations'];
-                case 'pages': return ['custom_pages'];
-                case 'suppliers': return ['suppliers'];
-                case 'supply_orders': return ['supply_orders'];
-                case 'global_options': return ['global_options'];
-                case 'payment_methods': return ['payment_methods'];
-                case 'collections': return ['collections'];
-                case 'employees': return ['employees'];
-                case 'settings': return [
-                    'discount_codes', 'reviews', 'abandoned_carts', 'global_options', 
-                    'custom_pages', 'payment_methods', 'collections', 'suppliers', 
-                    'supply_orders', 'shipping_integrations'
-                ];
                 default: return [];
             }
         }).flat();
 
         const clearPromises = collectionsToClear.map(async (colName) => {
-            const q = query(collection(db, colName), where('storeId', '==', storeId));
+            const q = query(collection(firebaseDb, colName), where('storeId', '==', storeId));
             const snap = await getDocs(q);
             const deleteDocs = snap.docs.map(doc => deleteDoc(doc.ref));
             await Promise.all(deleteDocs);
         });
 
         await Promise.all(clearPromises);
-
-        // Reset partner and wallet metrics
-        if (targets.includes('partner_withdrawals')) {
-            const storeRef = doc(db, 'stores_data', storeId);
-            const storeSnap = await getDoc(storeRef);
-            if (storeSnap.exists()) {
-                const settings = storeSnap.data().settings || {};
-                const updatedSettings = {
-                    ...settings,
-                    partnerTransactions: [],
-                    withdraw_requests: [],
-                    supply_balance: 0
-                };
-                await updateDoc(storeRef, { settings: updatedSettings });
-            }
-        }
-
-        if (targets.includes('settings')) {
-            const storeRef = doc(db, 'stores_data', storeId);
-            await updateDoc(storeRef, { settings: INITIAL_SETTINGS });
-        }
-
         return { success: true };
     } catch (err: any) {
         return { success: false, error: err.message };
@@ -514,28 +480,17 @@ export const clearStoreData = async (storeId: string, targets: string[]): Promis
 export const migrateAllLegacyDataToRelational = async (users: User[]): Promise<{ success: boolean, summary: string, error?: string }> => {
     let summaryLog: string[] = [];
     try {
-        summaryLog.push(`Starting migration for ${users.length} users into Firestore.`);
-        // Legacy stores are already backup formats, save directly to Firestore
         for (const user of users) {
             if (!user.stores) continue;
             for (const store of user.stores) {
-                summaryLog.push(`-- Processing store: ${store.name} (${store.id})`);
-                const legacyData = getLocal(store.id);
+                const legacyData = await getLocal(store.id);
                 if (legacyData) {
-                    const { success, error } = await saveStoreData(store, legacyData);
-                    if (!success) {
-                        summaryLog.push(`--- FAILED to migrate store ${store.id}: ${error}`);
-                    } else {
-                        summaryLog.push(`--- Successfully migrated store ${store.id}.`);
-                    }
-                } else {
-                    summaryLog.push(`--- No local data found for store ${store.id}, skipping.`);
+                    await saveStoreData(store, legacyData);
                 }
             }
         }
-        return { success: true, summary: summaryLog.join('\n') };
+        return { success: true, summary: "Completed" };
     } catch (err: any) {
-        summaryLog.push(`\n** MIGRATION FAILED **: ${err.message}`);
-        return { success: false, summary: summaryLog.join('\n'), error: err.message };
+        return { success: false, summary: "Failed", error: err.message };
     }
 };

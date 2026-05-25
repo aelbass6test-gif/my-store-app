@@ -212,7 +212,16 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
     try {
       if (!activeStoreId) throw new Error('المتجر النشط غير محدد');
       const response = await fetch(`/api/sync/platform/wuilt/${activeStoreId}/preview?type=products`);
-      const result = await response.json();
+      const text = await response.text();
+      
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (e) {
+        console.error(`[DEBUG] JSON parse error in ProductsPage. First 200 chars: ${text.substring(0, 200)}`);
+        throw new Error('فشل جلب المنتجات: استجابة غير صالحة من السيرفر');
+      }
+
       if (!response.ok) throw new Error(result.error || 'فشل جلب المنتجات');
       setSelectableProducts(result.items || []);
     } catch (error: any) {

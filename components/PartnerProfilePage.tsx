@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Settings, Partner, PartnerTransaction, Wallet, Transaction, Order } from '../types';
-import { User, ArrowLeft, TrendingUp, DollarSign, ArrowDownRight, ArrowUpLeft, History, PieChart, Activity, Calendar, Download, Check, Package as PackageIcon, Truck } from 'lucide-react';
+import { User, ArrowLeft, TrendingUp, DollarSign, ArrowDownRight, ArrowUpLeft, History, PieChart, Activity, Calendar, Download, Check, Package as PackageIcon, Truck, Coins } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { motion } from 'motion/react';
 
@@ -35,7 +35,8 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
     return {
        totalInvested: transactions.filter(t => t.type === 'capital_addition' || t.type === 'supply_funding' || t.type === 'shipping_funding').reduce((sum, t) => sum + t.amount, 0),
        totalWithdrawn: transactions.filter(t => t.type === 'profit_withdrawal').reduce((sum, t) => sum + t.amount, 0),
-       totalLoans: transactions.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((sum, t) => sum + t.amount, 0),
+       totalLoans: transactions.filter(t => t.type === 'loan').reduce((sum, t) => sum + t.amount, 0),
+       totalAdvances: transactions.filter(t => t.type === 'customer_advance').reduce((sum, t) => sum + t.amount, 0),
        totalRepaid: transactions.filter(t => t.type === 'repayment').reduce((sum, t) => sum + t.amount, 0),
     };
   }, [transactions]);
@@ -115,12 +116,13 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6">
           {[
-            { label: 'إجمالي الاستثمار', value: stats.totalInvested, color: 'text-blue-600', bg: 'bg-blue-100', icon: ArrowUpLeft },
-            { label: 'الأرباح المسحوبة', value: stats.totalWithdrawn, color: 'text-amber-600', bg: 'bg-amber-100', icon: DollarSign },
-            { label: 'إجمالي السلف', value: stats.totalLoans, color: 'text-rose-600', bg: 'bg-rose-100', icon: ArrowDownRight },
-            { label: 'صافي المديونية', value: stats.totalLoans - stats.totalRepaid, color: 'text-slate-700', bg: 'bg-slate-100', icon: History },
+            { label: 'إجمالي الاستثمار', value: stats.totalInvested, color: 'text-blue-600', bg: 'bg-blue-100 dark:bg-blue-900/20', icon: ArrowUpLeft },
+            { label: 'الأرباح المسحوبة', value: stats.totalWithdrawn, color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-900/20', icon: DollarSign },
+            { label: 'إجمالي السلف', value: stats.totalLoans, color: 'text-rose-600', bg: 'bg-rose-100 dark:bg-rose-900/20', icon: ArrowDownRight },
+            { label: 'إجمالي العرابين', value: stats.totalAdvances, color: 'text-teal-600', bg: 'bg-teal-100 dark:bg-teal-900/20', icon: Coins },
+            { label: 'صافي مديونية السلف', value: stats.totalLoans - stats.totalRepaid, color: 'text-slate-700 dark:text-slate-300', bg: 'bg-slate-100 dark:bg-slate-700/20', icon: History },
           ].map((stat, i) => (
             <motion.div 
               key={i}

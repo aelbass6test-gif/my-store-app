@@ -142,10 +142,25 @@ export const generateInvoiceHTML = (order: Order, settings: Settings, storeName:
             <span>رسوم معاينة (إن وجدت):</span>
             <span>${settings.inspectionFee.toLocaleString()} ج.م</span>
           </div>` : ''}
+          ${(Number(order.advancePayment) || 0) > 0 ? `
+          <div class="total-row" style="font-size: 14px; color: #555;">
+            <span>إجمالي قيمة الطلب:</span>
+            <span>${totalAmount.toLocaleString()} ج.م</span>
+          </div>
+          <div class="total-row" style="color: #0d9488; font-weight: bold;">
+            <span>العربون المقدم المدفوع:</span>
+            <span>-${(Number(order.advancePayment) || 0).toLocaleString()} ج.م</span>
+          </div>
+          <div class="total-row grand-total">
+            <span>المطلوب سداده عند الاستلام:</span>
+            <span>${(totalAmount - (Number(order.advancePayment) || 0)).toLocaleString()} ج.م</span>
+          </div>
+          ` : `
           <div class="total-row grand-total">
             <span>الإجمالي المستحق:</span>
             <span>${totalAmount.toLocaleString()} ج.م</span>
           </div>
+          `}
         </div>
 
         ${order.notes ? `

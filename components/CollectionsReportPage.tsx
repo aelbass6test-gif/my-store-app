@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Search, History, TrendingUp, Coins, ShieldCheck, Banknote, Calendar, Package, MapPin, Truck, Info, X, Receipt, Printer } from 'lucide-react';
 import { Order, Settings, Store } from '../types';
 import { generateCollectionsReportHTML } from '../utils/reportGenerator';
+import { isBosta, calculateInsuranceFee, calculateBostaVat } from '../utils/financials';
 
 interface CollectionsReportPageProps {
   orders: Order[];
@@ -20,6 +21,9 @@ interface BreakdownDetails {
   inspectionPaid: boolean | undefined;
   codFee: number;
   net: number;
+  discount: number;
+  extraAdjustment: number;
+  advancePayment: number;
 }
 
 const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, settings, activeStore }) => {
@@ -71,14 +75,20 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
       
       const totalAmount = o.productPrice + o.shippingFee;
       const codFee = calculateCodFee(o);
-      const isInsured = o.isInsured ?? true;
-      const insuranceFee = isInsured ? (totalAmount * insuranceRate) / 100 : 0;
+      const insuranceFee = calculateInsuranceFee(o, insuranceRate, settings);
       const inspectionAdjustment = o.inspectionFeePaidByCustomer ? 0 : inspectionCost;
+      const bostaVat = calculateBostaVat(o, insuranceFee, settings);
       
-      totalGross += totalAmount + (o.inspectionFeePaidByCustomer ? inspectionCost : 0);
-      totalInsuranceFees += insuranceFee;
+      const safeDiscount = o.discount || 0;
+      const safeAdvance = o.advancePayment || 0;
+      const defaultCollectionAmount = o.productPrice + o.shippingFee - safeDiscount - safeAdvance + (o.inspectionFeePaidByCustomer ? inspectionCost : 0);
+      const collectionAmount = o.totalAmountOverride !== undefined ? o.totalAmountOverride : defaultCollectionAmount;
+      const extraAdjustment = o.totalAmountOverride !== undefined ? o.totalAmountOverride - defaultCollectionAmount : 0;
+      
+      totalGross += collectionAmount;
+      totalInsuranceFees += insuranceFee + bostaVat; // Include VAT in total insurance/tax fees if desired
       totalCodFees += codFee;
-      totalNetProfit += (o.productPrice - o.productCost - insuranceFee - inspectionAdjustment - codFee);
+      totalNetProfit += (o.productPrice - safeDiscount - o.productCost - insuranceFee - inspectionAdjustment - codFee - bostaVat + extraAdjustment);
     });
 
     return { totalGross, totalNetProfit, count: collectedOrders.length, totalInsuranceFees, totalCodFees };
@@ -90,20 +100,28 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
     const insuranceRate = useCustom ? compFees!.insuranceFeePercent : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
     const inspectionCost = useCustom ? compFees!.inspectionFee : (settings.enableInspection ? settings.inspectionFee : 0);
     
-    const totalAmount = order.productPrice + order.shippingFee;
+    const safeDiscount = order.discount || 0;
+    const safeAdvance = order.advancePayment || 0;
+    const defaultCollectionAmount = order.productPrice + order.shippingFee - safeDiscount - safeAdvance + (order.inspectionFeePaidByCustomer ? inspectionCost : 0);
+    const collectionAmount = order.totalAmountOverride !== undefined ? order.totalAmountOverride : defaultCollectionAmount;
+    const extraAdjustment = order.totalAmountOverride !== undefined ? order.totalAmountOverride - defaultCollectionAmount : 0;
+
     const codFee = calculateCodFee(order);
-    const isInsured = order.isInsured ?? true;
-    const insuranceFee = isInsured ? (totalAmount * insuranceRate) / 100 : 0;
+    const insuranceFee = calculateInsuranceFee(order, insuranceRate, settings);
     const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : inspectionCost;
-    const net = order.productPrice - order.productCost - insuranceFee - inspectionAdjustment - codFee;
+    const bostaVat = calculateBostaVat(order, insuranceFee, settings);
+    const net = order.productPrice - safeDiscount - order.productCost - insuranceFee - inspectionAdjustment - codFee - bostaVat + extraAdjustment;
 
     setSelectedBreakdown({
       orderNumber: order.orderNumber,
       productPrice: order.productPrice,
       productCost: order.productCost,
       shippingFee: order.shippingFee,
-      totalAmount,
-      insuranceFee,
+      discount: safeDiscount,
+      advancePayment: safeAdvance,
+      extraAdjustment: extraAdjustment,
+      totalAmount: collectionAmount,
+      insuranceFee: insuranceFee + bostaVat, // display as combined insurance/tax fee
       inspectionCost,
       inspectionPaid: order.inspectionFeePaidByCustomer,
       codFee,
@@ -186,10 +204,17 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
                   const useCustom = compFees?.useCustomFees ?? false;
                   const insuranceRate = useCustom ? compFees!.insuranceFeePercent : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
                   const inspectionCost = useCustom ? compFees!.inspectionFee : (settings.enableInspection ? settings.inspectionFee : 0);
-                  const isInsured = order.isInsured ?? true;
-                  const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
+                  const insuranceFee = calculateInsuranceFee(order, insuranceRate, settings);
                   const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : inspectionCost;
-                  const netProfit = order.productPrice - order.productCost - insuranceFee - inspectionAdjustment - cod;
+                  const bostaVat = calculateBostaVat(order, insuranceFee, settings);
+                  
+                  const safeDiscount = order.discount || 0;
+                  const safeAdvance = order.advancePayment || 0;
+                  const defaultCollectionAmount = order.productPrice + order.shippingFee - safeDiscount - safeAdvance + (order.inspectionFeePaidByCustomer ? inspectionCost : 0);
+                  const collectionAmount = order.totalAmountOverride !== undefined ? order.totalAmountOverride : defaultCollectionAmount;
+                  const extraAdjustment = order.totalAmountOverride !== undefined ? order.totalAmountOverride - defaultCollectionAmount : 0;
+                  
+                  const netProfit = order.productPrice - safeDiscount - order.productCost - insuranceFee - inspectionAdjustment - cod - bostaVat + extraAdjustment;
                   
                   return (
                     <tr key={order.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
@@ -199,7 +224,7 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
                         <div className="text-[10px] text-slate-500">{order.shippingArea}</div>
                       </td>
                       <td className="px-6 py-4 font-black text-slate-700 dark:text-slate-300">
-                        {(order.productPrice + order.shippingFee).toLocaleString()} ج.م
+                        {collectionAmount.toLocaleString()} ج.م
                       </td>
                       <td className="px-6 py-4">
                         {order.inspectionFeePaidByCustomer ? (
@@ -244,10 +269,24 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
                   <span className="text-slate-500">سعر البيع:</span>
                   <span className="text-emerald-500">+{selectedBreakdown.productPrice.toLocaleString()} ج.م</span>
                </div>
+               {(selectedBreakdown.discount || 0) > 0 && (
+                   <div className="flex justify-between items-center text-sm font-bold pb-2 border-b dark:border-slate-800">
+                      <span className="text-slate-500">خصم مقدم للعميل:</span>
+                      <span className="text-red-500">-{selectedBreakdown.discount.toLocaleString()} ج.م</span>
+                   </div>
+               )}
                <div className="flex justify-between items-center text-sm font-bold pb-2 border-b dark:border-slate-800">
                   <span className="text-slate-500">سعر التكلفة:</span>
                   <span className="text-red-500">-{selectedBreakdown.productCost.toLocaleString()} ج.م</span>
                </div>
+               {(selectedBreakdown.extraAdjustment || 0) !== 0 && (
+                   <div className="flex justify-between items-center text-sm font-bold pb-2 border-b dark:border-slate-800">
+                      <span className="text-slate-500">تعديل الإجمالي اليدوي:</span>
+                      <span className={selectedBreakdown.extraAdjustment > 0 ? "text-emerald-500" : "text-red-500"}>
+                          {selectedBreakdown.extraAdjustment > 0 ? '+' : ''}{selectedBreakdown.extraAdjustment.toLocaleString()} ج.م
+                      </span>
+                   </div>
+               )}
                <div className="flex justify-between items-center text-sm font-bold pb-2 border-b dark:border-slate-800">
                   <span className="text-slate-500">رسوم التأمين:</span>
                   <span className="text-red-500">-{selectedBreakdown.insuranceFee.toLocaleString()} ج.م</span>

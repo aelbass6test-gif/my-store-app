@@ -2,8 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Settings, ShippingOption, CompanyFees, CityOption } from '../types';
 import { Save, Info, Truck, Plus, Trash2, Wallet, Scale, AlertCircle, XCircle, Package, RefreshCcw, Percent, Coins, Building2, MapPin, Repeat, Settings as SettingsIcon, ShieldCheck, Banknote, ChevronDown, ChevronUp, Eye, ArrowRight, Link2, Plug, CheckCircle2, Wrench, ArrowLeft, Map, Link as LinkIcon, Download, ListChecks, CheckSquare, Square, Search, Lock, Unlock, Unlink, X } from 'lucide-react';
 import SaveBar from './SaveBar';
+import BostaSystemPortal from './BostaSystemPortal';
 import { motion } from 'framer-motion';
 import { generateEgyptShippingOptions, EGYPT_GOVERNORATES } from '../constants';
+import { isBosta } from '../utils/financials';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -228,7 +230,14 @@ const CityManagerModal: React.FC<{
 };
 
 
-const ShippingPage: React.FC<{ settings: Settings, setSettings: React.Dispatch<React.SetStateAction<Settings>> }> = ({ settings, setSettings }) => {
+const ShippingPage: React.FC<{ 
+  settings: Settings, 
+  setSettings: React.Dispatch<React.SetStateAction<Settings>>,
+  treasury?: any,
+  setTreasury?: (updater: any) => void,
+  wallet?: any,
+  setWallet?: (updater: any) => void
+}> = ({ settings, setSettings, treasury, setTreasury, wallet, setWallet }) => {
   const [localSettings, setLocalSettings] = useState(settings);
   const [isDirty, setIsDirty] = useState(false);
 
@@ -324,12 +333,23 @@ const ShippingPage: React.FC<{ settings: Settings, setSettings: React.Dispatch<R
                 />
             </div>
             <div className={`transition-all duration-500 ease-in-out absolute w-full top-0 ${view === 'main' ? 'translate-x-full opacity-0 pointer-events-none' : 'translate-x-0'}`}>
-                {view !== 'main' && (
+                {view !== 'main' && view !== 'bosta-system' && (
                     <CompanyManager 
                         companyName={view} 
                         settings={localSettings} 
                         setSettings={setLocalSettings} 
                         onBack={handleBack} 
+                    />
+                )}
+                {view === 'bosta-system' && (
+                    <BostaSystemPortal 
+                        onBack={handleBack} 
+                        treasury={treasury}
+                        setTreasury={setTreasury}
+                        wallet={wallet}
+                        setWallet={setWallet}
+                        settings={settings}
+                        setSettings={setSettings}
                     />
                 )}
             </div>
@@ -380,6 +400,25 @@ const ShippingDashboard: React.FC<any> = ({ settings, setSettings, onManageCompa
                     <p className="text-slate-500 dark:text-slate-400 mt-1">إدارة شركات الشحن، مناطق التوصيل، والسياسات المالية.</p>
                 </div>
             </motion.div>
+
+            <motion.div variants={itemVariants} className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-6 rounded-2xl shadow-md border border-indigo-500/30">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="space-y-2 text-right">
+                        <div className="flex items-center gap-2 bg-white/20 px-3 py-1 rounded-full text-[10px] font-black w-fit">
+                            <Truck size={12} /> بوابة الشريك الرسمي لبوسطة
+                        </div>
+                        <h2 className="text-xl font-black">نظام بوسطة في الشحن (Bosta Shipping System)</h2>
+                        <p className="text-blue-100 text-xs font-bold max-w-2xl leading-relaxed">استعراض أسعار شركة بوسطة الرسمية بمصر بالفئات والجهات، حاسبة الرسوم المتقدمة مع ضريبة القيمة المضافة 14% ورسوم السحب النقدي لبوسطة.</p>
+                    </div>
+                    <button 
+                        type="button"
+                        onClick={() => onManageCompany('bosta-system')} 
+                        className="bg-white text-indigo-700 hover:bg-blue-50 px-5 py-3 rounded-xl font-black text-xs shadow-xl transition-all hover:scale-[1.02] active:scale-95 whitespace-nowrap self-stretch md:self-auto text-center"
+                    >
+                        فتح بوابة بوسطة الحصرية
+                    </button>
+                </div>
+            </motion.div>
             
             <motion.div variants={itemVariants}>
               <SectionCard title="شركات الشحن" icon={<Building2 size={22} className="text-indigo-600 dark:text-indigo-400" />} action={<button onClick={onAddCompany} className="flex items-center gap-2 text-sm bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm hover:bg-indigo-700 active:scale-95 transition-all"><Plus size={16} /> إضافة شركة</button>}>
@@ -417,6 +456,43 @@ const ShippingDashboard: React.FC<any> = ({ settings, setSettings, onManageCompa
                                   <input type="number" name="baseWeight" className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-black dark:text-white shadow-inner transition-all" value={settings.baseWeight ?? 5} onChange={handleChange} />
                               </div>
                               <p className="text-[10px] text-slate-500 dark:text-slate-500 mt-3 leading-relaxed font-bold">الوزن الأساسي المشمول في سعر الشحن.</p>
+                          </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-slate-200 dark:border-slate-800">
+                          {/* طريقة احتساب التأمين الافتراضية */}
+                          <div className="p-5 rounded-2xl border bg-white dark:bg-slate-800/30 border-slate-300 dark:border-slate-700 transition-all">
+                              <label className="text-sm font-black text-slate-800 dark:text-slate-300 flex items-center gap-2 mb-4">
+                                  <ShieldCheck size={16} className="text-blue-500" /> أساس احتساب رسوم التأمين الافتراضي
+                              </label>
+                              <select 
+                                  name="insuranceBasis" 
+                                  className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold dark:text-white" 
+                                  value={settings.insuranceBasis ?? 'total'} 
+                                  onChange={(e) => setSettings((prev: Settings) => ({ ...prev, insuranceBasis: e.target.value as any }))}
+                              >
+                                  <option value="total">سعر المنتج + مصاريف الشحن (الإجمالي)</option>
+                                  <option value="cost">سعر شراء/تكلفة المنتج الفعلي</option>
+                                  <option value="price">سعر بيع المنتج الأصلي فقط</option>
+                                  <option value="base">السعر الأساسي للمنتج</option>
+                              </select>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-500 mt-3 leading-relaxed font-bold">الأساس الحسابي الافتراضي لنسبة التأمين لجميع الشركات.</p>
+                          </div>
+                          
+                          {/* ضريبة القيمة المضافة الافتراضية */}
+                          <div className="p-5 rounded-2xl border bg-white dark:bg-slate-800/30 border-slate-300 dark:border-slate-700 transition-all">
+                              <label className="text-sm font-black text-slate-800 dark:text-slate-300 flex items-center gap-2 mb-4">
+                                  <Coins size={16} className="text-emerald-500" /> ضريبة القيمة المضافة الافتراضية للشحن (%)
+                              </label>
+                              <input 
+                                  type="number" 
+                                  step="1" 
+                                  className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold dark:text-white shadow-inner" 
+                                  value={settings.shippingVatRate !== undefined ? Math.round(settings.shippingVatRate * 100) : 0} 
+                                  onChange={(e) => setSettings((prev: Settings) => ({ ...prev, shippingVatRate: Number(e.target.value) / 100 }))} 
+                                  placeholder="مثلاً 14 لـ 14%" 
+                              />
+                              <p className="text-[10px] text-slate-500 dark:text-slate-500 mt-3 leading-relaxed font-bold">النسبة الضريبية التلقائية المستحقة على مجموع الشحن والتأمين لجميع الشركات.</p>
                           </div>
                       </div>
                   </div>
@@ -967,6 +1043,36 @@ const CompanyFinancialsEditor: React.FC<any> = ({ companyName, settings, setSett
 
                         <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 dark:text-slate-500">المعاينة ج.م</label><input type="number" value={companyFees.inspectionFee || 0} onChange={(e) => handleCompanyFeeChange('inspectionFee', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold" /></div>
                         <div className="space-y-1.5"><label className="text-xs font-bold text-slate-500 dark:text-slate-500">مرتجع ثابت ج.م</label><input type="number" value={companyFees.returnShippingFee || 0} onChange={(e) => handleCompanyFeeChange('returnShippingFee', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold" /></div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                        {/* طريقة احتساب التأمين */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">أساس احتساب رسوم التأمين</label>
+                            <select 
+                                value={companyFees.insuranceBasis ?? (isBosta(companyName) ? 'cost' : 'total')} 
+                                onChange={(e) => handleCompanyFeeChange('insuranceBasis', e.target.value as any)} 
+                                className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold dark:text-white"
+                            >
+                                <option value="total">سعر المنتج + مصاريف الشحن (الإجمالي)</option>
+                                <option value="cost">سعر شراء/تكلفة المنتج الفعلي</option>
+                                <option value="price">سعر بيع المنتج الأصلي فقط</option>
+                                <option value="base">السعر الأساسي للمنتج</option>
+                            </select>
+                        </div>
+                        
+                        {/* ضريبة القيمة المضافة لشركة الشحن */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">ضريبة القيمة المضافة لشركة الشحن (%)</label>
+                            <input 
+                                type="number" 
+                                step="1" 
+                                value={companyFees.shippingVatRate !== undefined ? Math.round(companyFees.shippingVatRate * 100) : (isBosta(companyName) ? 14 : 0)} 
+                                onChange={(e) => handleCompanyFeeChange('shippingVatRate', Number(e.target.value) / 100)} 
+                                className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold dark:text-white" 
+                                placeholder="مثلاً 14 لـ 14%" 
+                            />
+                        </div>
                     </div>
                      <div className="bg-amber-50 dark:bg-amber-950/20 p-5 rounded-xl border border-amber-200 dark:border-amber-900/40 space-y-4">
                         <div className="flex justify-between items-center"><span className="text-sm font-bold text-amber-900 dark:text-amber-300">رسوم COD</span><ToggleButton active={companyFees.enableCodFees} onToggle={() => handleCompanyFeeChange('enableCodFees', !companyFees.enableCodFees)} variant="amber" /></div>

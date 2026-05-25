@@ -148,6 +148,8 @@ export interface Transaction {
 }
 
 export interface Wallet {
+  id?: string;
+  data?: any;
   balance: number;
   supplyBalance?: number; // Added supplyBalance for inventory funding
   transactions: Transaction[];
@@ -171,6 +173,8 @@ export interface CompanyFees {
   codFeeRate: number;
   codTaxRate: number;
   postCollectionReturnRefundsProductPrice: boolean;
+  insuranceBasis?: 'cost' | 'price' | 'total' | 'base';
+  shippingVatRate?: number;
 }
 
 export const PERMISSIONS = {
@@ -405,6 +409,8 @@ export interface WebhookIntegration {
 }
 
 export interface Settings {
+  id?: string;
+  data?: any; // For flexible local storage
   enableGlobalFinancials: boolean; 
   webhookIntegrations?: WebhookIntegration[];
   insuranceFeePercent: number;
@@ -426,6 +432,8 @@ export interface Settings {
   codThreshold: number;
   codFeeRate: number;
   codTaxRate: number;
+  insuranceBasis?: 'cost' | 'price' | 'total' | 'base';
+  shippingVatRate?: number;
   sku: string; 
   defaultProductPrice: number;
   enableDefaultPrice: boolean;
@@ -473,6 +481,35 @@ export interface Settings {
   sameDayWithdrawalFlatFee?: number;
   minWithdrawalFee?: number;
   feeApplicableMethods?: string[]; // e.g. ['card', 'instapay', 'wallet']
+  inventoryAudits?: InventoryAuditSession[];
+}
+
+export interface InventoryAuditItemDiscrepancy {
+  productId: string;
+  variantId?: string;
+  name: string;
+  sku: string;
+  systemQty: number;
+  actualQty: number;
+  variance: number;
+  costPrice: number;
+  varianceValue: number;
+  method: 'correction' | 'scrap' | 'surplus'; // تصفية المخزن أو هالك أو بضاعة زائدة
+  notes?: string;
+}
+
+export interface InventoryAuditSession {
+  id: string;
+  title: string;
+  date: string;
+  performedBy: string; // user name/email
+  scope: 'all' | string; // 'all' or collection ID
+  totalSystemQty: number;
+  totalActualQty: number;
+  totalVarianceQty: number;
+  totalVarianceValue: number;
+  discrepancies: InventoryAuditItemDiscrepancy[];
+  notes?: string;
 }
 
 export interface OrderItem {
@@ -591,14 +628,45 @@ export interface Order {
   images?: string[];
   advancePayment?: number;
   advancePaymentPartnerId?: string;
+  advancePaymentTreasuryId?: string;
+  advancePaymentRecipientPhone?: string;
+  advancePaymentSenderDetails?: string;
+}
+
+export interface TreasuryAccount {
+  id: string;
+  name: string;
+  type: 'safe' | 'bank' | 'wallet' | 'custody';
+  balance: number;
+  currency: string;
+}
+
+export interface TreasuryTransaction {
+  id: string;
+  date: string;
+  fromAccountId?: string;
+  toAccountId?: string;
+  amount: number;
+  type: 'deposit' | 'withdrawal' | 'transfer' | 'advance';
+  description: string;
+  reference?: string;
+}
+
+export interface Treasury {
+  id?: string;
+  data?: any;
+  accounts: TreasuryAccount[];
+  transactions: TreasuryTransaction[];
 }
 
 export interface StoreData {
   orders: Order[];
   settings: Settings;
   wallet: Wallet;
+  treasury?: Treasury;
   cart: OrderItem[];
   customers: CustomerProfile[]; // Added customers to StoreData
+
 }
 
 export interface PlaceOrderData {

@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { Wallet, Transaction, TransactionCategory, Settings } from '../types';
-import { DollarSign, Plus, TrendingDown, PieChart as PieChartIcon, Calendar, Trash2, Tag, Receipt } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Wallet, Transaction, TransactionCategory, Settings, Treasury, TreasuryTransaction } from '../types';
+import { DollarSign, Plus, TrendingDown, PieChart as PieChartIcon, Calendar, Trash2, Tag, Receipt, Landmark } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface ExpensesPageProps {
@@ -8,17 +8,26 @@ interface ExpensesPageProps {
   setWallet: React.Dispatch<React.SetStateAction<Wallet>>;
   settings: Settings;
   updateSettings: (newSettings: Settings) => void;
+  treasury?: Treasury;
+  setTreasury?: (updater: any) => void;
 }
 
-const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings, updateSettings }) => {
+const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings, updateSettings, treasury, setTreasury }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
+  const [accountId, setAccountId] = useState('');
   const [category, setCategory] = useState<TransactionCategory>(
       (settings.expenseCategories && settings.expenseCategories.length > 0) 
       ? (settings.expenseCategories[0] as TransactionCategory) 
       : 'expense_ads'
   );
+
+  useEffect(() => {
+    if (treasury?.accounts && treasury.accounts.length > 0 && !accountId) {
+      setAccountId(treasury.accounts[0].id);
+    }
+  }, [treasury, accountId]);
   
   // Custom dialog states
   const [dialog, setDialog] = useState<{
@@ -56,9 +65,21 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
         return color;
     };
 
+    const getLabel = (key: string) => {
+        const labels: Record<string, string> = {
+            'expense_ads': 'إعلانات وتسويق',
+            'expense_salary': 'رواتب ومكافآت',
+            'expense_rent': 'إيجار ومرافق',
+            'expense_packaging': 'أدوات تغليف',
+            'expense_shipping_fees': 'مصاريف شحن',
+            'expense_other': 'مصاريف أخرى'
+        };
+        return labels[key] || key;
+    };
+
     return (settings.expenseCategories || []).map(cat => ({
         key: cat,
-        label: cat, // You can later add a mapping in settings if specific Arabic labels are needed
+        label: getLabel(cat),
         color: stringToColor(cat)
     }));
   }, [settings.expenseCategories]);
@@ -78,24 +99,59 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) return;
 
+    if (!accountId) {
+      showToast('الرجاء اختيار حساب الخزينة', 'error');
+      return;
+    }
+
+    const newTransactionId = Date.now().toString();
+
+    // 1. Add to Wallet Tracking (Expenses are synced into the Wallet Ledger for reports)
     const newTransaction: Transaction = {
-        id: Date.now().toString(),
+        id: newTransactionId,
         type: 'سحب',
         amount: numAmount,
         date: new Date().toISOString(),
         note: description || 'مصروف جديد',
         category: category,
-        status: 'completed'
+        status: 'completed',
+        details: { treasuryAccountId: accountId }
     };
 
     setWallet(prevWallet => {
-        // Ensure balance is treated as a number to prevent data corruption
+        // Here we do NOT deduct from Global Wallet Balance if we are deducting from a specific Treasury Account instead.
+        // Wait, if it's coming from Treasury, does it affect the main store wallet? 
+        // Typically, expenses paid from the cash drawer shouldn't reduce the virtual Wallet platform balance unless they are linked.
+        // But the previous implementation deducted it from wallet.balance. Let's keep that but also deduct from Treasury to keep it consistent.
         const currentBalance = Number(prevWallet.balance) || 0;
         return {
+            ...prevWallet,
             balance: currentBalance - numAmount,
             transactions: [newTransaction, ...prevWallet.transactions]
         };
     });
+
+    // 2. Add to Treasury
+    if (setTreasury) {
+      const treasuryTx: TreasuryTransaction = {
+        id: newTransactionId,
+        date: new Date().toISOString(),
+        type: 'withdrawal',
+        amount: numAmount,
+        description: `مصروف: ${description || 'مصروف جديد'}`,
+        fromAccountId: accountId
+      };
+      
+      setTreasury((prev: Treasury) => {
+        const updatedAccounts = prev.accounts.map(acc => 
+          acc.id === accountId ? { ...acc, balance: acc.balance - numAmount } : acc
+        );
+        return {
+          accounts: updatedAccounts,
+          transactions: [treasuryTx, ...prev.transactions]
+        };
+      });
+    }
 
     setShowAddModal(false);
     setAmount('');
@@ -106,27 +162,45 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
       setDialog({
         isOpen: true,
         title: 'تأكيد الحذف',
-        message: 'هل أنت متأكد من حذف هذا المصروف؟ سيتم إعادة المبلغ للمحفظة.',
+        message: 'هل أنت متأكد من حذف هذا المصروف؟ سيتم إعادة المبلغ للمحفظة والخزينة.',
         onConfirm: () => {
+          let txAccountToRefund: string | undefined = undefined;
+          let amntoRefund: number = 0;
+
           setWallet(prevWallet => {
             const transactionToDelete = prevWallet.transactions.find(t => t.id === id);
             if (!transactionToDelete) {
                 return prevWallet;
             }
             
+            txAccountToRefund = transactionToDelete.details?.treasuryAccountId;
+            amntoRefund = Number(transactionToDelete.amount) || 0;
             const updatedTransactions = prevWallet.transactions.filter(t => t.id !== id);
             
-            // Ensure both balance and amount are numbers before performing arithmetic
             const currentBalance = Number(prevWallet.balance) || 0;
-            const amountToDelete = Number(transactionToDelete.amount) || 0;
-            
-            const newBalance = currentBalance + amountToDelete;
+            const newBalance = currentBalance + amntoRefund;
 
             return {
+                ...prevWallet,
                 balance: newBalance,
                 transactions: updatedTransactions
             };
           });
+
+          if (setTreasury && amntoRefund > 0) {
+            setTreasury((prev: Treasury) => {
+              const updatedAccounts = prev.accounts.map(acc => 
+                acc.id === txAccountToRefund ? { ...acc, balance: acc.balance + amntoRefund } : acc
+              );
+              // We could also record a refund transaction in treasury here, but keeping it simple for now
+              return {
+                ...prev,
+                accounts: updatedAccounts,
+                transactions: prev.transactions.filter(tx => tx.id !== id) // Remove the linked treasury tx if it exists
+              };
+            });
+          }
+
           setDialog(null);
           showToast('تم حذف المصروف بنجاح');
         }
@@ -266,6 +340,25 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
                             <div className="relative">
                                 <input type="number" required autoFocus value={amount} onChange={e => setAmount(e.target.value)} className="w-full pl-4 pr-10 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-bold dark:text-white" placeholder="0.00" />
                                 <DollarSign className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">من حساب (الخزينة/المحفظة)</label>
+                            <div className="relative">
+                                <select 
+                                    required 
+                                    value={accountId} 
+                                    onChange={e => setAccountId(e.target.value)} 
+                                    className="w-full pl-4 pr-10 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-bold dark:text-white appearance-none"
+                                >
+                                    <option value="" disabled>اختر حساب الخزينة</option>
+                                    {treasury?.accounts.map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.name} - ({acc.balance.toLocaleString()} ج.م)
+                                        </option>
+                                    ))}
+                                </select>
+                                <Landmark className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
                             </div>
                         </div>
                         <div>

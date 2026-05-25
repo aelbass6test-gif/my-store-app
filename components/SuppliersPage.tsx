@@ -2,22 +2,27 @@ import React, { useState } from 'react';
 import { Settings, Supplier, SupplyOrder, Transaction } from '../types';
 import { UserPlus, Truck, Save, Plus, Package, Calendar, DollarSign, User, Trash2, Edit2, Eye, X } from 'lucide-react';
 import { SupplyOrderItem } from '../types';
+import { InventoryAudit } from './InventoryAudit';
 
 interface SuppliersPageProps {
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   wallet: any;
   setWallet: React.Dispatch<React.SetStateAction<any>>;
+  treasury?: any;
+  setTreasury?: (updater: any) => void;
+  currentUser?: any;
 }
 
-const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, wallet, setWallet }) => {
-  const [activeTab, setActiveTab] = useState<'suppliers' | 'orders'>('orders');
+const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, wallet, setWallet, treasury, setTreasury, currentUser }) => {
+  const [activeTab, setActiveTab] = useState<'suppliers' | 'orders' | 'audit'>('orders');
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentNote, setPaymentNote] = useState('');
+  const [selectedTreasuryAccountId, setSelectedTreasuryAccountId] = useState('');
   
   // New Supplier State
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -29,9 +34,9 @@ const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, wa
   const [orderReference, setOrderReference] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
   const [orderItems, setOrderItems] = useState<SupplyOrderItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'partner' | 'supply_wallet'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'partner' | 'supply_wallet' | 'treasury'>('cash');
   const [partnerPayments, setPartnerPayments] = useState<{ partnerId: string, amount: number }[]>([]);
-  const [selectedPartnerId, setSelectedPartnerId] = useState(''); // Kept for backward compatibility/legacy simple selector
+  const [selectedPartnerId, setSelectedPartnerId] = useState(''); 
   
   const totalCost = React.useMemo(() => {
     return orderItems.reduce((sum, item) => {
@@ -208,9 +213,27 @@ const SuppliersPage: React.FC<SuppliersPageProps> = ({ settings, setSettings, wa
               });
           }
 
-          // 5. Update Supply Wallet Balance
+      // 5. Update Supply Wallet Balance
           if (paymentMethod === 'supply_wallet') {
             // This is handled in setWallet, but here we just ensure the order is tagged correctly
+          }
+
+          // 6. Update Treasury Balance
+          if (paymentMethod === 'treasury' && selectedTreasuryAccountId && setTreasury) {
+             setTreasury((prev: any) => ({
+                 ...prev,
+                 accounts: prev.accounts.map((acc: any) => 
+                     acc.id === selectedTreasuryAccountId ? { ...acc, balance: acc.balance - totalCost } : acc
+                 ),
+                 transactions: [{
+                     id: `supply_tx_${currentOrderId}`,
+                     date: new Date().toISOString(),
+                     type: 'withdrawal',
+                     amount: totalCost,
+                     fromAccountId: selectedTreasuryAccountId,
+                     description: `شراء بضاعة من المورد ${supplier?.name} (أمر: ${orderReference || currentOrderId})`
+                 }, ...prev.transactions]
+             }));
           }
 
           if (editingOrder) {
@@ -555,6 +578,7 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
     if (!selectedSupplierForPayment || paymentAmount <= 0) return;
 
     const fromSupplyWallet = paymentMethod === 'supply_wallet';
+    const fromTreasury = paymentMethod === 'treasury';
 
     setSettings(prev => ({
         ...prev,
@@ -564,34 +588,52 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
         } : s)
     }));
 
-    // Record in Wallet as "Supply Payment"
-    setWallet((prev: any) => {
-        const newBalance = fromSupplyWallet ? (prev.balance || 0) : (prev.balance || 0) - paymentAmount;
-        const newSupplyBalance = fromSupplyWallet ? (prev.supplyBalance || 0) - paymentAmount : (prev.supplyBalance || 0);
-        
-        return {
+    if (fromTreasury && selectedTreasuryAccountId && setTreasury) {
+        setTreasury((prev: any) => ({
             ...prev,
-            balance: newBalance,
-            supplyBalance: newSupplyBalance,
-            transactions: [
-                {
-                    id: `pay_${Date.now()}`,
-                    type: 'سحب',
-                    amount: paymentAmount,
-                    date: new Date().toISOString(),
-                    note: `سداد مديونية للمورد: ${selectedSupplierForPayment.name} (${fromSupplyWallet ? 'محفظة التوريد' : 'المحفظة العامة'})`,
-                    category: fromSupplyWallet ? 'supply_purchase' : 'supplier_payment',
-                    status: 'completed'
-                },
-                ...prev.transactions
-            ]
-        };
-    });
+            accounts: prev.accounts.map((acc: any) => 
+                acc.id === selectedTreasuryAccountId ? { ...acc, balance: acc.balance - paymentAmount } : acc
+            ),
+            transactions: [{
+                id: `pay_supp_${Date.now()}`,
+                date: new Date().toISOString(),
+                type: 'withdrawal',
+                amount: paymentAmount,
+                fromAccountId: selectedTreasuryAccountId,
+                description: `سداد مديونية للمورد: ${selectedSupplierForPayment.name}`
+            }, ...prev.transactions]
+        }));
+    } else {
+        // Record in Wallet as "Supply Payment"
+        setWallet((prev: any) => {
+            const newBalance = fromSupplyWallet ? (prev.balance || 0) : (prev.balance || 0) - paymentAmount;
+            const newSupplyBalance = fromSupplyWallet ? (prev.supplyBalance || 0) - paymentAmount : (prev.supplyBalance || 0);
+            
+            return {
+                ...prev,
+                balance: newBalance,
+                supplyBalance: newSupplyBalance,
+                transactions: [
+                    {
+                        id: `pay_${Date.now()}`,
+                        type: 'سحب',
+                        amount: paymentAmount,
+                        date: new Date().toISOString(),
+                        note: `سداد مديونية للمورد: ${selectedSupplierForPayment.name} (${fromSupplyWallet ? 'محفظة التوريد' : 'المحفظة العامة'})`,
+                        category: fromSupplyWallet ? 'supply_purchase' : 'supplier_payment',
+                        status: 'completed'
+                    },
+                    ...prev.transactions
+                ]
+            };
+        });
+    }
 
     setShowPaymentModal(false);
     setPaymentAmount(0);
     setPaymentNote('');
     setSelectedSupplierForPayment(null);
+    setSelectedTreasuryAccountId('');
   };
 
   const addItemToOrder = () => {
@@ -632,6 +674,7 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
         <div className="flex gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800 w-full sm:w-fit overflow-x-auto">
             <button onClick={() => setActiveTab('orders')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'orders' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>أوامر التوريد</button>
             <button onClick={() => setActiveTab('suppliers')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'suppliers' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>قائمة الموردين</button>
+            <button onClick={() => setActiveTab('audit')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'audit' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>الجرد والتسوية</button>
         </div>
 
         {activeTab === 'orders' && (
@@ -729,6 +772,10 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
             </div>
         )}
 
+        {activeTab === 'audit' && (
+            <InventoryAudit settings={settings} setSettings={setSettings} currentUser={currentUser} />
+        )}
+
         {/* Supplier Modal */}
         {showSupplierModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -768,9 +815,26 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                             <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl overflow-x-auto no-scrollbar">
                                 <button onClick={() => setPaymentMethod('cash')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'cash' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'}`}>كاش (العامة)</button>
                                 <button onClick={() => setPaymentMethod('supply_wallet')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'supply_wallet' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500'}`}>محفظة التوريد</button>
-                                <button onClick={() => setPaymentMethod('partner')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'partner' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-500'}`}>تمويل شركاء</button>
-                                <button onClick={() => setPaymentMethod('credit')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'credit' ? 'bg-white dark:bg-slate-700 text-amber-600 shadow-sm' : 'text-slate-500'}`}>آجل</button>
+                                <button onClick={() => setPaymentMethod('partner')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'partner' ? 'bg-white dark:bg-slate-700 text-amber-600 shadow-sm' : 'text-slate-500'}`}>تمويل شركاء</button>
+                                <button onClick={() => setPaymentMethod('treasury')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'treasury' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' : 'text-slate-500'}`}>الخزينة</button>
+                                <button onClick={() => setPaymentMethod('credit')} className={`flex-1 min-w-[80px] py-2 text-center rounded-lg font-bold transition-all text-[10px] sm:text-xs ${paymentMethod === 'credit' ? 'bg-white dark:bg-slate-700 text-rose-600 shadow-sm' : 'text-slate-500'}`}>آجل</button>
                             </div>
+                            {paymentMethod === 'treasury' && (
+                                <div className="mt-4 animate-in slide-in-from-top-2 duration-300">
+                                    <label className="text-xs font-bold text-slate-500 mb-1 block">خصم من حساب الخزينة:</label>
+                                    <select 
+                                        value={selectedTreasuryAccountId} 
+                                        onChange={e => setSelectedTreasuryAccountId(e.target.value)} 
+                                        className="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl outline-none dark:text-white text-xs font-bold"
+                                        required
+                                    >
+                                        <option value="">-- اختر حساباً --</option>
+                                        {(treasury?.accounts || []).map((acc: any) => (
+                                            <option key={acc.id} value={acc.id}>{acc.name} ({acc.balance.toLocaleString()} ج.م)</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <p className="mt-2 text-[10px] text-slate-400 font-medium px-1">
                                 {paymentMethod === 'partner' ? 'سيتم خصم المبلغ من أرصدة الشركاء المختارة وإضافته لمحفظة التوريد ثم سداده للمورد.' : 
                                  paymentMethod === 'cash' ? 'سيتم خصم المبلغ مباشرة من الرصيد السائل في المحفظة العامة.' : 
@@ -1076,7 +1140,30 @@ const ProductSelect = ({ value, onChange, products }: { value: string, onChange:
                                 >
                                     محفظة التوريد
                                 </button>
+                                <button 
+                                    onClick={() => setPaymentMethod('treasury')} 
+                                    className={`flex-1 py-2 text-center rounded-lg font-bold transition-all text-xs ${paymentMethod === 'treasury' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                                >
+                                    الخزينة
+                                </button>
                             </div>
+
+                            {paymentMethod === 'treasury' && (
+                                <div className="mt-4 animate-in slide-in-from-top-2 duration-300">
+                                    <label className="text-xs font-bold text-slate-500 mb-1 block">خصم من حساب الخزينة:</label>
+                                    <select 
+                                        value={selectedTreasuryAccountId} 
+                                        onChange={e => setSelectedTreasuryAccountId(e.target.value)} 
+                                        className="w-full p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl outline-none dark:text-white text-xs font-bold"
+                                        required
+                                    >
+                                        <option value="">-- اختر حساباً --</option>
+                                        {(treasury?.accounts || []).map((acc: any) => (
+                                            <option key={acc.id} value={acc.id}>{acc.name} ({acc.balance.toLocaleString()} ج.م)</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                         </div>
 
                         <button onClick={handleRecordPayment} className="w-full py-4 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2">

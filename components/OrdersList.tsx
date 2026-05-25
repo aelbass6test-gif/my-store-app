@@ -6,7 +6,7 @@ import { motion, Variants, AnimatePresence } from 'framer-motion';
 import { generateInvoiceHTML } from '../utils/invoiceGenerator';
 import { generateShippingLabelHTML } from '../utils/shippingLabelGenerator';
 import { generateShippingNote } from '../services/geminiService';
-import { calculateCodFee, getLatestProductCost } from '../utils/financials';
+import { calculateCodFee, getLatestProductCost, isBosta, calculateInsuranceFee, calculateBostaVat } from '../utils/financials';
 import { generateOrdersReportHTML } from '../utils/reportGenerator';
 import { triggerWebhooks } from '../utils/webhook';
 
@@ -42,6 +42,8 @@ interface OrdersListProps {
   activeStore?: Store;
   customers: CustomerProfile[];
   setCustomers: React.Dispatch<React.SetStateAction<CustomerProfile[]>>;
+  treasury?: any;
+  setTreasury?: (updater: any) => void;
 }
 
 interface NewOrderState extends Partial<Omit<Order, 'id'>> {
@@ -53,6 +55,9 @@ interface NewOrderState extends Partial<Omit<Order, 'id'>> {
   totalAmountOverrideReason?: string;
   advancePayment?: number;
   advancePaymentPartnerId?: string;
+  advancePaymentTreasuryId?: string;
+  advancePaymentRecipientPhone?: string;
+  advancePaymentSenderDetails?: string;
 }
 
 const EditTotalModal: React.FC<{ 
@@ -172,7 +177,7 @@ const WaybillModal: React.FC<{ order: Order; onClose: () => void; onSave: (waybi
 };
 
 
-const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ orders, setOrders, products, settings, currentUser, setWallet, setSettings, addLoyaltyPointsForOrder, activeStore, customers, setCustomers, onRefresh }) => {
+const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ orders, setOrders, products, settings, currentUser, setWallet, setSettings, addLoyaltyPointsForOrder, activeStore, customers, setCustomers, onRefresh, treasury, setTreasury }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -289,7 +294,11 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     paymentStatus: 'بانتظار الدفع', preparationStatus: 'بانتظار التجهيز', discount: 0, notes: '',
     orderType: 'standard', originalOrderId: undefined,
     totalAmountOverrideReason: '', paymentMethod: 'cod',
-    advancePayment: 0, advancePaymentPartnerId: ''
+    advancePayment: 0, 
+    advancePaymentPartnerId: '',
+    advancePaymentTreasuryId: '',
+    advancePaymentRecipientPhone: '',
+    advancePaymentSenderDetails: ''
   });
 
   const [newOrder, setNewOrder] = useState<NewOrderState>(getInitialNewOrder());
@@ -531,6 +540,33 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
              partnerTransactions: [...(prev.partnerTransactions || []), partnerTx],
              partners: (prev.partners || []).map(p => p.id === orderToAdd.advancePaymentPartnerId ? { ...p, balance: (p.balance || 0) - difference } : p)
         }));
+    } else if (difference !== 0 && orderToAdd.advancePaymentTreasuryId && setTreasury) {
+        // Record advance payment in Treasury Account directly
+        const treasuryTxId = `tx-${Date.now()}`;
+        setTreasury((prev: any) => {
+            const currentTreasury = prev || { accounts: [], transactions: [] };
+            
+            const updatedAccounts = currentTreasury.accounts.map((acc: any) => 
+                acc.id === orderToAdd.advancePaymentTreasuryId 
+                ? { ...acc, balance: acc.balance + difference } 
+                : acc
+            );
+
+            const newTx = {
+                id: treasuryTxId,
+                date: new Date().toISOString(),
+                type: difference > 0 ? 'deposit' : 'withdrawal',
+                amount: Math.abs(difference),
+                description: `عربون / دفع مقدم للطلب #${orderToAdd.orderNumber} ${difference < 0 ? '(استرداد)' : ''}`,
+                toAccountId: difference > 0 ? orderToAdd.advancePaymentTreasuryId : undefined,
+                fromAccountId: difference < 0 ? orderToAdd.advancePaymentTreasuryId : undefined,
+            };
+
+            return {
+                accounts: updatedAccounts,
+                transactions: [newTx, ...currentTreasury.transactions]
+            };
+        });
     }
 
     // Save/Update Customer Data
@@ -650,9 +686,25 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         newTransactions.push({ id: `ship_${orderToUpdate.id}`, type: 'سحب', amount: orderToUpdate.shippingFee, date: new Date().toISOString(), note: `إصدار بوليصة شحن أوردر #${orderToUpdate.orderNumber}`, category: 'shipping', status: 'completed' });
         
         const insuranceRate = useCustom ? compFees!.insuranceFeePercent : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
+        let insuranceFee = 0;
         if (orderToUpdate.isInsured && insuranceRate > 0) {
-            const insuranceFee = ((orderToUpdate.productPrice + orderToUpdate.shippingFee) * insuranceRate) / 100;
+            insuranceFee = calculateInsuranceFee(orderToUpdate, insuranceRate, settings);
             newTransactions.push({ id: `insure_${orderToUpdate.id}`, type: 'سحب', amount: insuranceFee, date: new Date().toISOString(), note: `خصم رسوم تأمين أوردر #${orderToUpdate.orderNumber}`, category: 'insurance', status: 'completed' });
+        }
+
+        const bostaVatAmount = calculateBostaVat(orderToUpdate, insuranceFee, settings);
+        if (bostaVatAmount > 0) {
+            const companySpecificVat = useCustom ? (compFees?.shippingVatRate ?? (isBosta(orderToUpdate.shippingCompany) ? 0.14 : 0)) : (settings?.shippingVatRate ?? (isBosta(orderToUpdate.shippingCompany) ? 0.14 : 0));
+            const vatPercentageText = `${(companySpecificVat * 100).toFixed(0)}%`;
+            newTransactions.push({ 
+                id: `vat_${orderToUpdate.id}`, 
+                type: 'سحب', 
+                amount: bostaVatAmount, 
+                date: new Date().toISOString(), 
+                note: `خصم ضريبة القيمة المضافة لطلب شحن (${vatPercentageText}) #${orderToUpdate.orderNumber}`, 
+                category: 'expense_other', 
+                status: 'completed' 
+            });
         }
 
         if (orderToUpdate.includeInspectionFee && !updatedOrderData.inspectionFeeDeducted) {
@@ -1039,9 +1091,25 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                         allNewTransactions.push({ id: `ship_${o.id}`, type: 'سحب', amount: o.shippingFee, date: new Date().toISOString(), note: `خصم مصاريف شحن أوردر #${o.orderNumber}`, category: 'shipping', status: 'completed' });
                         
                         const insuranceRate = useCustom ? compFees!.insuranceFeePercent : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
+                        let insuranceFee = 0;
                         if (o.isInsured && insuranceRate > 0) {
-                            const insuranceFee = ((o.productPrice + o.shippingFee) * insuranceRate) / 100;
+                            insuranceFee = calculateInsuranceFee(o, insuranceRate, settings);
                             allNewTransactions.push({ id: `insure_${o.id}`, type: 'سحب', amount: insuranceFee, date: new Date().toISOString(), note: `خصم رسوم تأمين أوردر #${o.orderNumber}`, category: 'insurance', status: 'completed' });
+                        }
+
+                        const bostaVatAmount = calculateBostaVat(o, insuranceFee, settings);
+                        if (bostaVatAmount > 0) {
+                            const companySpecificVat = useCustom ? (compFees?.shippingVatRate ?? (isBosta(o.shippingCompany) ? 0.14 : 0)) : (settings?.shippingVatRate ?? (isBosta(o.shippingCompany) ? 0.14 : 0));
+                            const vatPercentageText = `${(companySpecificVat * 100).toFixed(0)}%`;
+                            allNewTransactions.push({ 
+                                id: `vat_${o.id}`, 
+                                type: 'سحب', 
+                                amount: bostaVatAmount, 
+                                date: new Date().toISOString(), 
+                                note: `خصم ضريبة القيمة المضافة لطلب شحن (${vatPercentageText}) #${o.orderNumber}`, 
+                                category: 'expense_other', 
+                                status: 'completed' 
+                            });
                         }
 
                         if (o.includeInspectionFee && !orderToUpdate.inspectionFeeDeducted) {
@@ -1646,6 +1714,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
           isEditing={!!editingOrder} 
           customers={uniqueCustomers} 
           orders={orders} 
+          treasury={treasury}
         />
       )}
       
@@ -1914,7 +1983,13 @@ const OrderCard = ({
                     {displayTotal.toLocaleString()}
                   </h4>
               </div>
-              {(order.advancePayment || 0) > 0 && <p className="text-[10px] text-teal-600 font-bold mt-1 text-left">عربون: {order.advancePayment}</p>}
+              {(order.advancePayment || 0) > 0 && (
+                <div className="text-[10px] text-teal-600 font-bold mt-1 text-right space-y-0.5">
+                    <p>عربون: {order.advancePayment}</p>
+                    {order.advancePaymentRecipientPhone && <p className="text-[9px] text-slate-500">المستلم: {order.advancePaymentRecipientPhone}</p>}
+                    {order.advancePaymentSenderDetails && <p className="text-[9px] text-slate-400">المحول: {order.advancePaymentSenderDetails}</p>}
+                </div>
+              )}
           </div>
           <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl">
               <Receipt size={24} />
@@ -1998,68 +2073,149 @@ const ProfitBreakdown: React.FC<{ order: Order; settings: Settings }> = ({ order
     const safeShippingFee = Number(order.shippingFee) || 0;
     const safeDiscount = Number(order.discount) || 0;
     const safeProductCost = Number(order.productCost) || 0;
+    const safeAdvance = Number(order.advancePayment) || 0;
     
     const compFees = settings.companySpecificFees?.[order.shippingCompany];
     const useCustom = compFees?.useCustomFees ?? false;
     
     const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
-    const insuranceFee = (order.isInsured ?? true) ? ((safeProductPrice + safeShippingFee) * insuranceRate) / 100 : 0;
+    const insuranceFee = (order.isInsured ?? true) ? calculateInsuranceFee(order, insuranceRate, settings) : 0;
     const inspectionFee = (order.includeInspectionFee ?? true) ? (useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0)) : 0;
     const codFee = calculateCodFee(order, settings);
+    const bostaVatFee = calculateBostaVat(order, insuranceFee, settings);
+    const currentVatRate = useCustom ? (compFees?.shippingVatRate ?? (isBosta(order.shippingCompany) ? 0.14 : 0)) : (settings?.shippingVatRate ?? (isBosta(order.shippingCompany) ? 0.14 : 0));
+    const dynamicVatLabel = `ضريبة القيمة المضافة (${(currentVatRate * 100).toFixed(0)}%)`;
     
-    const totalFees = insuranceFee + inspectionFee + codFee;
-    const netProfit = (safeProductPrice - safeDiscount) - safeProductCost - totalFees;
+    const safeTax = Number(order.tax) || 0;
+    const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : inspectionFee;
+
+    const baseRevenue = safeProductPrice + safeShippingFee + safeTax;
+    const amountCollectedFromCustomer = order.totalAmountOverride !== undefined && order.totalAmountOverride !== null
+        ? order.totalAmountOverride + safeAdvance 
+        : (baseRevenue - safeDiscount);
+        
+    const extraAdjustment = order.totalAmountOverride !== undefined && order.totalAmountOverride !== null
+        ? order.totalAmountOverride - ((baseRevenue - safeDiscount) - safeAdvance) 
+        : 0;
+        
+    const totalExpenses = safeProductCost + safeShippingFee + insuranceFee + inspectionAdjustment + codFee + bostaVatFee;
+    const netProfit = amountCollectedFromCustomer - totalExpenses;
 
     return (
-        <div className="bg-white dark:bg-slate-900 rounded-[32px] p-8 border border-slate-100 dark:border-slate-800 shadow-2xl space-y-6 min-w-[320px] text-right">
-            <h4 className="text-lg font-black text-slate-800 dark:text-white pb-4 border-b border-slate-50 dark:border-slate-800">تحليل الأرباح</h4>
+        <div className="bg-white dark:bg-slate-900 rounded-[32px] p-6 sm:p-8 border border-slate-100 dark:border-slate-800 shadow-xl space-y-6 min-w-[320px] text-right">
+            <h4 className="text-lg font-black text-slate-800 dark:text-white pb-4 border-b border-slate-50 dark:border-slate-800">تفاصيل معادلة الربح</h4>
             
             <div className="space-y-4">
-                <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                    <span className="text-slate-500 font-bold">المنتجات (بيع)</span>
-                    <span className="font-black text-slate-800 dark:text-white tabular-nums">{safeProductPrice.toLocaleString()}</span>
-                </div>
-                {safeDiscount > 0 && (
-                    <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                        <span className="text-slate-500 font-bold">خصم مبيعات</span>
-                        <span className="font-black text-rose-500 tabular-nums">-{safeDiscount.toLocaleString()}</span>
+                {/* الإيرادات */}
+                <div className="py-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">الإيرادات (ما يدفعه العميل):</p>
+                    <div className="space-y-3">
+                        <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                            <span className="text-slate-500 font-bold">سعر المنتجات</span>
+                            <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{safeProductPrice.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                            <span className="text-slate-500 font-bold">رسوم الشحن على العميل</span>
+                            <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{safeShippingFee.toLocaleString()}</span>
+                        </div>
+                        {safeTax > 0 && (
+                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                <span className="text-slate-500 font-bold">الضريبة المضافة للعميل</span>
+                                <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{safeTax.toLocaleString()}</span>
+                            </div>
+                        )}
+                        {safeDiscount > 0 && (
+                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                <span className="text-slate-500 font-bold">خصومات ومسماحات للعميل</span>
+                                <span className="font-black text-rose-500 tabular-nums">-{safeDiscount.toLocaleString()}</span>
+                            </div>
+                        )}
+                        {extraAdjustment !== 0 && (
+                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2 border-t border-slate-100 dark:border-slate-800/50 pt-2 mt-2">
+                                <span className="text-slate-500 font-bold">تسوية المبلغ المطلوب يدوياً</span>
+                                <span className={`font-black ${extraAdjustment > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'} tabular-nums`}>
+                                    {extraAdjustment > 0 ? '+' : ''}{extraAdjustment.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                        )}
+                        <div className="flex justify-between items-center flex-row-reverse text-sm bg-slate-50 dark:bg-slate-800/40 p-2 rounded-lg mt-2 border border-slate-100 dark:border-slate-700/50">
+                            <span className="text-slate-700 dark:text-slate-300 font-black">إجمالي الإيرادات =</span>
+                            <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{amountCollectedFromCustomer.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                        </div>
                     </div>
-                )}
-                <div className="flex justify-between items-center flex-row-reverse text-sm border-b border-slate-50 dark:border-slate-800 pb-4">
-                    <span className="text-slate-500 font-bold">تكلفة المنتجات</span>
-                    <span className="font-black text-rose-500 tabular-nums">-{safeProductCost.toLocaleString()}</span>
                 </div>
 
-                <div className="py-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">المصاريف المخصومة:</p>
+                {/* التكاليف */}
+                <div className="py-3 border-t border-slate-100 dark:border-slate-800">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 mt-1">المصروفات والتكاليف:</p>
                     <div className="space-y-3">
-                        <div className="flex justify-between items-center flex-row-reverse text-sm">
-                            <span className="text-slate-400 font-bold">رسوم الشحن</span>
-                            <span className="font-black text-rose-500 tabular-nums">-{safeShippingFee}</span>
+                        <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                            <span className="text-slate-500 font-bold">تكلفة شراء المنتجات</span>
+                            <span className="font-black text-rose-500 tabular-nums">-{safeProductCost.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                            <span className="text-slate-500 font-bold">تكلفة بوليصة الشحن (للشركة)</span>
+                            <span className="font-black text-rose-500 tabular-nums">-{safeShippingFee.toLocaleString()}</span>
                         </div>
                         {insuranceFee > 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm">
-                                <span className="text-slate-400 font-bold">التأمين</span>
+                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                <span className="text-slate-500 font-bold">التأمين على الشحنة</span>
                                 <span className="font-black text-rose-500 tabular-nums">-{insuranceFee.toFixed(2)}</span>
                             </div>
                         )}
-                        {inspectionFee > 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm">
-                                <span className="text-slate-400 font-bold">المعاينة</span>
-                                <span className="font-black text-rose-500 tabular-nums">-{inspectionFee}</span>
+                        {bostaVatFee > 0 && (
+                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                <span className="text-slate-500 font-bold">{dynamicVatLabel}</span>
+                                <span className="font-black text-rose-500 tabular-nums">-{bostaVatFee.toFixed(2)}</span>
+                            </div>
+                        )}
+                        {inspectionAdjustment > 0 && (
+                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                <span className="text-slate-500 font-bold">المعاينة</span>
+                                <span className="font-black text-rose-500 tabular-nums">-{inspectionAdjustment.toFixed(2)}</span>
                             </div>
                         )}
                         {codFee > 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm">
-                                <span className="text-slate-400 font-bold">رسوم التحصيل (COD)</span>
-                                <span className="font-black text-rose-500 tabular-nums">-{codFee}</span>
+                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                <span className="text-slate-500 font-bold">رسوم التحصيل (COD)</span>
+                                <span className="font-black text-rose-500 tabular-nums">-{codFee.toFixed(2)}</span>
                             </div>
                         )}
+                        <div className="flex justify-between items-center flex-row-reverse text-sm bg-rose-50 dark:bg-rose-900/10 p-2 rounded-lg mt-2 border border-rose-100 dark:border-rose-900/30">
+                            <span className="text-rose-700 dark:text-rose-300 font-black">إجمالي المصروفات =</span>
+                            <span className="font-black text-rose-600 dark:text-rose-400 tabular-nums">-{totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Cash Collection & Advance Payment Breakdown */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/80 space-y-2 mt-4 text-xs font-bold">
+                    <div className="flex justify-between items-center flex-row-reverse">
+                        <span className="text-slate-500">إجمالي فاتورة العميل:</span>
+                        <span className="text-slate-700 dark:text-slate-300">{amountCollectedFromCustomer.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                    </div>
+                    {safeAdvance > 0 && (
+                        <div className="space-y-1 py-1 border-y border-slate-100/50 dark:border-slate-800/50 my-1">
+                            <div className="flex justify-between items-center flex-row-reverse text-teal-600 dark:text-teal-400">
+                                <span>العربون المستلم مقدماً:</span>
+                                <span>-{safeAdvance.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                            </div>
+                            {(order.advancePaymentRecipientPhone || order.advancePaymentSenderDetails) && (
+                                <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold bg-slate-100/50 dark:bg-slate-800/40 p-2 rounded-xl mt-1">
+                                    {order.advancePaymentRecipientPhone && <div className="flex justify-between items-center flex-row-reverse"><span>رقم المستلم:</span> <span className="font-black text-slate-700 dark:text-slate-300">{order.advancePaymentRecipientPhone}</span></div>}
+                                    {order.advancePaymentSenderDetails && <div className="flex justify-between items-center flex-row-reverse mt-1"><span>المحول (من):</span> <span className="font-black text-slate-700 dark:text-slate-300">{order.advancePaymentSenderDetails}</span></div>}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <div className="flex justify-between items-center flex-row-reverse text-indigo-600 dark:text-indigo-400 border-t border-slate-200/50 dark:border-slate-800/50 pt-1.5 font-black text-sm">
+                        <span>المتبقي للتحصيل عند الاستلام:</span>
+                        <span>{Math.max(0, amountCollectedFromCustomer - safeAdvance).toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
                     </div>
                 </div>
             </div>
 
-            <div className={`mt-6 p-5 rounded-3xl flex justify-between items-center flex-row-reverse ${netProfit >= 0 ? 'bg-emerald-50 dark:bg-emerald-900/10' : 'bg-rose-50 dark:bg-rose-900/10'}`}>
+            <div className={`mt-6 p-5 rounded-3xl flex justify-between items-center flex-row-reverse ${netProfit >= 0 ? 'bg-emerald-50 border border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-900/50' : 'bg-rose-50 border border-rose-100 dark:bg-rose-900/10 dark:border-rose-900/50'}`}>
                 <span className={`text-sm font-black ${netProfit >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>الربح المتوقع</span>
                 <div className="flex items-baseline gap-1 flex-row-reverse">
                     <span className={`text-2xl font-black ${netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{netProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
@@ -2161,11 +2317,12 @@ const OrderRow = ({
   const useCustom = compFees?.useCustomFees ?? false;
   
   const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
-  const calculatedInsuranceFee = (order.isInsured ?? true) ? ((safeProductPrice + safeShippingFee) * insuranceRate) / 100 : 0;
+  const calculatedInsuranceFee = (order.isInsured ?? true) ? calculateInsuranceFee(order, insuranceRate, settings) : 0;
   const calculatedInspectionFee = (order.includeInspectionFee ?? true) ? (useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0)) : 0;
   const calculatedCodFeeAmount = calculateCodFee(order, settings);
+  const bostaVatFee = calculateBostaVat(order, calculatedInsuranceFee, settings);
   
-  const totalFees = calculatedInsuranceFee + calculatedInspectionFee + calculatedCodFeeAmount;
+  const totalFees = calculatedInsuranceFee + calculatedInspectionFee + calculatedCodFeeAmount + bostaVatFee;
   const currentNetProfit = (safeProductPrice - safeDiscount) - safeProductCost - totalFees;
   const isDelivered = order.status === 'تم_توصيلها' || order.status === 'تم_التحصيل';
   const profitLabel = isDelivered ? 'الربح الصافي' : 'الربح المتوقع';
@@ -2299,7 +2456,18 @@ const OrderRow = ({
                     <span className="text-[10px] font-black text-indigo-600">ج.م</span>
                     <span className="text-xl font-black text-slate-900 dark:text-white tabular-nums drop-shadow-sm">{displayTotal.toLocaleString()}</span>
                 </div>
-                {(order.advancePayment || 0) > 0 && <span className="text-[10px] text-teal-600 font-bold">عربون: {order.advancePayment}</span>}
+                {(order.advancePayment || 0) > 0 && (
+                    <div className="text-[9px] text-teal-600 font-bold text-right">
+                        <span>عربون: {order.advancePayment}</span>
+                        {(order.advancePaymentRecipientPhone || order.advancePaymentSenderDetails) && (
+                            <div className="text-[8px] text-slate-400 font-medium">
+                                {order.advancePaymentRecipientPhone && <span>إلى: {order.advancePaymentRecipientPhone}</span>}
+                                {order.advancePaymentRecipientPhone && order.advancePaymentSenderDetails && <span> | </span>}
+                                {order.advancePaymentSenderDetails && <span>من: {order.advancePaymentSenderDetails}</span>}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
             <div className="flex flex-col gap-1 items-end">
                 <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${
@@ -2631,9 +2799,31 @@ const TabButton: React.FC<TabButtonProps> = ({ label, activeTab, setActiveTab, c
         </button>
     );
 };
-interface OrderModalProps { isOpen: boolean; onClose: () => void; onSubmit: (e: React.FormEvent) => void; orderData: NewOrderState | Order; setOrderData: React.Dispatch<React.SetStateAction<any>>; settings: Settings; isEditing: boolean; customers: any[]; orders: Order[]; }
+interface OrderModalProps { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  onSubmit: (e: React.FormEvent) => void; 
+  orderData: NewOrderState | Order; 
+  setOrderData: React.Dispatch<React.SetStateAction<any>>; 
+  settings: Settings; 
+  isEditing: boolean; 
+  customers: any[]; 
+  orders: Order[]; 
+  treasury?: any;
+}
 
-const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orderData, setOrderData, settings, isEditing, customers, orders }) => {
+const OrderModal: React.FC<OrderModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSubmit, 
+  orderData, 
+  setOrderData, 
+  settings, 
+  isEditing, 
+  customers, 
+  orders,
+  treasury
+}) => {
     if (!isOpen) return null;
     
     const isExchange = (orderData as NewOrderState).orderType === 'exchange';
@@ -2921,7 +3111,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">
             <form onSubmit={onSubmit} className="bg-white dark:bg-slate-900 w-full max-w-5xl h-[95vh] rounded-3xl shadow-2xl flex flex-col animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50 rounded-t-3xl">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 rounded-t-3xl shadow-sm z-10">
                     <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-3">
                         <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl">
                             <ShoppingBag size={20}/>
@@ -3085,6 +3275,13 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                                  <Package size={18} className="text-amber-500"/> المنتجات
                              </h4>
                              <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                                {(orderData.items || []).length === 0 && (
+                                    <div className="p-5 border border-dashed border-slate-200 dark:border-slate-700/60 rounded-xl text-center bg-white/40 dark:bg-slate-900/10">
+                                        <Package className="mx-auto mb-2 opacity-35 text-slate-400" size={20} />
+                                        <p className="text-xs font-bold text-slate-500">لم يتم إضافة أي منتج للطلب بعد</p>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">اضغط على زر "إضافة منتج" بالأسفل لبدء التحديد.</p>
+                                    </div>
+                                )}
                                 {(orderData.items || []).map((item, index) => {
                                     const product = settings.products.find(p => p.id === item.productId);
                                     const hasVariants = product?.variants && product.variants.length > 0;
@@ -3145,107 +3342,181 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                                  <Plus size={16} /> إضافة منتج
                              </button>
                         </div>
-                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50 space-y-4">
-                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+                        <div className="p-5 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50 space-y-4">
+                            <h4 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
                                 <FileText size={18} className="text-indigo-500"/> الملخص المالي
                             </h4>
                             
-                            <div className="space-y-3 text-slate-600 dark:text-slate-400">
-                                 <div className="flex justify-between text-sm items-center">
-                                    <span>إجمالي المنتجات (قبل الخصم)</span>
+                            {/* Receipt Style Subtotal Info Panel */}
+                            <div className="bg-slate-100/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-200/50 dark:border-slate-800/60 space-y-2.5 text-xs text-slate-650 dark:text-slate-350">
+                                <div className="flex justify-between items-center">
+                                    <span>إجمالي الأصناف (قبل الخصم)</span>
                                     <span className="font-bold text-slate-800 dark:text-slate-200">{subtotal.toLocaleString()} ج.م</span>
                                 </div>
                                 {itemDiscounts > 0 && (
-                                    <div className="flex justify-between text-sm items-center text-red-500">
-                                        <span>خصومات الأصناف</span>
+                                    <div className="flex justify-between items-center text-red-500 pt-1 border-t border-slate-200/30 dark:border-slate-800/30">
+                                        <span>خصومات المنتجات</span>
                                         <span className="font-bold">-{itemDiscounts.toLocaleString()} ج.م</span>
                                     </div>
                                 )}
+                                {inspectionFee > 0 && (
+                                    <div className="flex justify-between items-center pt-1 border-t border-slate-200/30 dark:border-slate-800/30">
+                                        <span>رسوم المعاينة</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200">{inspectionFee.toLocaleString()} ج.م</span>
+                                    </div>
+                                )}
                                 {orderData.tax && orderData.tax > 0 ? (
-                                    <div className="flex justify-between text-sm items-center">
+                                    <div className="flex justify-between items-center pt-1 border-t border-slate-200/30 dark:border-slate-800/30">
                                         <span>الضريبة</span>
                                         <span className="font-bold text-slate-800 dark:text-slate-200">{orderData.tax.toLocaleString()} ج.م</span>
                                     </div>
                                 ) : null}
-                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
+                            </div>
+
+                            {/* Side-by-side Customizable Inputs */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
                                     <div className="flex justify-between items-center mb-1">
-                                        <label className="text-xs text-slate-500 dark:text-slate-400 block font-bold">مصاريف الشحن</label>
+                                        <label className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">مصاريف الشحن</label>
                                         {totalWeight > 0 && (
-                                            <span className="text-[10px] text-slate-400 font-medium">(الوزن: {totalWeight.toFixed(2)} كجم)</span>
+                                            <span className="text-[8px] text-slate-400 font-medium">({totalWeight.toFixed(1)} كجم)</span>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1">
                                         <input 
                                             type="number" 
                                             min="0" 
                                             value={orderData.shippingFee || 0} 
                                             onChange={e => handleFieldChange('shippingFee', Number(e.target.value))} 
-                                            className="w-full font-bold bg-transparent outline-none text-slate-800 dark:text-slate-200" 
+                                            className="w-full text-xs font-bold bg-transparent outline-none text-slate-800 dark:text-slate-200" 
                                         />
-                                        <span className="text-sm text-slate-400">ج.م</span>
+                                        <span className="text-[9px] text-slate-400">ج.م</span>
                                     </div>
                                 </div>
-                                {inspectionFee > 0 && (
-                                    <div className="flex justify-between text-sm items-center">
-                                        <span>رسوم المعاينة</span>
-                                        <span className="font-bold text-slate-800 dark:text-slate-200">{inspectionFee.toLocaleString()} ج.م</span>
-                                    </div>
-                                )}
-                                
-                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-red-500/20 focus-within:border-red-500 transition-all">
-                                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">خصم إضافي</label>
-                                    <div className="flex items-center gap-2">
-                                        <input type="number" min="0" value={orderData.discount || 0} onChange={e => handleFieldChange('discount', Number(e.target.value))} className="w-full font-bold bg-transparent outline-none text-red-500 dark:text-red-400" />
-                                        <span className="text-sm text-slate-400">ج.م</span>
+
+                                <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-red-500/20 focus-within:border-red-500 transition-all">
+                                    <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">خصم إضافي</label>
+                                    <div className="flex items-center gap-1">
+                                        <input 
+                                            type="number" 
+                                            min="0" 
+                                            value={orderData.discount || 0} 
+                                            onChange={e => handleFieldChange('discount', Number(e.target.value))} 
+                                            className="w-full text-xs font-bold bg-transparent outline-none text-red-500 dark:text-red-450" 
+                                        />
+                                        <span className="text-[9px] text-slate-400">ج.م</span>
                                     </div>
                                 </div>
                             </div>
                             
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
-                                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">دفع مقدم / عربون (يخصم من الإجمالي)</label>
-                                    <div className="flex items-center gap-2">
-                                        <input type="number" min="0" value={orderData.advancePayment || 0} onChange={e => handleFieldChange('advancePayment', Number(e.target.value))} className="w-full font-bold bg-transparent outline-none text-emerald-600 dark:text-emerald-400" />
-                                        <span className="text-sm text-slate-400">ج.م</span>
+                            {/* Advance payment & Destination selection */}
+                            <div className={`grid gap-3 transition-all duration-300 ${((orderData.advancePayment || 0) > 0) ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
+                                    <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">عربون / دفع مقدم</label>
+                                    <div className="flex items-center gap-1">
+                                        <input 
+                                            type="number" 
+                                            min="0" 
+                                            value={orderData.advancePayment || 0} 
+                                            onChange={e => handleFieldChange('advancePayment', Number(e.target.value))} 
+                                            className="w-full text-xs font-bold bg-transparent outline-none text-emerald-600 dark:text-emerald-400" 
+                                        />
+                                        <span className="text-[9px] text-slate-400">ج.م</span>
                                     </div>
                                 </div>
+
                                 {(orderData.advancePayment || 0) > 0 && (
-                                    <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
-                                        <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">تم التحويل إلى محفظة الشريك</label>
-                                        <select value={orderData.advancePaymentPartnerId || ''} onChange={e => handleFieldChange('advancePaymentPartnerId', e.target.value)} className="w-full bg-transparent outline-none font-bold text-slate-700 dark:text-slate-300 text-sm">
-                                            <option value="">-- اختر الشريك --</option>
-                                            {settings.partners?.map(p => (
-                                                <option key={p.id} value={p.id}>{p.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+                                    <>
+                                        <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-indigo-505/20 focus-within:border-indigo-505 transition-all">
+                                            <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">حساب الخزينة / محصل العربون</label>
+                                            <select 
+                                                value={orderData.advancePaymentTreasuryId || orderData.advancePaymentPartnerId || ''} 
+                                                onChange={e => {
+                                                    const val = e.target.value;
+                                                    if (val.startsWith('treasury_')) {
+                                                        handleFieldChange('advancePaymentTreasuryId', val.replace('treasury_', ''));
+                                                        handleFieldChange('advancePaymentPartnerId', undefined);
+                                                    } else if (val.startsWith('partner_')) {
+                                                        handleFieldChange('advancePaymentPartnerId', val.replace('partner_', ''));
+                                                        handleFieldChange('advancePaymentTreasuryId', undefined);
+                                                    } else {
+                                                        handleFieldChange('advancePaymentPartnerId', undefined);
+                                                        handleFieldChange('advancePaymentTreasuryId', undefined);
+                                                    }
+                                                }} 
+                                                className="w-full bg-transparent outline-none font-bold text-slate-700 dark:text-slate-300 text-[10px] py-0.5"
+                                            >
+                                                <option value="">-- اختر الحساب --</option>
+                                                {treasury?.accounts && treasury.accounts.length > 0 && <optgroup label="الخزينة والحسابات البنكية">
+                                                    {treasury.accounts.map((acc: any) => (
+                                                        <option key={`treasury_${acc.id}`} value={`treasury_${acc.id}`}>{acc.name} (خزينة)</option>
+                                                    ))}
+                                                </optgroup>}
+                                                {settings.partners && settings.partners.length > 0 && <optgroup label="محافظ الشركاء (محصل العربون)">
+                                                    {settings.partners.map(p => (
+                                                        <option key={`partner_${p.id}`} value={`partner_${p.id}`}>{p.name} (شريك)</option>
+                                                    ))}
+                                                </optgroup>}
+                                            </select>
+                                        </div>
+
+                                        {/* New tracking fields */}
+                                        <div className="col-span-2 grid grid-cols-2 gap-3 mt-1">
+                                            <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+                                                <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">هاتف المستلم / الشريك</label>
+                                                <div className="flex items-center gap-2">
+                                                    <Phone size={10} className="text-slate-400" />
+                                                    <input 
+                                                        type="text" 
+                                                        value={orderData.advancePaymentRecipientPhone || ''} 
+                                                        onChange={e => handleFieldChange('advancePaymentRecipientPhone', e.target.value)} 
+                                                        placeholder="رقم هاتف المستلم..."
+                                                        className="w-full text-[10px] font-bold bg-transparent outline-none text-slate-700 dark:text-slate-300"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+                                                <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">بيانات المحول (هاتف/انستا باي)</label>
+                                                <div className="flex items-center gap-2">
+                                                    <PhoneForwarded size={10} className="text-slate-400" />
+                                                    <input 
+                                                        type="text" 
+                                                        value={orderData.advancePaymentSenderDetails || ''} 
+                                                        onChange={e => handleFieldChange('advancePaymentSenderDetails', e.target.value)} 
+                                                        placeholder="رقم المحول / انستا باي..."
+                                                        className="w-full text-[10px] font-bold bg-transparent outline-none text-slate-700 dark:text-slate-300"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
                                 )}
                             </div>
 
-                            <div className="border-t border-slate-200 dark:border-slate-700 my-4"></div>
+                            <div className="border-t border-slate-200/60 dark:border-slate-700/60 my-3"></div>
                             
-                            <div className="flex justify-between font-bold text-slate-700 dark:text-slate-200 text-lg">
+                            <div className="flex justify-between font-bold text-slate-700 dark:text-slate-200 text-sm">
                                 <span>المجموع {orderData.source === 'synced' ? '(المرسل من المنصة)' : ''}</span>
                                 <span>{(orderData.source === 'synced' && orderData.totalPrice ? orderData.totalPrice : totalBeforeCredit).toLocaleString()} ج.م</span>
                             </div>
                             
                             {isExchange && (
-                                <div className="flex justify-between font-bold text-orange-500 bg-orange-50 dark:bg-orange-500/10 p-3 rounded-xl border border-orange-100 dark:border-orange-500/20 mt-2">
+                                <div className="flex justify-between font-bold text-orange-500 bg-orange-50 dark:bg-orange-500/10 p-2.5 rounded-xl border border-orange-100 dark:border-orange-500/20 text-xs">
                                     <span>رصيد سابق (للاستبدال)</span>
                                     <span>-{creditAmount.toLocaleString()} ج.م</span>
                                 </div>
                             )}
                             
-                            <div className="border-t-2 border-slate-200 dark:border-slate-700 my-4"></div>
+                            <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 my-3"></div>
                             
-                            <div className="flex justify-between items-center bg-indigo-50 dark:bg-indigo-500/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
-                                <span className="font-black text-indigo-700 dark:text-indigo-400 text-lg">{finalAmount >= 0 ? 'المطلوب تحصيله' : 'المستحق للعميل'} {orderData.source === 'synced' ? '(النهائي من المنصة)' : ''}</span>
+                            <div className="flex justify-between items-center bg-indigo-55 dark:bg-indigo-500/10 p-3.5 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
+                                <span className="font-extrabold text-indigo-700 dark:text-indigo-400 text-sm">{finalAmount >= 0 ? 'المطلوب تحصيله' : 'المستحق للعميل'} {orderData.source === 'synced' ? '(النهائي من المنصة)' : ''}</span>
                                 <div className="flex flex-col items-end">
-                                    <span className="font-black text-indigo-700 dark:text-indigo-400 text-2xl">{Math.abs(orderData.totalAmountOverride ?? (orderData.source === 'synced' && orderData.totalPrice ? orderData.totalPrice : finalAmount)).toLocaleString()} ج.م</span>
+                                    <span className="font-black text-indigo-700 dark:text-indigo-400 text-xl">{Math.abs(orderData.totalAmountOverride ?? (orderData.source === 'synced' && orderData.totalPrice ? orderData.totalPrice : finalAmount)).toLocaleString()} ج.م</span>
                                     <button 
                                         type="button" 
                                         onClick={() => setShowEditTotalModal(true)}
-                                        className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600 underline mt-1"
+                                        className="text-[9px] font-bold text-indigo-550 dark:text-indigo-500 hover:text-indigo-600 underline mt-0.5"
                                     >
                                         تعديل الإجمالي يدوياً
                                     </button>
@@ -3280,7 +3551,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isOpen, onClose, onSubmit, orde
                     </div>
                 </div>
 
-                <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50 rounded-b-3xl">
+                <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 rounded-b-3xl shadow-lg z-10">
                     <div>
                         {isExchange && <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">الطلب الجديد: {totalBeforeCredit.toLocaleString()} ج.م - رصيد سابق: {creditAmount.toLocaleString()} ج.م</div>}
                         <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{finalAmount >= 0 ? 'الإجمالي المطلوب من العميل' : 'المبلغ المستحق للعميل'}</span>
@@ -3305,7 +3576,7 @@ const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ ord
     const compFees = settings?.companySpecificFees?.[order.shippingCompany];
     const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0;
     const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0;
-    const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
+    const insuranceFee = calculateInsuranceFee(order, insuranceRate, settings);
     const safeAdvance = Number(order.advancePayment) || 0;
     const total = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount - safeAdvance + inspectionFee);
     
@@ -3394,7 +3665,7 @@ const OrderPreConfirmationModal: React.FC<OrderPreConfirmationModalProps> = ({ o
     const compFees = settings?.companySpecificFees?.[order.shippingCompany];
     const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0;
     const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0;
-    const insuranceFee = ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
+    const insuranceFee = calculateInsuranceFee(order as Order, insuranceRate, settings);
     const safeAdvance = Number((order as any).advancePayment) || 0;
     const total = (order as any).totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0) - safeAdvance + inspectionFee);
     

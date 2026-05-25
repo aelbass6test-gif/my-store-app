@@ -198,7 +198,7 @@ export const generatePurchasesAndInventoryReportHTML = (stats: any, storeName: s
     `;
 };
 
-import { calculateOrderProfitLoss, calculateCodFee, getLatestProductCost } from './financials';
+import { calculateOrderProfitLoss, calculateCodFee, getLatestProductCost, isBosta, calculateInsuranceFee, calculateBostaVat } from './financials';
 
 export const generateInvoiceHTML = (order: Order, settings: Settings, storeName: string) => {
   const totalAmount = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - order.discount);
@@ -577,7 +577,7 @@ export const generatePartnersFinancialReportHTML = (stats: any, storeName: strin
         .profit-card .amount { font-size: 22px; font-weight: 900; color: #312e81; }
 
         .summary-grid {
-          display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 30px;
+          display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 30px;
         }
         .summary-card {
           padding: 16px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0;
@@ -648,6 +648,10 @@ export const generatePartnersFinancialReportHTML = (stats: any, storeName: strin
               <div class="title">إجمالي السلف القائمة</div>
               <div class="value red">${(totals.loans - totals.repayments).toLocaleString('ar-EG')} ج.م</div>
             </div>
+            <div class="summary-card">
+              <div class="title">إجمالي العرابين المحصلة</div>
+              <div class="value" style="color: #0d9488; font-weight: 900;">${(totals.advances || 0).toLocaleString('ar-EG')} ج.م</div>
+            </div>
           </div>
 
           <div class="section-title-wrap">
@@ -662,17 +666,19 @@ export const generatePartnersFinancialReportHTML = (stats: any, storeName: strin
                 <th>رأس المال</th>
                 <th>الأرباح المسحوبة</th>
                 <th>السلف القائمة</th>
+                <th>العربونات المستلمة</th>
                 <th>الرصيد الكلي</th>
               </tr>
             </thead>
             <tbody>
-              ${partnerDetails.length === 0 ? '<tr><td colspan="6" style="text-align: center; padding: 30px; color: #94a3b8; font-weight: 600;">لا يوجد شركاء مسجلين حالياً.</td></tr>' : partnerDetails.map((p: any) => `
+              ${partnerDetails.length === 0 ? '<tr><td colspan="7" style="text-align: center; padding: 30px; color: #94a3b8; font-weight: 600;">لا يوجد شركاء مسجلين حالياً.</td></tr>' : partnerDetails.map((p: any) => `
                 <tr>
                   <td style="font-weight: 800; color: #1e293b;">${p.name}</td>
                   <td><span class="pill blue">${p.profitRatio}%</span></td>
-                  <td class="font-mono">${p.capital.toLocaleString('ar-EG')}</td>
+                   <td class="font-mono">${p.capital.toLocaleString('ar-EG')}</td>
                   <td class="font-mono green">+${p.withdrawals.toLocaleString('ar-EG')}</td>
                   <td class="font-mono red">${(p.loans - p.repayments).toLocaleString('ar-EG')}</td>
+                  <td class="font-mono" style="color: #0d9488;">${(p.advances || 0).toLocaleString('ar-EG')}</td>
                   <td class="font-mono" style="font-weight: 900; font-size: 14px; color: ${p.balance >= 0 ? '#059669' : '#e11d48'};">${p.balance.toLocaleString('ar-EG')} ج.م</td>
                 </tr>
               `).join('')}
@@ -700,14 +706,15 @@ export const generateLossesReportHTML = (orders: Order[], settings: Settings, st
         const inspectionCost = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
         
         const isInsured = order.isInsured ?? true;
-        const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
+        const insuranceFee = isInsured ? calculateInsuranceFee(order, insuranceRate) : 0;
+        const bostaVat = isBosta(order.shippingCompany) ? calculateBostaVat(order, insuranceFee) : 0;
         
         const codFee = calculateCodFee(order, settings);
         const { loss } = calculateOrderProfitLoss(order, settings);
         totalLoss += loss;
         totalProductPrice += order.productPrice;
         totalShippingFee += order.shippingFee;
-        totalInsuranceInspection += (insuranceFee + inspectionCost);
+        totalInsuranceInspection += (insuranceFee + inspectionCost + bostaVat);
         totalProductCost += order.productCost;
 
         const products = order.items.map(i => i.name).join(' + ') || order.productName;
@@ -721,7 +728,7 @@ export const generateLossesReportHTML = (orders: Order[], settings: Settings, st
                 <td style="padding: 8px; text-align: center;">${quantities}</td>
                 <td style="padding: 8px;">${prices}</td>
                 <td style="padding: 8px;">${order.shippingFee.toLocaleString()}</td>
-                <td style="padding: 8px;">${(insuranceFee + inspectionCost).toLocaleString()}</td>
+                <td style="padding: 8px;">${(insuranceFee + inspectionCost + bostaVat).toLocaleString()}</td>
                 <td style="padding: 8px;">${order.productCost.toLocaleString()}</td>
                 <td style="padding: 8px;">${order.status.replace(/_/g, ' ')}</td>
                 <td style="padding: 8px;">${order.paymentStatus}</td>
@@ -901,7 +908,8 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
         const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
         const inspectionCost = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
         const isInsured = order.isInsured ?? true;
-        const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
+        const insuranceFee = isInsured ? calculateInsuranceFee(order, insuranceRate) : 0;
+        const bostaVat = isBosta(order.shippingCompany) ? calculateBostaVat(order, insuranceFee) : 0;
         const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : inspectionCost;
 
         let orderBaseRevenue = 0;
@@ -925,7 +933,7 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
         totalExtraMarkup += orderExtraMarkup;
         totalShippingRevenue += order.shippingFee;
         totalCogs += order.productCost;
-        totalInsuranceFees += insuranceFee;
+        totalInsuranceFees += insuranceFee + bostaVat;
         totalInspectionFees += inspectionAdjustment;
         totalCodFees += codFee;
         totalProfit += profit;
@@ -981,14 +989,15 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
         const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
         const inspectionCost = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
         const isInsured = order.isInsured ?? true;
-        const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
+        const insuranceFee = isInsured ? calculateInsuranceFee(order, insuranceRate) : 0;
+        const bostaVat = isBosta(order.shippingCompany) ? calculateBostaVat(order, insuranceFee) : 0;
         
         const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;
         const returnFeeAmount = applyReturnFee ? (useCustom ? (compFees?.returnShippingFee ?? 0) : settings.returnShippingFee) : 0;
         const inspectionFeeCollected = order.inspectionFeePaidByCustomer ? inspectionCost : 0;
 
         totalFailedShipping += order.shippingFee;
-        totalFailedInsurance += insuranceFee;
+        totalFailedInsurance += insuranceFee + bostaVat;
         totalFailedInspection += (inspectionCost - inspectionFeeCollected);
         totalReturnFees += returnFeeAmount;
         totalLoss += loss;
@@ -1002,7 +1011,7 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
                 <td class="col-products">${productDetails}</td>
                 <td>${order.status.replace(/_/g, ' ')}</td>
                 <td>${order.shippingFee.toLocaleString()}</td>
-                <td>${insuranceFee.toLocaleString()}</td>
+                <td>${(insuranceFee + bostaVat).toLocaleString()}</td>
                 <td>${(inspectionCost - inspectionFeeCollected).toLocaleString()}</td>
                 <td>${returnFeeAmount.toLocaleString()}</td>
                 <td style="color: #b91c1c; font-weight: bold;">-${loss.toLocaleString()}</td>

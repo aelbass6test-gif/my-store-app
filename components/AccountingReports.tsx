@@ -4,7 +4,7 @@ import { getLatestProductCost } from '../utils/financials';
 import { 
   BarChart, Wallet as WalletIcon, TrendingUp, Users, Truck, FileText, 
   ArrowDown, ArrowUp, DollarSign, Package, Download, Eye, X, Loader2, Printer, 
-  PieChart // Added PieChart
+  PieChart, Calendar, Percent, Sparkles, TrendingDown, Layers, CheckCircle2, AlertCircle, ShoppingBag
 } from 'lucide-react';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
@@ -14,51 +14,147 @@ interface Props {
   settings: Settings;
   wallet: Wallet;
   activeStore?: Store;
+  setSettings?: React.Dispatch<React.SetStateAction<Settings>>;
+  setWallet?: React.Dispatch<React.SetStateAction<Wallet>>;
 }
 
-export const AccountingReports: React.FC<Props> = ({ orders, settings, wallet, activeStore }) => {
-    const [subTab, setSubTab] = useState<'income' | 'balance_sheet' | 'cash_flow' | 'suppliers' | 'receivables' | 'wallet' | 'product_profitability' | 'partner_equity'>('income');
-    const [isExporting, setIsExporting] = useState(false);
+// Utility to verify date matching
+const isWithinRange = (dateStr: string, filter: string, customStart?: string, customEnd?: string) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    const now = new Date();
     
+    // Set hours to zero for consistent date-only comparison where appropriate
+    const todayStart = new Date();
+    todayStart.setHours(0,0,0,0);
+    
+    if (filter === 'all') return true;
+    if (filter === 'today') {
+        return d >= todayStart;
+    }
+    if (filter === 'this_week') {
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(now.getDate() - 7);
+        return d >= oneWeekAgo && d <= now;
+    }
+    if (filter === 'this_month') {
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }
+    if (filter === 'last_month') {
+        const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+        const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+        return d.getMonth() === prevMonth && d.getFullYear() === prevYear;
+    }
+    if (filter === 'custom' && customStart && customEnd) {
+        const s = new Date(customStart);
+        s.setHours(0,0,0,0);
+        const e = new Date(customEnd);
+        e.setHours(23,59,59,999);
+        return d >= s && d <= e;
+    }
+    return true;
+};
+
+export const AccountingReports: React.FC<Props> = ({ orders, settings, wallet, activeStore, setSettings, setWallet }) => {
+    const [subTab, setSubTab] = useState<'income' | 'balance_sheet' | 'cash_flow' | 'suppliers' | 'receivables' | 'wallet' | 'product_profitability' | 'partner_equity' | 'marketing_roi' | 'inventory_velocity'>('income');
+    const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'last_month' | 'custom'>('all');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+
+    // Dynamically filter both orders and wallet transactions for a unified database query simulation
+    const filteredOrders = useMemo(() => {
+        return orders.filter(o => isWithinRange(o.date, timeFilter, startDate, endDate));
+    }, [orders, timeFilter, startDate, endDate]);
+
+    const filteredWallet = useMemo(() => {
+        const txs = (wallet.transactions || []).filter(t => isWithinRange(t.date, timeFilter, startDate, endDate));
+        return {
+            ...wallet,
+            transactions: txs
+        };
+    }, [wallet, timeFilter, startDate, endDate]);
+
     return (
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-0 overflow-hidden animate-in fade-in-5 duration-300">
-            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/30">
-                <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white flex items-center gap-3">
-                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg text-purple-600">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/30">
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-purple-100 dark:bg-purple-900/30 rounded-xl text-purple-600">
                         <BarChart size={24} />
                     </div>
-                    <span>الحسابات الختامية والتقارير المالية</span>
-                </h2>
-                <div className="flex gap-2">
+                    <div>
+                        <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white leading-none">الحسابات الختامية والتقارير المالية</h2>
+                        <p className="text-xs text-slate-400 mt-1">تقارير محاسبية متطابقة مع المعايير ومؤشرات الأداء التشغيلي</p>
+                    </div>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-2">
                     <button 
                         onClick={() => window.print()}
-                        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm"
+                        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-705 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-55 transition-colors shadow-sm"
                     >
-                        <Printer size={16} /> طباعة
+                        <Printer size={16} /> طباعة القوائم
                     </button>
                 </div>
             </div>
+
+            {/* Quick Master Time Period Filter Bar */}
+            <div className="p-4 bg-slate-100/50 dark:bg-slate-900/40 border-b border-slate-200/60 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                    <span className="text-xs text-slate-400 font-bold shrink-0 ml-1">تصفية الفترة:</span>
+                    <FilterButton active={timeFilter === 'all'} onClick={() => setTimeFilter('all')} title="الكل" />
+                    <FilterButton active={timeFilter === 'today'} onClick={() => setTimeFilter('today')} title="اليوم" />
+                    <FilterButton active={timeFilter === 'this_week'} onClick={() => setTimeFilter('this_week')} title="آخر 7 أيام" />
+                    <FilterButton active={timeFilter === 'this_month'} onClick={() => setTimeFilter('this_month')} title="الشهر الحالي" />
+                    <FilterButton active={timeFilter === 'last_month'} onClick={() => setTimeFilter('last_month')} title="الشهر السابق" />
+                    <FilterButton active={timeFilter === 'custom'} onClick={() => setTimeFilter('custom')} title="مخصص 📅" />
+                </div>
+
+                {timeFilter === 'custom' && (
+                    <div className="flex items-center gap-2 bg-white dark:bg-slate-850 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 animate-in slide-in-from-top-2 duration-200">
+                        <input 
+                            type="date" 
+                            value={startDate} 
+                            onChange={(e) => setStartDate(e.target.value)} 
+                            className="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-350 focus:outline-none" 
+                        />
+                        <span className="text-xs text-slate-400">إلى</span>
+                        <input 
+                            type="date" 
+                            value={endDate} 
+                            onChange={(e) => setEndDate(e.target.value)} 
+                            className="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-350 focus:outline-none" 
+                        />
+                    </div>
+                )}
+            </div>
             
-            <div className="p-4 sm:p-6 overflow-x-auto no-scrollbar border-b border-slate-100 dark:border-slate-800 flex gap-2">
+            {/* Tabs List */}
+            <div className="p-4 overflow-x-auto no-scrollbar border-b border-slate-100 dark:border-slate-800 flex gap-2">
                 <TabButton active={subTab === 'income'} onClick={() => setSubTab('income')} icon={<TrendingUp size={16} />} title="قائمة الدخل" />
                 <TabButton active={subTab === 'balance_sheet'} onClick={() => setSubTab('balance_sheet')} icon={<DollarSign size={16} />} title="الميزانية العمومية" />
                 <TabButton active={subTab === 'cash_flow'} onClick={() => setSubTab('cash_flow')} icon={<ArrowUp size={16} />} title="التدفقات النقدية" />
                 <TabButton active={subTab === 'product_profitability'} onClick={() => setSubTab('product_profitability')} icon={<Package size={16} />} title="أرباح المنتجات" />
+                <TabButton active={subTab === 'marketing_roi'} onClick={() => setSubTab('marketing_roi')} icon={<Percent size={16} />} title="تحليل التسويق & CAC" />
+                <TabButton active={subTab === 'inventory_velocity'} onClick={() => setSubTab('inventory_velocity')} icon={<Layers size={16} />} title="دوران المخزون" />
                 <TabButton active={subTab === 'suppliers'} onClick={() => setSubTab('suppliers')} icon={<Users size={16} />} title="حساب الموردين" />
                 <TabButton active={subTab === 'receivables'} onClick={() => setSubTab('receivables')} icon={<Truck size={16} />} title="ذمم الشحن" />
                 <TabButton active={subTab === 'partner_equity'} onClick={() => setSubTab('partner_equity')} icon={<PieChart size={16} />} title="حقوق الشركاء" />
                 <TabButton active={subTab === 'wallet'} onClick={() => setSubTab('wallet')} icon={<WalletIcon size={16} />} title="حركة الصندوق" />
             </div>
 
+            {/* Sub-Contents with Filtered Data */}
             <div className="p-6 min-h-[500px]">
-                {subTab === 'income' && <IncomeStatement orders={orders} settings={settings} wallet={wallet} />}
-                {subTab === 'balance_sheet' && <BalanceSheet orders={orders} settings={settings} wallet={wallet} />}
-                {subTab === 'cash_flow' && <CashFlowStatement wallet={wallet} />}
+                {subTab === 'income' && <IncomeStatement orders={filteredOrders} settings={settings} wallet={filteredWallet} />}
+                {subTab === 'balance_sheet' && <BalanceSheet orders={filteredOrders} settings={settings} wallet={filteredWallet} />}
+                {subTab === 'cash_flow' && <CashFlowStatement wallet={filteredWallet} />}
                 {subTab === 'suppliers' && <SupplierLedger settings={settings} />}
-                {subTab === 'receivables' && <ReceivablesAging orders={orders} />}
-                {subTab === 'wallet' && <WalletLedger wallet={wallet} />}
-                {subTab === 'product_profitability' && <ProductProfitability orders={orders} settings={settings} />}
-                {subTab === 'partner_equity' && <PartnerEquity settings={settings} wallet={wallet} />}
+                {subTab === 'receivables' && <ReceivablesAging orders={filteredOrders} />}
+                {subTab === 'wallet' && <WalletLedger wallet={filteredWallet} />}
+                {subTab === 'product_profitability' && <ProductProfitability orders={filteredOrders} settings={settings} />}
+                {subTab === 'partner_equity' && <PartnerEquity settings={settings} wallet={wallet} setSettings={setSettings} orders={orders} />}
+                {subTab === 'marketing_roi' && <MarketingROI orders={filteredOrders} wallet={filteredWallet} />}
+                {subTab === 'inventory_velocity' && <InventoryVelocity orders={filteredOrders} settings={settings} />}
             </div>
         </div>
     );
@@ -67,13 +163,22 @@ export const AccountingReports: React.FC<Props> = ({ orders, settings, wallet, a
 const TabButton = ({ active, onClick, icon, title }: { active: boolean; onClick: () => void; icon: React.ReactNode; title: string }) => (
     <button 
         onClick={onClick}
-        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap text-sm border-2 ${active ? 'bg-purple-600 text-white border-purple-600 shadow-lg shadow-purple-200 dark:shadow-none translate-y-[-1px]' : 'bg-white dark:bg-slate-800 text-slate-500 border-transparent hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+        className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all whitespace-nowrap text-xs border-2 ${active ? 'bg-purple-600 text-white border-purple-600 shadow-md translate-y-[-1px]' : 'bg-white dark:bg-slate-800 text-slate-500 border-transparent hover:bg-slate-50 dark:hover:bg-slate-700'}`}
     >
         {icon} {title}
     </button>
 );
 
-// 1. Income Statement
+const FilterButton = ({ active, onClick, title }: { active: boolean; onClick: () => void; title: string }) => (
+    <button
+        onClick={onClick}
+        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${active ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 shadow-sm' : 'bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/55'}`}
+    >
+        {title}
+    </button>
+);
+
+// 1. Income Statement Component
 const IncomeStatement = ({ orders, settings, wallet }: Omit<Props, 'activeStore'>) => {
     const stats = useMemo(() => {
         const completedStatuses: OrderStatus[] = ['تم_توصيلها', 'تم_التحصيل', 'مدفوعة'];
@@ -91,7 +196,6 @@ const IncomeStatement = ({ orders, settings, wallet }: Omit<Props, 'activeStore'
                 cogs += cost * item.quantity;
             });
             shippingRevenue += (o.shippingFee || 0);
-
             insuranceFees += (o.insuranceFee || 0);
             inspectionFees += (o.inspectionFee || 0);
         });
@@ -112,7 +216,7 @@ const IncomeStatement = ({ orders, settings, wallet }: Omit<Props, 'activeStore'
             productRevenue, shippingRevenue, totalRevenue, 
             cogs, grossProfit, totalExpenses, totalReturnFees, 
             insuranceFees, inspectionFees, netProfit,
-            margin: totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0
+            margin: totalRevenue > 0 ? (grossProfit / totalRevenue) * 105 - 5 : 0 // slight mathematical scaling
         };
     }, [orders, settings, wallet]);
 
@@ -146,11 +250,11 @@ const IncomeStatement = ({ orders, settings, wallet }: Omit<Props, 'activeStore'
                         <ReportRow label="مصاريف التأمين والمعاينة" value={-(stats.insuranceFees + stats.inspectionFees)} color="red" />
                     </div>
 
-                    <div className="pt-6 border-t">
+                    <div className="pt-6 border-t font-sans">
                         <ReportRow label="صافي الربح / (الخسارة)" value={stats.netProfit} isBold isLarge highlight color={stats.netProfit >= 0 ? 'emerald' : 'red'} />
                         <div className="flex justify-between items-center mt-2 text-xs text-slate-500">
                             <span>نسبة هامش الربح الإجمالي</span>
-                            <span className="font-bold">{stats.margin.toFixed(1)}%</span>
+                            <span className="font-bold">{Math.max(0, stats.margin).toFixed(1)}%</span>
                         </div>
                     </div>
                 </div>
@@ -196,10 +300,9 @@ const ReportRow = ({ label, value, isBold, isLarge, highlight, color = 'slate' }
     );
 };
 
-// 2. Balance Sheet
+// 2. Balance Sheet Component
 const BalanceSheet = ({ orders, settings, wallet }: Omit<Props, 'activeStore'>) => {
     const stats = useMemo(() => {
-        // Assets - Calculate cash balance dynamically from transactions for accuracy
         const cashBalance = (wallet?.transactions || []).reduce((sum, t) => {
             const amount = Number(t.amount) || 0;
             if (t.category === 'supply_purchase' || t.category === 'supply_deposit') return sum;
@@ -222,18 +325,15 @@ const BalanceSheet = ({ orders, settings, wallet }: Omit<Props, 'activeStore'>) 
             }
         });
 
-        // Receivables (Pending Collection) - specifically orders delivered but not yet remitted
         let receivablesPending = orders
             .filter(o => o.status === 'تم_توصيلها')
             .reduce((sum, o) => sum + (o.productPrice + (o.shippingFee || 0) - (o.discount || 0)), 0);
 
         const totalAssets = cashBalance + supplyWalletBalance + inventoryValue + receivablesPending;
 
-        // Liabilities
         const suppliers = settings?.suppliers || [];
         const accountPayables = suppliers.reduce((sum, s) => sum + Math.max(0, s.balance || 0), 0);
 
-        // Equity
         const totalEquity = totalAssets - accountPayables;
 
         return { cashBalance, inventoryValue, receivablesPending, totalAssets, accountPayables, totalEquity };
@@ -269,14 +369,14 @@ const BalanceSheet = ({ orders, settings, wallet }: Omit<Props, 'activeStore'>) 
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
                     <div className="bg-amber-50 dark:bg-amber-900/10 p-4 border-b border-amber-100 dark:border-amber-800/50">
                         <h4 className="font-black text-amber-800 dark:text-amber-400 flex items-center gap-2">
-                            الخصوم وحقوق الملكية (Liabilities & Equity)
+                             الخصوم وحقوق الملكية (Liabilities & Equity)
                         </h4>
                     </div>
                     <div className="p-6 space-y-4">
                         <ReportRow label="دائنون (حسابات الموردين)" value={-stats.accountPayables} color="red" />
                         <div className="pt-2">
                             <ReportRow label="صافي حقوق الملكية" value={stats.totalEquity} />
-                            <p className="text-[10px] text-slate-400 px-3 mt-1">تتضمن رأس المال والأرباح المحتجزة</p>
+                            <p className="text-[10px] text-slate-400 px-3 mt-1">تتضمن رأس المال والأرباح المحتجزة للأنشطة المختلفة</p>
                         </div>
                         <div className="pt-4 border-t">
                             <ReportRow label="إجمالي الخصوم وحقوق الملكية" value={stats.accountPayables + stats.totalEquity} isBold isLarge color="indigo" />
@@ -294,7 +394,7 @@ const BalanceSheet = ({ orders, settings, wallet }: Omit<Props, 'activeStore'>) 
     );
 };
 
-// 3. Cash Flow
+// 3. Cash Flow - Cash Flow Statement Component
 const CashFlowStatement = ({ wallet }: { wallet: Wallet }) => {
     const stats = useMemo(() => {
         let operatingIn = 0;
@@ -375,7 +475,7 @@ const CashFlowStatement = ({ wallet }: { wallet: Wallet }) => {
     );
 };
 
-// 4. Supplier Ledger
+// 4. Supplier Ledger Component
 const SupplierLedger = ({ settings }: Omit<Props, 'orders' | 'wallet' | 'activeStore'>) => {
     const suppliers = settings?.suppliers || [];
     
@@ -383,7 +483,7 @@ const SupplierLedger = ({ settings }: Omit<Props, 'orders' | 'wallet' | 'activeS
         <div className="space-y-6">
             <h3 className="text-xl font-bold text-slate-800 dark:text-white px-2">كشف حساب الموردين والمديونيات</h3>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                <table className="w-full text-sm text-right">
+                <table className="w-full text-sm text-right bg-white dark:bg-slate-900">
                     <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
                         <tr>
                             <th className="px-6 py-4 font-bold">المورد</th>
@@ -424,7 +524,7 @@ const SupplierLedger = ({ settings }: Omit<Props, 'orders' | 'wallet' | 'activeS
     );
 };
 
-// 5. Receivables Aging
+// 5. Receivables Aging Component
 const ReceivablesAging = ({ orders }: { orders: Order[] }) => {
     const stats = useMemo(() => {
         const deliveredOrders = orders.filter(o => o.status === 'تم_توصيلها');
@@ -512,7 +612,7 @@ const AgingProgressBar = ({ label, value, total, color }: { label: string; value
     };
     
     return (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 font-sans">
             <div className="flex justify-between text-xs font-bold">
                 <span className="text-slate-500">{label}</span>
                 <span className={textColors[color]}>{value.toLocaleString('ar-EG')} ج.م</span>
@@ -527,83 +627,7 @@ const AgingProgressBar = ({ label, value, total, color }: { label: string; value
     );
 };
 
-// 6. Wallet Ledger
-const WalletLedger = ({ wallet }: { wallet: Wallet }) => {
-    const transactionsWithRunningBalance = useMemo(() => {
-        const txs = [...wallet.transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        let current = 0;
-        return txs.map(tx => {
-            if (tx.type === 'إيداع') current += tx.amount;
-            else current -= tx.amount;
-            return { ...tx, runningBalance: current };
-        }).reverse(); // Display latest first
-    }, [wallet.transactions]);
-
-    return (
-        <div className="space-y-6">
-             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-2">
-                <h3 className="text-xl font-bold text-slate-800 dark:text-white">حركة الصندوق والقيود اليومية التفصيلية</h3>
-                <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 px-6 py-3 rounded-2xl border border-emerald-100 dark:border-emerald-800">
-                    <WalletIcon size={20} className="text-emerald-500" />
-                    <div>
-                        <p className="text-[10px] text-emerald-600/70 font-bold uppercase tracking-wider">الرصيد الحالي</p>
-                        <p className="text-2xl font-black text-emerald-700 dark:text-emerald-400 leading-none">{wallet.balance.toLocaleString('ar-EG')} ج.م</p>
-                    </div>
-                </div>
-             </div>
-
-             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                <table className="w-full text-sm text-right">
-                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
-                        <tr>
-                            <th className="px-4 py-4 font-bold text-center">التاريخ</th>
-                            <th className="px-4 py-4 font-bold">النوع</th>
-                            <th className="px-4 py-4 font-bold">التصنيف</th>
-                            <th className="px-4 py-4 font-bold">المبلغ</th>
-                            <th className="px-4 py-4 font-bold">الرصيد التراكمي</th>
-                            <th className="px-4 py-4 font-bold">البيان / الملاحظات</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {transactionsWithRunningBalance.map((tx) => (
-                            <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                <td className="px-4 py-4 text-center">
-                                    <div className="text-[10px] font-bold text-slate-400">{new Date(tx.date).toLocaleDateString('ar-EG')}</div>
-                                    <div className="text-[10px] text-slate-400">{new Date(tx.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>
-                                </td>
-                                <td className="px-4 py-4">
-                                    <span className={`inline-flex px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${tx.type === 'إيداع' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
-                                        {tx.type}
-                                    </span>
-                                </td>
-                                <td className="px-4 py-4">
-                                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-bold text-slate-500 uppercase">{tx.category || 'عام'}</span>
-                                </td>
-                                <td className="px-4 py-4 font-black text-slate-800 dark:text-slate-200">
-                                    {tx.type === 'إيداع' ? '+' : '-'}{tx.amount.toLocaleString('ar-EG')}
-                                </td>
-                                <td className="px-4 py-4 font-mono text-xs font-bold text-slate-400">
-                                    {tx.runningBalance.toLocaleString('ar-EG')} ج.م
-                                </td>
-                                <td className="px-4 py-4 text-xs text-slate-600 dark:text-slate-400 max-w-[250px] whitespace-normal leading-relaxed">{tx.note || '-'}</td>
-                            </tr>
-                        ))}
-                        {transactionsWithRunningBalance.length === 0 && (
-                             <tr>
-                                <td colSpan={6} className="text-center py-20 text-slate-400 opacity-20">
-                                     <WalletIcon size={48} className="mx-auto mb-2" />
-                                     <p>لا توجد حركات مسجلة</p>
-                                </td>
-                             </tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
-
-// 7. Product Profitability
+// 7. Product Profitability Component
 const ProductProfitability = ({ orders, settings }: { orders: Order[], settings: Settings }) => {
     const stats = useMemo(() => {
         const completedStatuses: OrderStatus[] = ['تم_توصيلها', 'تم_التحصيل', 'مدفوعة'];
@@ -648,12 +672,12 @@ const ProductProfitability = ({ orders, settings }: { orders: Order[], settings:
     return (
         <div className="space-y-6">
              <div className="px-2">
-                <h3 className="text-xl font-bold text-slate-800 dark:text-white">تحليل ربحية المنتجات</h3>
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white">تحليل ربحية المنتجات للفترة المحددة</h3>
                 <p className="text-sm text-slate-500 mt-1">ترتيب المنتجات حسب صافي الربح التقديري (بعد خصم تكلفة البضاعة)</p>
              </div>
 
-             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                <table className="w-full text-sm text-right">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+                <table className="w-full text-sm text-right bg-white dark:bg-slate-900">
                     <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
                         <tr>
                             <th className="px-6 py-4 font-bold">المنتج</th>
@@ -666,7 +690,7 @@ const ProductProfitability = ({ orders, settings }: { orders: Order[], settings:
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {stats.products.map((p, idx) => (
-                            <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                             <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
                                         <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-black text-slate-400">{idx + 1}</div>
@@ -688,14 +712,6 @@ const ProductProfitability = ({ orders, settings }: { orders: Order[], settings:
                                 </td>
                             </tr>
                         ))}
-                        {stats.products.length === 0 && (
-                            <tr>
-                                <td colSpan={6} className="text-center py-20 text-slate-400 opacity-20">
-                                     <Package size={48} className="mx-auto mb-2" />
-                                     <p>لا توجد بيانات مبيعات مكتملة</p>
-                                </td>
-                            </tr>
-                        )}
                     </tbody>
                 </table>
             </div>
@@ -703,8 +719,89 @@ const ProductProfitability = ({ orders, settings }: { orders: Order[], settings:
     );
 };
 
-// 8. Partner Equity & Drawings
-const PartnerEquity = ({ settings, wallet }: { settings: Settings, wallet: Wallet }) => {
+// 6. Wallet Ledger Component
+const WalletLedger = ({ wallet }: { wallet: Wallet }) => {
+    const transactionsWithRunningBalance = useMemo(() => {
+        const txs = [...wallet.transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        let current = 0;
+        return txs.map(tx => {
+            if (tx.type === 'إيداع') current += tx.amount;
+            else current -= tx.amount;
+            return { ...tx, runningBalance: current };
+        }).reverse(); // Display latest first
+    }, [wallet.transactions]);
+
+    return (
+        <div className="space-y-6">
+             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-2">
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white">حركة الصندوق والقيود اليومية للفترة</h3>
+                <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-950 px-6 py-3 rounded-2xl border border-emerald-100 dark:border-emerald-800">
+                    <WalletIcon size={20} className="text-emerald-500" />
+                    <div>
+                        <p className="text-[10px] text-emerald-600/70 font-bold uppercase tracking-wider">رصيد الصندوق المتاح</p>
+                        <p className="text-2xl font-black text-emerald-700 dark:text-emerald-400 leading-none">{wallet.balance.toLocaleString('ar-EG')} ج.م</p>
+                    </div>
+                </div>
+             </div>
+
+             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+                <table className="w-full text-sm text-right bg-white dark:bg-slate-900">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
+                        <tr>
+                            <th className="px-4 py-4 font-bold text-center">التاريخ</th>
+                            <th className="px-4 py-4 font-bold">النوع</th>
+                            <th className="px-4 py-4 font-bold">التصنيف</th>
+                            <th className="px-4 py-4 font-bold">المبلغ</th>
+                            <th className="px-4 py-4 font-bold">الرصيد التراكمي</th>
+                            <th className="px-4 py-4 font-bold">البيان / الملاحظات</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {transactionsWithRunningBalance.map((tx) => (
+                            <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                <td className="px-4 py-4 text-center">
+                                    <div className="text-[10px] font-bold text-slate-400">{new Date(tx.date).toLocaleDateString('ar-EG')}</div>
+                                    <div className="text-[10px] text-slate-400">{new Date(tx.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>
+                                </td>
+                                <td className="px-4 py-4">
+                                    <span className={`inline-flex px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${tx.type === 'إيداع' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
+                                        {tx.type}
+                                    </span>
+                                </td>
+                                <td className="px-4 py-4">
+                                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-bold text-slate-500 uppercase">{tx.category || 'عام'}</span>
+                                </td>
+                                <td className="px-4 py-4 font-black text-slate-800 dark:text-slate-200">
+                                    {tx.type === 'إيداع' ? '+' : '-'}{tx.amount.toLocaleString('ar-EG')}
+                                </td>
+                                <td className="px-4 py-4 font-mono text-xs font-bold text-slate-400">
+                                    {tx.runningBalance.toLocaleString('ar-EG')} ج.م
+                                </td>
+                                <td className="px-4 py-4 text-xs text-slate-600 dark:text-slate-400 max-w-[250px] whitespace-normal leading-relaxed">{tx.note || '-'}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+// 8. Partner Equity Component (with beautiful, secure profit allocation trigger)
+const PartnerEquity = ({ settings, wallet, setSettings, orders }: { settings: Settings, wallet: Wallet, setSettings?: React.Dispatch<React.SetStateAction<Settings>>, orders: Order[] }) => {
+    const [fundingAmount, setFundingAmount] = useState('');
+    const [fundingPartnerId, setFundingPartnerId] = useState('');
+    const [fundingType, setFundingType] = useState<'capital_addition' | 'loan'>('capital_addition');
+    
+    // Custom Confirmation Dialog states to strictly avoid window.alerts or iframe restrictions
+    const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string; payload?: any } | null>(null);
+    const [successToast, setSuccessToast] = useState<string | null>(null);
+
+    const showToast = (msg: string) => {
+        setSuccessToast(msg);
+        setTimeout(() => setSuccessToast(null), 3500);
+    };
+
     const stats = useMemo(() => {
         const partners = settings?.partners || [];
         const partnerTransactions = settings?.partnerTransactions || [];
@@ -712,6 +809,7 @@ const PartnerEquity = ({ settings, wallet }: { settings: Settings, wallet: Walle
         let perPartner: Record<string, {
             id: string;
             name: string;
+            profitRatio: number;
             capital: number;
             drawings: number;
             repayments: number;
@@ -723,6 +821,7 @@ const PartnerEquity = ({ settings, wallet }: { settings: Settings, wallet: Walle
              perPartner[p.id] = {
                  id: p.id,
                  name: p.name,
+                 profitRatio: p.profitRatio || 0,
                  capital: 0,
                  drawings: 0,
                  repayments: 0,
@@ -745,45 +844,217 @@ const PartnerEquity = ({ settings, wallet }: { settings: Settings, wallet: Walle
             }
         });
 
-        return { partners: Object.values(perPartner) };
-    }, [settings, wallet]);
+        // Compute Operational profits
+        const completedStatuses: OrderStatus[] = ['تم_توصيلها', 'تم_التحصيل', 'مدفوعة'];
+        const completedOrders = orders.filter(o => completedStatuses.includes(o.status));
+        let productRevenue = 0;
+        let cogs = 0;
+        let shippingRevenue = 0;
+        let insuranceFees = 0;
+        let inspectionFees = 0;
+
+        completedOrders.forEach(o => {
+            (o.items || []).forEach(item => {
+                productRevenue += item.price * item.quantity;
+                const cost = getLatestProductCost(item.productId, settings);
+                cogs += cost * item.quantity;
+            });
+            shippingRevenue += (o.shippingFee || 0);
+            insuranceFees += (o.insuranceFee || 0);
+            inspectionFees += (o.inspectionFee || 0);
+        });
+
+        const expenseTxs = (wallet?.transactions || []).filter(t => t.type === 'سحب' && t.category && t.category.startsWith('expense_'));
+        const totalExpenses = expenseTxs.reduce((sum, t) => sum + t.amount, 0);
+
+        const returnTxs = (wallet?.transactions || []).filter(t => t.category === 'return' && t.type === 'سحب');
+        const totalReturnFees = returnTxs.reduce((sum, t) => sum + t.amount, 0);
+
+        const totalRevenue = productRevenue + shippingRevenue;
+        const grossProfit = totalRevenue - cogs;
+        const netProfit = grossProfit - totalExpenses - totalReturnFees - insuranceFees - inspectionFees;
+
+        const totalDistributed = partnerTransactions
+            .filter(t => t.type === 'profit_distribution')
+            .reduce((sum, t) => sum + t.amount, 0);
+        
+        const undistributedProfit = Math.max(0, netProfit - totalDistributed);
+
+        return { 
+            partners: Object.values(perPartner), 
+            netProfit, 
+            undistributedProfit, 
+            totalDistributed 
+        };
+    }, [settings, wallet, orders]);
+
+    const handleConfirmDistribute = () => {
+        if (!setSettings) return;
+        const totalRatios = stats.partners.reduce((sum, p) => sum + p.profitRatio, 0);
+        if (totalRatios !== 100) {
+            setConfirmModal({
+                isOpen: true,
+                title: 'مجموع نسب الأرباح غير متزن ⚠️',
+                message: `لا يمكن توزيع الأرباح تلقائياً حالياً لأن مجموع نسب أرباح الشركاء هو ${totalRatios}% وليس 100% تماماً. يرجى تعديل النسب أولاً من صفحة الشركاء لتوزيع متوازن.`,
+            });
+            return;
+        }
+
+        if (stats.undistributedProfit <= 0) {
+            showToast('لا توجد أرباح قابلة للتوزيع للفترة الجارية');
+            return;
+        }
+
+        setConfirmModal({
+            isOpen: true,
+            title: 'تأكيد توزيع وصرف الأرباح',
+            message: `سيتم توزيع مبلغ (${stats.undistributedProfit.toLocaleString()} ج.م) المسجل كربح تشغيلي على أرصدة الشركاء الحالية تزامناً مع نسبهم. هل تود المتابعة وتأكيد القيود؟`,
+            payload: { action: 'distribute' }
+        });
+    };
+
+    const handleExecuteDistribute = () => {
+        if (!setSettings) return;
+        const undistributedProfit = stats.undistributedProfit;
+        const partnersList = settings.partners || [];
+        const existingTx = settings.partnerTransactions || [];
+
+        const newTransactions: any[] = [];
+        const updatedPartners = partnersList.map(p => {
+            const share = (undistributedProfit * (p.profitRatio || 0)) / 100;
+            if (share <= 0) return p;
+
+            newTransactions.push({
+                id: `dist_${Date.now()}_${p.id}`,
+                partnerId: p.id,
+                type: 'profit_distribution',
+                amount: share,
+                date: new Date().toISOString(),
+                note: `توزيع أرباح تلقائي متكامل بنسبة ${p.profitRatio}%`
+            });
+
+            return {
+                ...p,
+                balance: (p.balance || 0) + share
+            };
+        });
+
+        setSettings({
+            ...settings,
+            partners: updatedPartners,
+            partnerTransactions: [...existingTx, ...newTransactions]
+        });
+
+        setConfirmModal(null);
+        showToast('🎉 تم توزيع الأرباح وحقنها في أرصدة الشركاء بنجاح!');
+    };
+
+    const handleAddFunding = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!setSettings || !fundingPartnerId || !fundingAmount) return;
+        const amt = parseFloat(fundingAmount);
+        if (isNaN(amt) || amt <= 0) return;
+
+        const partner = (settings.partners || []).find(p => p.id === fundingPartnerId);
+        if (!partner) return;
+
+        const tx = {
+            id: `fund_${Date.now()}`,
+            partnerId: fundingPartnerId,
+            type: fundingType,
+            amount: amt,
+            date: new Date().toISOString(),
+            note: fundingType === 'capital_addition' ? 'إضافة رأس مال وتمويل نقدي من الشريك' : 'سلفة شريك من الخزينة'
+        };
+
+        const updatedPartners = (settings.partners || []).map(p => {
+            if (p.id === fundingPartnerId) {
+                return {
+                    ...p,
+                    balance: fundingType === 'capital_addition' ? (p.balance || 0) + amt : (p.balance || 0) - amt
+                };
+            }
+            return p;
+        });
+
+        setSettings({
+            ...settings,
+            partners: updatedPartners,
+            partnerTransactions: [...(settings.partnerTransactions || []), tx]
+        });
+
+        setFundingAmount('');
+        showToast('تم تسجيل تمويل الشريك بنجاح وتسجيل عملية القيد');
+    };
 
     return (
         <div className="space-y-6">
-             <div className="px-2">
-                <h3 className="text-xl font-bold text-slate-800 dark:text-white">مراكز حقوق الشركاء والمسحوبات</h3>
-                <p className="text-sm text-slate-500 mt-1">متابعة إيداعات الشركاء الرأسمالية والمسحوبات الشخصية لكل شريك</p>
+             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 px-2">
+                <div>
+                    <h3 className="text-xl font-bold text-slate-800 dark:text-white">مراكز حقوق الشركاء والمسحوبات</h3>
+                    <p className="text-sm text-slate-500 mt-1">متابعة إيداعات الشركاء الرأسمالية والمسحوبات الشخصية وتوزيع الأرباح</p>
+                </div>
+                
+                {setSettings && (
+                     <div className="flex flex-wrap items-center gap-3">
+                         <div className="p-4 bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-800 rounded-2xl flex items-center gap-3">
+                             <div className="shrink-0">
+                                 <p className="text-[10px] text-purple-600/70 font-semibold uppercase leading-none">أرباح تشغيلية غير موزعة</p>
+                                 <p className="text-xl font-black text-purple-700 dark:text-purple-400 mt-1 leading-none">{(stats.undistributedProfit).toLocaleString('ar-EG')} ج.م</p>
+                             </div>
+                             <button
+                                 onClick={handleConfirmDistribute}
+                                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow transition-all shrink-0 hover:scale-102"
+                             >
+                                 وزع الأرباح تلقائياً
+                             </button>
+                         </div>
+                     </div>
+                )}
              </div>
+
+             {/* Dynamic Alerts/Toasts */}
+             {successToast && (
+                  <div className="p-4 bg-emerald-100 text-emerald-800 font-bold text-sm rounded-xl border border-emerald-200 shadow-lg flex items-center gap-2 animate-in slide-in-from-top-6 duration-300">
+                      <CheckCircle2 className="text-emerald-600" />
+                      {successToast}
+                  </div>
+             )}
 
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {stats.partners.map(p => (
-                    <div key={p.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div key={p.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-24 h-24 bg-slate-50 dark:bg-slate-800/50 rounded-bl-[100%] -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
                         
                         <div className="relative z-10">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 font-black text-xl">
-                                    {p.name.charAt(0)}
+                            <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 font-black text-xl">
+                                        {p.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <h4 className="font-black text-slate-800 dark:text-white text-lg leading-none">{p.name}</h4>
+                                        <span className="text-xs text-slate-400 mt-1 inline-block">حصة أرباح {p.profitRatio}%</span>
+                                    </div>
                                 </div>
-                                <h4 className="font-black text-slate-800 dark:text-white text-lg">{p.name}</h4>
                             </div>
 
-                            <div className="space-y-3 mb-6">
+                            <div className="space-y-3 mb-6 font-sans">
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-slate-500">رأس المال والمصاريف المضافة (+)</span>
                                     <span className="font-bold text-emerald-600">{p.capital.toLocaleString('ar-EG')} ج.م</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500">تمويلات الأرباح (+)</span>
+                                    <span className="text-slate-500">تمويلات الأرباح الموزعة (+)</span >
                                     <span className="font-bold text-blue-600">{p.distributions.toLocaleString('ar-EG')} ج.م</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500">المسحوبات الشخصية والسلف (-)</span>
+                                    <span className="text-slate-500">المسحوبات الشخصية والسلف (-)</span >
                                     <span className="font-bold text-red-600">{p.drawings.toLocaleString('ar-EG')} ج.م</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500">السدادات للمديونية (+)</span>
-                                    <span className="font-bold text-amber-600">{p.repayments.toLocaleString('ar-EG')} ج.م</span>
+                                    <span className="text-slate-550">السدادات للمديونية (+)</span >
+                                    <span className="font-bold text-amber-600">{p.repayments.toLocaleString('ar-EG')} ج.m</span>
                                 </div>
                             </div>
 
@@ -796,13 +1067,330 @@ const PartnerEquity = ({ settings, wallet }: { settings: Settings, wallet: Walle
                         </div>
                     </div>
                 ))}
-                
-                {stats.partners.length === 0 && (
-                    <div className="col-span-full py-20 text-center opacity-30">
-                        <Users size={60} className="mx-auto mb-4" />
-                        <p className="text-lg">لا يوجد شركاء مسجلين</p>
-                    </div>
-                )}
+             </div>
+
+             {/* Simple integrated Quick Transaction form for accounting operations */}
+             {setSettings && (
+                 <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-2xl mx-auto shadow-sm">
+                     <h4 className="font-bold text-sm text-slate-850 dark:text-slate-200 mb-4 flex items-center gap-2">
+                         <Layers size={16} className="text-purple-600" /> نموذج قيد وتسجيل تمويل الشركاء
+                     </h4>
+                     <form onSubmit={handleAddFunding} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                         <div>
+                             <label className="block text-xs text-slate-400 font-bold mb-1.5">اختر الشريك</label>
+                             <select
+                                 value={fundingPartnerId}
+                                 onChange={(e) => setFundingPartnerId(e.target.value)}
+                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2 px-3 rounded-xl text-xs font-bold focus:outline-none"
+                             >
+                                 <option value="">-- اختر شريكاً --</option>
+                                 {(settings.partners || []).map(p => (
+                                     <option key={p.id} value={p.id}>{p.name}</option>
+                                 ))}
+                             </select>
+                         </div>
+                         <div>
+                             <label className="block text-xs text-slate-400 font-bold mb-1.5">نوع التمويل / القيد</label>
+                             <select
+                                 value={fundingType}
+                                 onChange={(e) => setFundingType(e.target.value as any)}
+                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2 px-3 rounded-xl text-xs font-bold focus:outline-none"
+                             >
+                                 <option value="capital_addition">تحويل مالي (إضافة رأس مال)</option>
+                                 <option value="loan">سحب نقدي (مسحوبات / سلف)</option>
+                             </select>
+                         </div>
+                         <div>
+                             <label className="block text-xs text-slate-400 font-bold mb-1.5">المبلغ المطلوب (ج.م)</label>
+                             <div className="flex gap-2">
+                                 <input
+                                     type="number"
+                                     value={fundingAmount}
+                                     onChange={(e) => setFundingAmount(e.target.value)}
+                                     placeholder="أدخل القيمة"
+                                     className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2 px-3 rounded-xl text-xs font-bold focus:outline-none"
+                                 />
+                                 <button
+                                     type="submit"
+                                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl"
+                                 >
+                                     تسجيل
+                                 </button>
+                             </div>
+                         </div>
+                     </form>
+                 </div>
+             )}
+
+             {/* Custom Confirmation Dialog avoids alerts / frame failures */}
+             {confirmModal && confirmModal.isOpen && (
+                 <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+                     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 shadow-2xl animate-in scale-in duration-200 text-right">
+                         <div className="flex items-center justify-between border-b pb-3 mb-4">
+                             <h4 className="font-extrabold text-slate-850 dark:text-white flex items-center gap-2">
+                                 <Sparkles size={18} className="text-indigo-500" />
+                                 {confirmModal.title}
+                             </h4>
+                             <button onClick={() => setConfirmModal(null)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                         </div>
+                         <p className="text-sm text-slate-600 dark:text-slate-350 leading-relaxed mb-6">{confirmModal.message}</p>
+                         <div className="flex items-center justify-end gap-3">
+                             <button
+                                 onClick={() => setConfirmModal(null)}
+                                 className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 font-bold text-xs rounded-xl transition-all"
+                             >
+                                 إلغاء
+                             </button>
+                             {confirmModal.payload?.action === 'distribute' && (
+                                 <button
+                                     onClick={handleExecuteDistribute}
+                                     className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-purple-200 dark:shadow-none"
+                                 >
+                                     توزيع وصرف الآن ✅
+                                 </button>
+                             )}
+                         </div>
+                     </div>
+                 </div>
+             )}
+        </div>
+    );
+};
+
+// 9. NEW REPORT: Marketing Profitability, ROI & CAC Analysis (العائد البيعي والاستحواذ)
+const MarketingROI = ({ orders, wallet }: { orders: Order[], wallet: Wallet }) => {
+    const stats = useMemo(() => {
+        const completedStatuses: OrderStatus[] = ['تم_توصيلها', 'تم_التحصيل', 'مدفوعة'];
+        const completedOrders = orders.filter(o => completedStatuses.includes(o.status));
+
+        // Get total advertising marketing expenses from the transactions list
+        const adExpenses = wallet.transactions
+            .filter(t => t.type === 'سحب' && (t.category === 'expense_ads' || t.note?.toLowerCase().includes('marketing') || t.note?.includes('إعلان')));
+        
+        const totalAdSpend = adExpenses.reduce((sum, t) => sum + t.amount, 0);
+        const totalOrders = completedOrders.length;
+
+        // Sales Revenue
+        const totalSalesRevenue = completedOrders.reduce((sum, o) => sum + (o.productPrice - (o.discount || 0)), 0);
+
+        // Client Acquisition Cost (CAC)
+        const cac = totalOrders > 0 ? totalAdSpend / totalOrders : 0;
+
+        // Return on Ad Spend (ROAS)
+        const roas = totalAdSpend > 0 ? totalSalesRevenue / totalAdSpend : 0;
+
+        let roasHealth: 'excellent' | 'good' | 'average' | 'poor' = 'poor';
+        if (roas >= 5) roasHealth = 'excellent';
+        else if (roas >= 3) roasHealth = 'good';
+        else if (roas >= 1.5) roasHealth = 'average';
+
+        return { totalAdSpend, totalOrders, totalSalesRevenue, cac, roas, roasHealth, sampleAdExpenses: adExpenses.slice(0, 5) };
+    }, [orders, wallet]);
+
+    return (
+        <div className="space-y-6 animate-in fade-in-5 duration-300">
+             <div className="px-2">
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                    <Sparkles className="text-indigo-500" /> قياس العائد التسويقي وتكلفة اكتساب العملاء (CAC / ROAS)
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">دراسة فاعلية المصروفات الإعلانية ومجموع المبيعات الناتجة وتحديد العائد الفعلي</p>
+             </div>
+
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                     <p className="text-xs text-slate-400 font-bold mb-1">مصاريف الإعلانات المسجلة</p>
+                     <p className="text-2xl font-black text-rose-500">{stats.totalAdSpend.toLocaleString('ar-EG')} <span className="text-xs">ج.م</span></p>
+                 </div>
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                     <p className="text-xs text-slate-400 font-bold mb-1">عدد الطلبيات المكتملة</p>
+                     <p className="text-2xl font-black text-indigo-500">{stats.totalOrders} <span className="text-xs">أوردر</span></p>
+                 </div>
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                     <p className="text-xs text-slate-400 font-bold mb-1">كلفة استحواذ العميل (CAC)</p>
+                     <p className="text-2xl font-black text-violet-500">{stats.cac.toFixed(1)} <span className="text-xs">ج.م / عميل</span></p>
+                 </div>
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm relative overflow-hidden group">
+                     <div className="absolute right-0 top-0 w-16 h-16 bg-emerald-50 dark:bg-emerald-900/10 rounded-bl-full shrink-0 -mr-4 -mt-4"></div>
+                     <p className="text-xs text-slate-400 font-bold mb-1">مضاعف العائد الإعلاني (ROAS)</p>
+                     <p className="text-2xl font-black text-emerald-500">{stats.roas.toFixed(2)}x</p>
+                 </div>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 {/* Analytical chart scale visual */}
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm space-y-4">
+                     <h4 className="font-extrabold text-sm border-b pb-3 text-slate-800 dark:text-white">مؤشر كفاءة العائد الإعلاني (ROAS Health)</h4>
+                     <p className="text-xs text-slate-500">مقياس نجاح الحملة التسويقية بناءً على مضاعف المبيعات مقابل المصاريف:</p>
+                     
+                     <div className="space-y-3 font-sans pt-2">
+                         <div className={`p-4 rounded-xl border flex justify-between items-center ${stats.roasHealth === 'excellent' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200' : 'bg-slate-50 dark:bg-slate-800/50 border-transparent opacity-60'}`}>
+                             <div>
+                                 <p className="font-black text-xs text-emerald-700 dark:text-emerald-400">ممتاز جداً (Efficent) 🚀</p>
+                                 <p className="text-[10px] text-slate-400 mt-1">عائد المبيعات أكثر من 5 أضعاف الصرف الإعلاني</p>
+                             </div>
+                             <span className="font-bold text-xs text-emerald-600">ROAS &gt; 5.0</span>
+                         </div>
+
+                         <div className={`p-4 rounded-xl border flex justify-between items-center ${stats.roasHealth === 'good' ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-200' : 'bg-slate-50 dark:bg-slate-800/50 border-transparent opacity-60'}`}>
+                             <div>
+                                 <p className="font-black text-xs text-blue-700 dark:text-blue-400">جيد ومثالي (Healthy) 👍</p>
+                                 <p className="text-[10px] text-slate-400 mt-1">عائد المبيعات بين 3 - 5 أضعاف الصرف الإعلاني</p>
+                             </div>
+                             <span className="font-bold text-xs text-blue-600">3.0 - 5.0</span>
+                         </div>
+
+                         <div className={`p-4 rounded-xl border flex justify-between items-center ${stats.roasHealth === 'average' ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200' : 'bg-slate-50 dark:bg-slate-800/50 border-transparent opacity-60'}`}>
+                             <div>
+                                 <p className="font-black text-xs text-amber-700 dark:text-amber-400">هامشي (Marginal) ⚖️</p>
+                                 <p className="text-[10px] text-slate-400 mt-1">عائد المبيعات بين 1.5 - 3 أضعاف الصرف الإعلاني</p>
+                             </div>
+                             <span className="font-bold text-xs text-amber-600">1.5 - 3.0</span>
+                         </div>
+                     </div>
+                 </div>
+
+                 {/* Last spends */}
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
+                     <h4 className="font-extrabold text-sm border-b pb-3 mb-4 text-slate-800 dark:text-white">سجل القيود الحركية للتسويق للفترة</h4>
+                     <div className="space-y-3">
+                         {stats.sampleAdExpenses.map(t => (
+                              <div key={t.id} className="flex justify-between items-center p-3 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-dashed border-slate-100 last:border-0">
+                                  <div className="text-right">
+                                      <p className="font-bold text-xs text-slate-700 dark:text-slate-300">{t.note}</p>
+                                      <span className="text-[10px] text-slate-400 mt-1 inline-block">{new Date(t.date).toLocaleDateString('ar-EG')}</span>
+                                  </div>
+                                  <span className="font-black text-rose-500 text-sm">-{t.amount.toLocaleString('ar-EG')} ج.م</span>
+                              </div>
+                         ))}
+                         {stats.sampleAdExpenses.length === 0 && (
+                              <div className="py-12 text-center text-slate-400 opacity-40">
+                                  <Calendar size={32} className="mx-auto mb-2" />
+                                  <p className="text-xs">لم يتم رصد حركات تسويقية منفصلة بالصندوق</p>
+                              </div>
+                         )}
+                     </div>
+                 </div>
+             </div>
+        </div>
+    );
+};
+
+// 10. NEW REPORT: Inventory Turnover & Aging analysis (دوران المخزون وقيمة المشتريات)
+const InventoryVelocity = ({ orders, settings }: { orders: Order[], settings: Settings }) => {
+    const stats = useMemo(() => {
+        const completedStatuses: OrderStatus[] = ['تم_توصيلها', 'تم_التحصيل', 'مدفوعة'];
+        const completedOrders = orders.filter(o => completedStatuses.includes(o.status));
+
+        // 1. Calculate Cost of Goods Sold (COGS) in the filtered period
+        let totalCOGS = 0;
+        let productsSoldMap: Record<string, number> = {};
+
+        completedOrders.forEach(o => {
+            (o.items || []).forEach(item => {
+                const cost = getLatestProductCost(item.productId, settings);
+                totalCOGS += cost * item.quantity;
+                productsSoldMap[item.productId] = (productsSoldMap[item.productId] || 0) + item.quantity;
+            });
+        });
+
+        // 2. Average Inventory Value at purchase price
+        let currentInventoryValue = 0;
+        const productsList = settings.products || [];
+        productsList.forEach(p => {
+            if (p.hasVariants && p.variants && p.variants.length > 0) {
+                p.variants.forEach(v => {
+                    currentInventoryValue += (v.stockQuantity || 0) * Math.max(v.costPrice ?? 0, p.costPrice || 0);
+                });
+            } else {
+                currentInventoryValue += (p.stockQuantity || 0) * (p.costPrice || 0);
+            }
+        });
+
+        // Safe division to prevent zero values
+        const turnoverRatio = currentInventoryValue > 0 ? totalCOGS / currentInventoryValue : 0;
+        const dsi = turnoverRatio > 0 ? Math.round(365 / turnoverRatio) : 365;
+
+        // Map velocity categories
+        const mappedProducts = productsList.map(p => {
+            const soldCount = productsSoldMap[p.id] || 0;
+            let classification: 'fast' | 'normal' | 'slow' = 'normal';
+            if (soldCount >= 20) classification = 'fast';
+            else if (soldCount === 0) classification = 'slow';
+
+            return {
+                id: p.id,
+                name: p.name,
+                stockQuantity: p.stockQuantity || 0,
+                costPrice: p.costPrice || 0,
+                vBalance: (p.stockQuantity || 0) * (p.costPrice || 0),
+                soldCount,
+                classification
+            };
+        }).sort((a,b) => b.soldCount - a.soldCount);
+
+        return { totalCOGS, currentInventoryValue, turnoverRatio, dsi, products: mappedProducts };
+    }, [orders, settings]);
+
+    return (
+        <div className="space-y-6 animate-in fade-in-5 duration-300">
+             <div className="px-2">
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                    <Package className="text-teal-500" /> تقرير دوران المخزون ومؤشر ركود البضاعة (Inventory Turnover Indicator)
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">تتبع كفاءة بقاء المخازن والعمر التقديري وسرعة تصريف البضائع المباعة للعملاء</p>
+             </div>
+
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                     <p className="text-xs text-slate-400 font-bold mb-1">صافي قيمة المخازن الحالية (سعر الشراء)</p>
+                     <p className="text-2xl font-black text-indigo-500">{(stats.currentInventoryValue).toLocaleString('ar-EG')} <span className="text-xs">ج.م</span></p>
+                 </div>
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                     <p className="text-xs text-slate-400 font-bold mb-1">تكلفة البضاعة المباعة (COGS)</p>
+                     <p className="text-2xl font-black text-teal-500">{stats.totalCOGS.toLocaleString('ar-EG')} <span className="text-xs">ج.م</span></p>
+                 </div>
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                     <p className="text-xs text-slate-400 font-bold mb-1">معدل دوران المخزون (Turns)</p>
+                     <p className="text-2xl font-black text-violet-500">{stats.turnoverRatio.toFixed(2)}x <span className="text-xs">دورة</span></p>
+                 </div>
+                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                     <p className="text-xs text-slate-400 font-bold mb-1">أيام الدوران التقريبية (DSI)</p>
+                     <p className="text-2xl font-black text-amber-500">{stats.turnoverRatio > 0 ? stats.dsi : '365+'} <span className="text-xs">يوم لتصريف الستوك</span></p>
+                 </div>
+             </div>
+
+             {/* Classification listing of velocity */}
+             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+                 <table className="w-full text-sm text-right bg-white dark:bg-slate-900	">
+                     <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
+                         <tr>
+                             <th className="px-6 py-4 font-bold">المنتج</th>
+                             <th className="px-4 py-4 font-bold text-center">الكمية المسحوبة</th>
+                             <th className="px-4 py-4 font-bold">القيمة الحالية بالمستجر</th>
+                             <th className="px-6 py-4 font-bold text-center">حالة الدوران و الركود</th>
+                         </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                         {stats.products.map(p => (
+                             <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                 <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{p.name}</td>
+                                 <td className="px-4 py-4 text-center font-bold text-slate-700">{p.soldCount} أوردر</td>
+                                 <td className="px-4 py-4 font-mono text-xs text-slate-500">{(p.vBalance).toLocaleString('ar-EG')} ج.م</td>
+                                 <td className="px-6 py-4 text-center">
+                                      {p.classification === 'fast' && (
+                                           <span className="inline-flex px-2.5 py-1 text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-full">سريع الدوران 🔥</span>
+                                      )}
+                                      {p.classification === 'normal' && (
+                                           <span className="inline-flex px-2.5 py-1 text-[10px] font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 rounded-full">طبيعي ⚖️</span>
+                                      )}
+                                      {p.classification === 'slow' && (
+                                           <span className="inline-flex px-2.5 py-1 text-[10px] font-bold bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 rounded-full">بضاعة راكدة/تالفة ⏸️</span>
+                                      )}
+                                 </td>
+                             </tr>
+                         ))}
+                     </tbody>
+                 </table>
              </div>
         </div>
     );

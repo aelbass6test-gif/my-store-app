@@ -51,7 +51,7 @@ const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({ currentUser, onLogout, 
         };
 
         updateStatus();
-        const interval = setInterval(updateStatus, 15000); // update every 15s
+        const interval = setInterval(updateStatus, 60000); // update every 60s
 
         // Listen for all active presences in this store
         const q = query(collection(db, 'presence'), where('storeId', '==', activeStoreId));
@@ -60,8 +60,8 @@ const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({ currentUser, onLogout, 
             const now = Date.now();
             snapshot.docs.forEach(docSnap => {
                 const data = docSnap.data();
-                // Filter out statuses stale for more than 45 seconds (offline threshold)
-                if (data.lastSeen && (now - data.lastSeen) < 45000) {
+                // Filter out statuses stale for more than 150 seconds (offline threshold)
+                if (data.lastSeen && (now - data.lastSeen) < 150000) {
                     usersMap[data.userId] = { lastSeen: data.lastSeen };
                 }
             });

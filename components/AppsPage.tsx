@@ -232,8 +232,17 @@ export default function AppsPage({ storeId, storeData, onUpdateSettings, onUpdat
      console.log(`[DEBUG] Fetching selectable products for ${appId}, storeId: ${storeId}`);
      try {
          const response = await fetch(`/api/sync/platform/${appId}/${storeId}/preview?type=products`);
-         const data = await response.json();
-         console.log(`[DEBUG] Preview response status: ${response.status}, data:`, data);
+         const text = await response.text();
+         console.log(`[DEBUG] Preview response status: ${response.status}, length: ${text.length}`);
+         
+         let data;
+         try {
+             data = JSON.parse(text);
+         } catch (e) {
+             console.error(`[DEBUG] JSON parse error. First 200 chars of response: ${text.substring(0, 200)}`);
+             throw new Error('فشل في قراءة بيانات السيرفر (تنسيق غير مدعوم). قد تكون هناك مشكلة في الاتصال.');
+         }
+
          if (response.ok) {
              setSelectableProducts(data.items || []);
              setShowSelectiveModal(true);

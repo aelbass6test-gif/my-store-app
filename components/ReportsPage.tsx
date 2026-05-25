@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Order, Settings, Wallet, Store } from '../types';
-import { FileText, TrendingUp, Package, Truck, DollarSign, ArrowUp, ArrowDown, PieChart as PieChartIcon, Printer, AlertTriangle, MapPin, Calendar, Wallet as WalletIcon, Download, Loader2, ArrowUpLeft, ArrowDownRight, X, Eye } from 'lucide-react';
+import { FileText, TrendingUp, Package, Truck, DollarSign, ArrowUp, ArrowDown, PieChart as PieChartIcon, Printer, AlertTriangle, MapPin, Calendar, Wallet as WalletIcon, Download, Loader2, ArrowUpLeft, ArrowDownRight, X, Eye, Coins } from 'lucide-react';
 import { AccountingReports } from './AccountingReports';
-import { calculateOrderProfitLoss, calculateCodFee, getLatestProductCost } from '../utils/financials';
+import { calculateOrderProfitLoss, calculateCodFee, getLatestProductCost, isBosta, calculateInsuranceFee, calculateBostaVat } from '../utils/financials';
 import { generateLossesReportHTML, generateComprehensiveFinancialReportHTML, generatePartnersFinancialReportHTML, generatePurchasesAndInventoryReportHTML } from '../utils/reportGenerator';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
@@ -15,14 +15,17 @@ interface ReportsPageProps {
   settings: Settings;
   wallet: Wallet;
   activeStore?: Store;
+  setSettings?: React.Dispatch<React.SetStateAction<Settings>>;
+  setWallet?: React.Dispatch<React.SetStateAction<Wallet>>;
 }
 
-const ReportCard: React.FC<{ title: string; value: string; icon: React.ReactNode; subValue?: string; color: 'emerald' | 'red' | 'amber' | 'blue'; tooltip?: string }> = ({ title, value, icon, subValue, color, tooltip }) => {
+const ReportCard: React.FC<{ title: string; value: string; icon: React.ReactNode; subValue?: string; color: 'emerald' | 'red' | 'amber' | 'blue' | 'teal'; tooltip?: string }> = ({ title, value, icon, subValue, color, tooltip }) => {
     const colorClasses = {
         emerald: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-600', border: 'border-emerald-200 dark:border-emerald-800' },
         red: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-600', border: 'border-red-200 dark:border-red-800' },
         amber: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-600', border: 'border-amber-200 dark:border-amber-800' },
         blue: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-600', border: 'border-blue-200 dark:border-blue-800' },
+        teal: { bg: 'bg-teal-100 dark:bg-teal-900/30', text: 'text-teal-600', border: 'border-teal-200 dark:border-teal-800' },
     };
     const currentColors = colorClasses[color];
 
@@ -345,7 +348,8 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
                                     const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
                                     const inspectionCost = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
                                     const isInsured = order.isInsured ?? true;
-                                    const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
+                                    const insuranceFee = isInsured ? calculateInsuranceFee(order, insuranceRate) : 0;
+                                    const bostaVat = isBosta(order.shippingCompany) ? calculateBostaVat(order, insuranceFee) : 0;
 
                                     const productsList = (order.items || []).map(i => `${i.name} (الكمية: ${i.quantity})`).join(' + ') || order.productName;
 
@@ -356,7 +360,7 @@ const LossesReport: React.FC<Omit<ReportsPageProps, 'wallet'>> = ({ orders, sett
                                             <td className="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-300">{(order.items || []).reduce((sum, item) => sum + item.quantity, 0)}</td>
                                             <td className="px-4 py-3 font-mono">{order.productPrice.toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono">{order.shippingFee.toLocaleString()}</td>
-                                            <td className="px-4 py-3 font-mono">{(insuranceFee + inspectionCost).toLocaleString()}</td>
+                                            <td className="px-4 py-3 font-mono">{(insuranceFee + inspectionCost + bostaVat).toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono">{(order.items || []).reduce((sum, item) => sum + (item.cost * item.quantity), 0).toLocaleString()}</td>
                                             <td className="px-4 py-3">
                                                 <span className="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 rounded-full whitespace-nowrap">
@@ -410,13 +414,14 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
             const inspectionCost = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
             const isInsured = order.isInsured ?? true;
-            const insuranceFee = isInsured ? ((order.productPrice + order.shippingFee) * insuranceRate) / 100 : 0;
+            const insuranceFee = isInsured ? calculateInsuranceFee(order, insuranceRate) : 0;
+            const bostaVat = isBosta(order.shippingCompany) ? calculateBostaVat(order, insuranceFee) : 0;
             const inspectionAdjustment = order.inspectionFeePaidByCustomer ? 0 : inspectionCost;
 
             totalRevenue += (order.items || []).reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.shippingFee;
             totalShippingRevenue += order.shippingFee;
             totalCogs += (order.items || []).reduce((sum, item) => sum + (item.cost * item.quantity), 0);
-            totalInsuranceFees += insuranceFee;
+            totalInsuranceFees += insuranceFee + bostaVat;
             totalInspectionFees += inspectionAdjustment;
             totalCodFees += codFee;
             totalProfit += profit;
@@ -457,14 +462,15 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
             const inspectionCost = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
             const isInsured = order.isInsured ?? true;
-            const insuranceFee = isInsured ? ((order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.shippingFee) * insuranceRate) / 100 : 0;
+            const insuranceFee = isInsured ? calculateInsuranceFee(order, insuranceRate) : 0;
+            const bostaVat = isBosta(order.shippingCompany) ? calculateBostaVat(order, insuranceFee) : 0;
             
             const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;
             const returnFeeAmount = applyReturnFee ? (useCustom ? (compFees?.returnShippingFee ?? 0) : settings.returnShippingFee) : 0;
             const inspectionFeeCollected = order.inspectionFeePaidByCustomer ? inspectionCost : 0;
 
             totalFailedShipping += order.shippingFee;
-            totalFailedInsurance += insuranceFee;
+            totalFailedInsurance += insuranceFee + bostaVat;
             totalFailedInspection += (inspectionCost - inspectionFeeCollected);
             totalReturnFees += returnFeeAmount;
             totalLoss += loss;
@@ -556,7 +562,11 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             .reduce((sum, t) => sum + t.amount, 0);
             
         const totalLoans = partnerTransactions
-            .filter(t => t.type === 'loan' || t.type === 'customer_advance')
+            .filter(t => t.type === 'loan')
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        const totalAdvances = partnerTransactions
+            .filter(t => t.type === 'customer_advance')
             .reduce((sum, t) => sum + t.amount, 0);
             
         const totalProfitWithdrawals = partnerTransactions
@@ -566,7 +576,8 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
         const partnerPerformance = partners.map(partner => {
             const partnerTx = partnerTransactions.filter(t => t.partnerId === partner.id);
             const capitalContribution = partnerTx.filter(t => t.type === 'capital_addition').reduce((sum, t) => sum + t.amount, 0);
-            const loans = partnerTx.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((sum, t) => sum + t.amount, 0);
+            const loans = partnerTx.filter(t => t.type === 'loan').reduce((sum, t) => sum + t.amount, 0);
+            const advances = partnerTx.filter(t => t.type === 'customer_advance').reduce((sum, t) => sum + t.amount, 0);
             const withdrawals = partnerTx.filter(t => t.type === 'profit_withdrawal').reduce((sum, t) => sum + t.amount, 0);
             const distributions = partnerTx.filter(t => t.type === 'profit_distribution').reduce((sum, t) => sum + t.amount, 0);
             const repayments = partnerTx.filter(t => t.type === 'repayment').reduce((sum, t) => sum + t.amount, 0);
@@ -579,6 +590,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                 ...partner,
                 capitalContribution,
                 loans,
+                advances,
                 withdrawals,
                 distributions,
                 repayments,
@@ -610,7 +622,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
             totalReturnFees, totalExpenses, finalNet, totalPercentageProfit, totalCommissionProfit,
             successRate, lossRatio, avgProfitPerOrder, carrierStats, productStats, pendingCollection,
             collectedOrdersCount: collectedOrders.length, geoData, expenseCategories, inventoryValue, inventorySalesValue,
-            partnerPerformance, totalCapital, totalLoans, totalProfitWithdrawals
+            partnerPerformance, totalCapital, totalLoans, totalAdvances, totalProfitWithdrawals
         };
     }, [orders, settings, wallet]);
 
@@ -905,9 +917,10 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     <ReportCard title="إجمالي رأس المال" value={`${stats.totalCapital.toLocaleString('ar-EG')} ج.م`} icon={<DollarSign size={24}/>} color="blue" subValue="رؤوس الأموال المودعة" tooltip="إجمالي المبالغ التي ساهم بها الشركاء كرأس مال للمشروع." />
                     <ReportCard title="إجمالي السلف" value={`${stats.totalLoans.toLocaleString('ar-EG')} ج.م`} icon={<ArrowUp size={24}/>} color="red" subValue="مبالغ مسحوبة كسلف" tooltip="إجمالي المبالغ التي سحبها الشركاء كسلف أو قروض من المشروع." />
+                    <ReportCard title="إجمالي العرابين" value={`${(stats.totalAdvances || 0).toLocaleString('ar-EG')} ج.م`} icon={<Coins size={24}/>} color="teal" subValue="العرابين المحصلة للشركاء" tooltip="إجمالي مبالغ العربون المستلمة والمودعة لدى الشركاء كعهد مبيعات." />
                     <ReportCard title="أرباح تحت التوزيع" value={`${stats.finalNet.toLocaleString('ar-EG')} ج.م`} icon={<TrendingUp size={24}/>} color="emerald" subValue="صافي ربح الفترة الحالية" tooltip="صافي الأرباح المحققة في هذه الفترة والجاهزة للتوزيع حسب النسب." />
                 </div>
 
@@ -926,12 +939,13 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                                     <th className="px-4 py-3">المساهمة</th>
                                     <th className="px-4 py-3">الربح المستحق</th>
                                     <th className="px-4 py-3">صافي السلف</th>
+                                    <th className="px-4 py-3">العرابين المستلمة</th>
                                     <th className="px-4 py-3">الرصيد التراكمي</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {stats.partnerPerformance.length === 0 ? (
-                                    <tr><td colSpan={6} className="text-center py-8 text-slate-400">لا يوجد شركاء مسجلين.</td></tr>
+                                    <tr><td colSpan={7} className="text-center py-8 text-slate-400">لا يوجد شركاء مسجلين.</td></tr>
                                 ) : (
                                     stats.partnerPerformance.map(p => (
                                         <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
@@ -940,6 +954,7 @@ const ComprehensiveReport: React.FC<ReportsPageProps> = ({ orders, settings, wal
                                             <td className="px-4 py-3 font-mono">{p.capitalContribution.toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono text-emerald-600">+{p.currentProfitShare.toLocaleString()}</td>
                                             <td className="px-4 py-3 font-mono text-red-600">-{p.netLoan.toLocaleString()}</td>
+                                            <td className="px-4 py-3 font-mono text-teal-600">-{p.advances ? p.advances.toLocaleString() : '0'}</td>
                                             <td className={`px-4 py-3 font-black ${p.currentBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                                                 {p.currentBalance.toLocaleString()} ج.م
                                             </td>
@@ -1349,7 +1364,8 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
 
         const totals = {
             capital: transactions.filter(t => t.type === 'capital_addition' || t.type === 'supply_funding' || t.type === 'shipping_funding').reduce((a, b) => a + b.amount, 0),
-            loans: transactions.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((a, b) => a + b.amount, 0),
+            loans: transactions.filter(t => t.type === 'loan').reduce((a, b) => a + b.amount, 0),
+            advances: transactions.filter(t => t.type === 'customer_advance').reduce((a, b) => a + b.amount, 0),
             repayments: transactions.filter(t => t.type === 'repayment').reduce((a, b) => a + b.amount, 0),
             withdrawals: distributed
         };
@@ -1364,7 +1380,8 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
             partnerDetails: partners.map(p => {
                 const pTx = transactions.filter(t => t.partnerId === p.id);
                 const capital = pTx.filter(t => t.type === 'capital_addition' || t.type === 'supply_funding' || t.type === 'shipping_funding').reduce((a, b) => a + b.amount, 0);
-                const loans = pTx.filter(t => t.type === 'loan' || t.type === 'customer_advance').reduce((a, b) => a + b.amount, 0);
+                const loans = pTx.filter(t => t.type === 'loan').reduce((a, b) => a + b.amount, 0);
+                const advances = pTx.filter(t => t.type === 'customer_advance').reduce((a, b) => a + b.amount, 0);
                 const repayments = pTx.filter(t => t.type === 'repayment').reduce((a, b) => a + b.amount, 0);
                 const withdrawals = pTx.filter(t => t.type === 'profit_withdrawal').reduce((a, b) => a + b.amount, 0);
                 const distributions = pTx.filter(t => t.type === 'profit_distribution').reduce((a, b) => a + b.amount, 0);
@@ -1376,6 +1393,7 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
                     ...p,
                     capital,
                     loans,
+                    advances,
                     repayments,
                     withdrawals,
                     distributions,
@@ -1499,11 +1517,12 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
                 <p className="text-xl sm:text-2xl font-black text-indigo-700 dark:text-indigo-300">{stats.allTimeNetProfit.toLocaleString('ar-EG')} ج.م</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
                 <ReportCard title="إجمالي رأس المال" value={`${stats.totals.capital.toLocaleString()} ج.م`} icon={<ArrowUpLeft size={24}/>} color="blue" tooltip="مجموع رؤوس الأموال التي تم إيداعها من قبل جميع الشركاء." />
                 <ReportCard title="الأرباح الموزعة" value={`${stats.distributedProfit.toLocaleString()} ج.م`} icon={<TrendingUp size={24}/>} color="emerald" tooltip="إجمالي الأرباح التي تم سحبها بالفعل من قبل الشركاء." />
                 <ReportCard title="الأرباح غير الموزعة" value={`${stats.undistributedProfit.toLocaleString()} ج.م`} icon={<PieChartIcon size={24}/>} color="amber" tooltip="الأرباح المحققة التي لم يتم توزيعها على الشركاء بعد." />
                 <ReportCard title="إجمالي السلف القائمة" value={`${(stats.totals.loans - stats.totals.repayments).toLocaleString()} ج.م`} icon={<ArrowDownRight size={24}/>} color="red" tooltip="إجمالي مديونات الشركاء (السلف التي لم يتم سدادها بعد)." />
+                <ReportCard title="إجمالي العربونات المستلمة" value={`${stats.totals.advances.toLocaleString()} ج.م`} icon={<Coins size={24}/>} color="teal" tooltip="إجمالي عربونات العملاء التي تم استلامها ومقودها لدى الشركاء كعهدة مبيعات." />
             </div>
 
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-8">
@@ -1520,12 +1539,13 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
                                 <th className="px-4 py-3">أرباح حصل عليها</th>
                                 <th className="px-4 py-3">سحوبات شخصية</th>
                                 <th className="px-4 py-3">السلف القائمة</th>
+                                <th className="px-4 py-3">العربونات المستلمة</th>
                                 <th className="px-4 py-3">الرصيد الكلي</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {stats.partnerDetails.length === 0 ? (
-                                <tr><td colSpan={7} className="text-center py-12 text-slate-400 font-medium">لا يوجد شركاء مسجلين حالياً.</td></tr>
+                                <tr><td colSpan={8} className="text-center py-12 text-slate-400 font-medium">لا يوجد شركاء مسجلين حالياً.</td></tr>
                             ) : (
                                 stats.partnerDetails.map(p => (
                                     <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
@@ -1535,6 +1555,7 @@ const PartnersFinancialReport: React.FC<ReportsPageProps> = ({ orders, settings,
                                         <td className="px-4 py-3 font-mono text-emerald-600">+{p.distributions.toLocaleString()}</td>
                                         <td className="px-4 py-3 font-mono text-amber-600">-{p.withdrawals.toLocaleString()}</td>
                                         <td className="px-4 py-3 font-mono text-red-600">{(p.loans - p.repayments).toLocaleString()}</td>
+                                        <td className="px-4 py-3 font-mono text-teal-600">-{p.advances ? p.advances.toLocaleString() : '0'}</td>
                                         <td className={`px-4 py-3 font-black ${p.balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                                             {p.balance.toLocaleString()} ج.م
                                         </td>
@@ -2084,7 +2105,7 @@ const FinalReport: React.FC<ReportsPageProps> = ({ orders, settings, wallet, act
     );
 };
 
-const ReportsPage: React.FC<ReportsPageProps> = ({ orders, settings, wallet, activeStore }) => {
+const ReportsPage: React.FC<ReportsPageProps> = ({ orders, settings, wallet, activeStore, setSettings, setWallet }) => {
     const [activeTab, setActiveTab] = useState<'summary' | 'losses' | 'comprehensive' | 'final' | 'partners' | 'inventory' | 'accounting'>('summary');
 
     return (
@@ -2114,7 +2135,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ orders, settings, wallet, act
                 {activeTab === 'final' && <FinalReport orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
                 {activeTab === 'partners' && <PartnersFinancialReport orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
                 {activeTab === 'inventory' && <InventoryReport activeStore={activeStore} settings={settings} />}
-                {activeTab === 'accounting' && <AccountingReports orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} />}
+                {activeTab === 'accounting' && <AccountingReports orders={orders} settings={settings} wallet={wallet} activeStore={activeStore} setSettings={setSettings} setWallet={setWallet} />}
             </div>
         </div>
     );

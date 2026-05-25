@@ -78,12 +78,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
                 { to: '/whatsapp', label: 'واتساب', icon: <MessageSquare size={20} /> },
                 { to: '/team-chat', label: 'دردشة الفريق', icon: <Users2 size={20} /> },
                 { to: '/shipping', label: 'الشحن', icon: <Truck size={20} /> },
+                { to: '/shipping', label: 'متجر التغليف', icon: <Package size={20} /> },
             ]
         },
         {
             type: 'group',
             title: 'النظام المالي',
             links: [
+                { to: '/treasury', label: 'الخزينة والسيولة', icon: <Landmark size={20} /> },
                 { to: '/wallet', label: 'المحفظة', icon: <WalletIcon size={20} /> },
                 { to: '/partners', label: 'الشركاء والسلف', icon: <Users size={20} /> },
                 { to: '/expenses', label: 'المصروفات', icon: <DollarSign size={20} /> },
