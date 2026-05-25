@@ -40,11 +40,7 @@ const FinancialRequestsTab: React.FC<{
     }, [allStoresData, users]);
 
     const handleAction = async (transaction: any, action: 'approve' | 'reject') => {
-        if (!window.confirm(`هل أنت متأكد من ${action === 'approve' ? 'موافقة' : 'رفض'} هذا الطلب؟`)) return;
-
         const storeId = transaction.storeId;
-        const owner = users.find(u => u.stores?.some(s => s.id === storeId));
-        const storeInfo = owner?.stores?.find(s => s.id === storeId);
         
         // Prepare updated store data
         let storeData = { ...allStoresData[storeId] };
@@ -92,13 +88,10 @@ const FinancialRequestsTab: React.FC<{
             [storeId]: newStoreData
         }));
 
-        if (storeInfo) {
-             try {
-                 await db.saveStoreData(storeInfo, newStoreData);
-                 alert('تم الحفظ بنجاح.');
-             } catch (e) {
-                 alert('حدث خطأ أثناء الحفظ.');
-             }
+        try {
+            await db.saveStoreData({ id: storeId, name: storeData.settings?.storeName || 'المتجر' }, newStoreData);
+        } catch (e) {
+            alert('حدث خطأ أثناء الحفظ.');
         }
     };
 

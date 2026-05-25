@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { User, Store } from '../types';
-import { Menu, ChevronDown, User as UserIcon, Settings, LogOut, ExternalLink, Replace, Sun, Moon, Monitor, ShieldAlert } from 'lucide-react';
+import { Menu, ChevronDown, User as UserIcon, Settings, LogOut, ExternalLink, Replace, Sun, Moon, Monitor, ShieldAlert, Loader2, RefreshCw } from 'lucide-react';
 import { getSupabaseRestrictedStatus } from '../services/databaseService';
 
 const PATH_TITLES: { [key: string]: string } = {
@@ -36,9 +36,26 @@ interface HeaderProps {
     theme: string;
     setTheme: (theme: string) => void;
     activeStore?: Store;
+    dbSyncMode?: 'manual' | 'auto';
+    setDbSyncMode?: (mode: 'manual' | 'auto') => void;
+    forceSync?: () => Promise<void>;
+    saveStatus?: any;
+    saveMessage?: string;
 }
 
-const Header: React.FC<HeaderProps> = ({ currentUser, onLogout, onToggleSidebar, theme, setTheme, activeStore }) => {
+const Header: React.FC<HeaderProps> = ({ 
+    currentUser, 
+    onLogout, 
+    onToggleSidebar, 
+    theme, 
+    setTheme, 
+    activeStore,
+    dbSyncMode,
+    setDbSyncMode,
+    forceSync,
+    saveStatus,
+    saveMessage
+}) => {
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const userMenuRef = useRef<HTMLDivElement>(null);
     const location = useLocation();
@@ -115,6 +132,79 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onLogout, onToggleSidebar,
 </div>
 
             <div className="flex items-center gap-6">
+                {activeStore && (
+                    <div className="hidden lg:flex items-center gap-2 bg-slate-100 dark:bg-slate-900/40 p-1 rounded-2xl border border-slate-200 dark:border-slate-850">
+                        <button
+                            onClick={() => setDbSyncMode?.(dbSyncMode === 'manual' ? 'auto' : 'manual')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-[11px] transition-all hover:bg-white dark:hover:bg-slate-800 cursor-pointer ${
+                                dbSyncMode === 'manual' 
+                                    ? 'text-slate-600 dark:text-slate-300' 
+                                    : 'text-emerald-600 dark:text-emerald-400 font-extrabold'
+                            }`}
+                            title={
+                                dbSyncMode === 'manual' 
+                                    ? 'وضع ديسك توب (محلي وسريع بالكامل). اضغط للتحويل إلى الوضع السحابي التلقائي.' 
+                                    : 'وضع سحابي تلقائي (مزامنة فورية لكل خطوة). اضغط للتحويل إلى وضع ديسك توب محلي.'
+                            }
+                        >
+                            {dbSyncMode === 'manual' ? (
+                                <>
+                                    <span className="relative flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-500"></span>
+                                    </span>
+                                    <span>ديسك توب (محلي)</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="relative flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                    </span>
+                                    <span>سحابي (تلقائي)</span>
+                                </>
+                            )}
+                        </button>
+                        
+                        <button
+                            onClick={async () => {
+                                if (forceSync) {
+                                    await forceSync();
+                                }
+                            }}
+                            disabled={saveStatus === 'saving'}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+                                saveStatus === 'saving'
+                                    ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 hover:scale-102 active:scale-98'
+                            }`}
+                            title="مزامنة مع السحاب الآن (رفع وتنزيل البيانات)"
+                        >
+                            {saveStatus === 'saving' ? (
+                                <>
+                                    <Loader2 size={12} className="animate-spin" />
+                                    <span>جاري المزامنة...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <RefreshCw size={12} />
+                                    <span>مزامنة السحاب</span>
+                                </>
+                            )}
+                        </button>
+                        
+                        {saveStatus !== 'idle' && (
+                            <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${
+                                saveStatus === 'success' ? 'bg-emerald-100 text-emerald-700' :
+                                saveStatus === 'error' ? 'bg-rose-100 text-rose-700' :
+                                'bg-amber-100 text-amber-700'
+                            }`}>
+                                {saveMessage || (saveStatus === 'saving' ? 'جاري...' : saveStatus)}
+                            </span>
+                        )}
+                    </div>
+                )}
+
                 <button 
                     onClick={handleManageStoresClick}
                     className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-black text-sm text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm"

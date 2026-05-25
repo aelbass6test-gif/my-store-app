@@ -310,14 +310,51 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
         const importedProducts: Product[] = [];
         try {
             const text = event.target?.result as string;
-            const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
+            
+            // Robust CSV parser to handle newlines in quoted fields
+            const parseCSV = (csvText: string) => {
+                const result: string[][] = [];
+                let row: string[] = [];
+                let col = "";
+                let inQuotes = false;
+                for (let i = 0; i < csvText.length; i++) {
+                    const char = csvText[i];
+                    if (char === '"') {
+                        if (inQuotes && i + 1 < csvText.length && csvText[i + 1] === '"') {
+                            col += '"';
+                            i++;
+                        } else {
+                            inQuotes = !inQuotes;
+                        }
+                    } else if (char === ',' && !inQuotes) {
+                        row.push(col);
+                        col = "";
+                    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+                        row.push(col);
+                        if (row.length > 0 && row.some(s => s.trim() !== "")) result.push(row);
+                        row = [];
+                        col = "";
+                        if (char === '\r' && i + 1 < csvText.length && csvText[i + 1] === '\n') i++;
+                    } else {
+                        col += char;
+                    }
+                }
+                if (col || row.length > 0) {
+                    row.push(col);
+                    if (row.some(s => s.trim() !== "")) result.push(row);
+                }
+                return result;
+            };
+
+            const rows = parseCSV(text);
+            
             if (rows.length < 2) {
                 setImportPreview({ products: [], errors: ['الملف فارغ أو لا يحتوي على بيانات.'] });
                 setIsParsingCsv(false);
                 return;
             }
 
-            const headers = rows[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, '').replace(/_/g, ''));
+            const headerRow = rows[0].map(h => h.replace(/^\uFEFF/, '').trim().toLowerCase().replace(/"/g, '').replace(/_/g, ''));
             
             const headerMap: { [key: string]: number } = {};
             const fieldMap: { [csvHeader: string]: string } = {
@@ -327,22 +364,20 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
                 'imageurl': 'image_url', 'images': 'image_url'
             };
 
-            headers.forEach((h, index) => {
+            headerRow.forEach((h, index) => {
                 if (fieldMap[h]) {
                     headerMap[fieldMap[h]] = index;
                 }
             });
 
             if (headerMap.name === undefined || headerMap.price === undefined) {
-                 errors.push(`الأعمدة المطلوبة (product_name, price) غير موجودة.`);
+                 errors.push(`الأعمدة المطلوبة (name, price) غير موجودة. الأعمدة المكتشفة: ${headerRow.join(', ')}`);
             } else {
                 for (let i = 1; i < rows.length; i++) {
-                    const row = rows[i];
-                    const cells = row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
-                    const cleanCell = (val: string | undefined) => val ? val.replace(/^"|"$/g, '').trim() : '';
+                    const cells = rows[i];
                     
-                    const name = cleanCell(cells[headerMap.name!]);
-                    const priceStr = cleanCell(cells[headerMap.price!]);
+                    const name = cells[headerMap.name]?.trim() || '';
+                    const priceStr = cells[headerMap.price]?.trim() || '';
 
                     if (!name) { errors.push(`الصف ${i + 1}: اسم المنتج مفقود.`); continue; }
                     if (!priceStr) { errors.push(`الصف ${i + 1}: سعر المنتج مفقود.`); continue; }
@@ -354,7 +389,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
                     let images: string[] = [];
                     const imageUrlIndex = headerMap['image_url'];
                     if (imageUrlIndex !== undefined && cells[imageUrlIndex]) {
-                        const urls = cleanCell(cells[imageUrlIndex]).split(/\r?\n/).map(u => u.trim()).filter(Boolean);
+                        const urls = cells[imageUrlIndex].split(/\r?\n/).map(u => u.trim()).filter(Boolean);
                         if (urls.length > 0) {
                             thumbnail = urls[0];
                             images = urls;
@@ -365,7 +400,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
                         id: `imported-${Date.now()}-${i}`,
                         name,
                         price,
-                        description: headerMap.description !== undefined ? cleanCell(cells[headerMap.description]) : '',
+                        description: headerMap.description !== undefined ? cells[headerMap.description] || '' : '',
                         thumbnail,
                         images,
                         sku: `SKU-${Date.now()}-${i}`,
@@ -377,6 +412,7 @@ const ProductsPage: React.FC<ProductsPageProps> = React.memo(({ settings, setSet
                 }
             }
         } catch (err) {
+            console.error(err);
             errors.push('حدث خطأ غير متوقع أثناء تحليل الملف.');
         } finally {
             setImportPreview({ products: importedProducts, errors });

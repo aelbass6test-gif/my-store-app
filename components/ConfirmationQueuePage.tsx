@@ -944,8 +944,15 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
              const shippingOptions = settings.shippingOptions?.[activeOrder.shippingCompany] || [];
              const selectedOption = shippingOptions.find(opt => opt.label === editedGovernorate);
              if (selectedOption) {
+                 const getPriceKey = (type?: string): 'deliveryPrice' | 'exchangePrice' | 'returnPrice' | 'cashCollectionPrice' | 'returnToSenderPrice' => {
+                     if (type === 'exchange') return 'exchangePrice';
+                     if (type === 'return') return 'returnPrice';
+                     if (type === 'cash_collection') return 'cashCollectionPrice';
+                     return 'deliveryPrice';
+                 };
+                 const priceKey = getPriceKey(activeOrder.shipmentType);
                  const cityOption = selectedOption.cities?.find(c => c.name === editedCity);
-                 newShippingFee = cityOption && cityOption.deliveryPrice > 0 ? cityOption.deliveryPrice : selectedOption.deliveryPrice;
+                 newShippingFee = cityOption && cityOption[priceKey] > 0 ? cityOption[priceKey] : (selectedOption[priceKey] || selectedOption.deliveryPrice || 0);
              }
         }
 
@@ -976,8 +983,15 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         const shippingOptions = settings.shippingOptions?.[editedShippingCompany] || [];
         const selectedOption = shippingOptions.find(opt => opt.label === activeOrder.shippingArea);
         if (selectedOption) {
+            const getPriceKey = (type?: string): 'deliveryPrice' | 'exchangePrice' | 'returnPrice' | 'cashCollectionPrice' | 'returnToSenderPrice' => {
+                if (type === 'exchange') return 'exchangePrice';
+                if (type === 'return') return 'returnPrice';
+                if (type === 'cash_collection') return 'cashCollectionPrice';
+                return 'deliveryPrice';
+            };
+            const priceKey = getPriceKey(activeOrder.shipmentType);
             const cityOption = selectedOption.cities?.find(c => c.name === activeOrder.city);
-            newShippingFee = cityOption && cityOption.deliveryPrice > 0 ? cityOption.deliveryPrice : selectedOption.deliveryPrice;
+            newShippingFee = cityOption && cityOption[priceKey] > 0 ? cityOption[priceKey] : (selectedOption[priceKey] || selectedOption.deliveryPrice || 0);
         }
 
         logAudit(activeOrder.id, 'shippingCompany', activeOrder.shippingCompany, editedShippingCompany);
@@ -1052,9 +1066,18 @@ const ConfirmationQueuePage: React.FC<ConfirmationQueuePageProps> = ({ orders, s
         const shippingOptions = settings.shippingOptions?.[activeOrder.shippingCompany] || [];
         const selectedOption = shippingOptions.find(opt => opt.label === activeOrder.shippingArea);
         if (selectedOption) {
+            const getPriceKey = (type?: string): 'deliveryPrice' | 'exchangePrice' | 'returnPrice' | 'cashCollectionPrice' | 'returnToSenderPrice' => {
+                if (type === 'exchange') return 'exchangePrice';
+                if (type === 'return') return 'returnPrice';
+                if (type === 'cash_collection') return 'cashCollectionPrice';
+                return 'deliveryPrice';
+            };
+            const priceKey = getPriceKey(activeOrder.shipmentType);
             const cityOption = selectedOption.cities?.find(c => c.name === activeOrder.city);
-            if (cityOption && cityOption.deliveryPrice > 0) {
-                shippingFee = cityOption.deliveryPrice;
+            if (cityOption && cityOption[priceKey] > 0) {
+                shippingFee = cityOption[priceKey];
+            } else if (selectedOption[priceKey] > 0) {
+                shippingFee = selectedOption[priceKey];
             }
         }
 

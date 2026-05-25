@@ -444,11 +444,12 @@ const ShippingDashboard: React.FC<any> = ({ settings, setSettings, onManageCompa
             <motion.div variants={itemVariants}>
               <SectionCard title="الإعدادات المالية العامة" icon={<Coins size={22} className="text-emerald-600 dark:text-emerald-400" />} action={<ToggleButton active={settings.enableGlobalFinancials} onToggle={() => toggleSetting('enableGlobalFinancials')} variant="emerald" />}>
                   <div className={`space-y-6 transition-all duration-300 ${!settings.enableGlobalFinancials && 'opacity-40 pointer-events-none grayscale'}`}>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
                           <FinancialCard label="نسبة التأمين (%)" name="insuranceFeePercent" value={settings.insuranceFeePercent} isActive={settings.enableInsurance} onToggle={() => toggleSetting('enableInsurance')} onChange={handleChange} icon={<ShieldCheck size={16} className="text-blue-500" />} desc="تُخصم من إجمالي الأوردر عند التحصيل." />
                           <FinancialCard label="رسوم المعاينة (ج.م)" name="inspectionFee" value={settings.inspectionFee} isActive={settings.enableInspection} onToggle={() => toggleSetting('enableInspection')} onChange={handleChange} icon={<Eye size={16} className="text-emerald-500" />} desc="رسوم مقابل فحص المنتج عند الاستلام." />
                           <FinancialCard label="شحن المرتجع (ج.م)" name="returnShippingFee" value={settings.returnShippingFee} isActive={settings.enableReturnShipping} onToggle={() => toggleSetting('enableReturnShipping')} onChange={handleChange} icon={<RefreshCcw size={16} className="text-red-500" />} desc="مبلغ إضافي يُحسب كخسارة في المرتجع." />
                           <FinancialCard label="السعر الافتراضي (ج.م)" name="defaultProductPrice" value={settings.defaultProductPrice} isActive={settings.enableDefaultPrice} onToggle={() => toggleSetting('enableDefaultPrice')} onChange={handleChange} icon={<Package size={16} className="text-indigo-500" />} desc="السعر التلقائي عند تسجيل أوردر جديد." />
+                          <FinancialCard label="رسوم فليكس شيب (ج.م)" name="flexShipFee" value={settings.flexShipFee || 0} isActive={settings.enableFlexShip || false} onToggle={() => toggleSetting('enableFlexShip')} onChange={handleChange} icon={<Truck size={16} className="text-violet-500" />} desc="رسوم إضافية تُطلب من المستلم عند رفض الاستلام." />
                           <div className="p-5 rounded-2xl border bg-white dark:bg-slate-800/30 border-slate-300 dark:border-slate-700 transition-all">
                               <div className="flex items-center justify-between mb-4">
                                   <label className="text-sm font-black text-slate-800 dark:text-slate-300 flex items-center gap-2"><Package size={16} className="text-orange-500" /> الوزن الافتراضي (كجم)</label>
@@ -553,25 +554,26 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
   const [newCityReturnToSender, setNewCityReturnToSender] = useState('');
   const [newCityUseParent, setNewCityUseParent] = useState(true);
 
-  // Grid Template: 
-  // - Name: minmax(140px, 1.5fr)
-  // - Link: 40px
-  // - 6 Prices: repeat(6, minmax(70px, 1fr))
-  // - Toggle/Delete: 40px
-  const gridTemplate = `minmax(140px, 1.5fr) 40px repeat(6, minmax(65px, 1fr)) 40px`;
+  const companyFees = settings.companySpecificFees?.[companyName] || {};
+  const showExchange = companyFees.enableExchange !== false;
+  const showReturn = companyFees.enableReturn !== false;
+  const showCashCollection = companyFees.enableCashCollection !== false;
+  const showReturnToSender = companyFees.enableReturnToSender !== false;
 
+  const numActiveColumns = 2 + (showExchange ? 1 : 0) + (showReturn ? 1 : 0) + (showCashCollection ? 1 : 0) + (showReturnToSender ? 1 : 0);
+  const gridTemplate = `minmax(140px, 1.5fr) 40px repeat(${numActiveColumns}, minmax(65px, 1fr)) 40px`;
 
   // When expanding a zone, we want to auto-fill the inputs with parent values if "Link" is checked
   useEffect(() => {
       if (expandedZoneId && newCityUseParent) {
           const zone = settings.shippingOptions[companyName]?.find((z: any) => z.id === expandedZoneId);
           if (zone) {
-              setNewCityDelivery(zone.deliveryPrice);
-              setNewCityExtraKg(zone.extraKgPrice);
-              setNewCityReturn(zone.returnPrice);
-              setNewCityExchange(zone.exchangePrice);
-              setNewCityCashCollection(zone.cashCollectionPrice);
-              setNewCityReturnToSender(zone.returnToSenderPrice);
+              setNewCityDelivery(zone.deliveryPrice !== undefined && zone.deliveryPrice !== null ? String(zone.deliveryPrice) : '');
+              setNewCityExtraKg(zone.extraKgPrice !== undefined && zone.extraKgPrice !== null ? String(zone.extraKgPrice) : '');
+              setNewCityReturn(zone.returnPrice !== undefined && zone.returnPrice !== null ? String(zone.returnPrice) : '');
+              setNewCityExchange(zone.exchangePrice !== undefined && zone.exchangePrice !== null ? String(zone.exchangePrice) : '');
+              setNewCityCashCollection(zone.cashCollectionPrice !== undefined && zone.cashCollectionPrice !== null ? String(zone.cashCollectionPrice) : '');
+              setNewCityReturnToSender(zone.returnToSenderPrice !== undefined && zone.returnToSenderPrice !== null ? String(zone.returnToSenderPrice) : '');
           }
       }
   }, [expandedZoneId, newCityUseParent, settings.shippingOptions, companyName]);
@@ -844,10 +846,10 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
             <tr>
               <th className="p-3 text-right">المنطقة / المحافظة</th>
               <th className="p-3 text-center">توصيل</th>
-              <th className="p-3 text-center">تبديل</th>
-              <th className="p-3 text-center">إرجاع</th>
-              <th className="p-3 text-center">تحصيل</th>
-              <th className="p-3 text-center">إرجاع لك</th>
+              {showExchange && <th className="p-3 text-center">تبديل</th>}
+              {showReturn && <th className="p-3 text-center">إرجاع</th>}
+              {showCashCollection && <th className="p-3 text-center">تحصيل</th>}
+              {showReturnToSender && <th className="p-3 text-center">إرجاع لك</th>}
               <th className="p-3 text-center">ز.كجم</th>
               <th className="p-3 text-center">المدن</th>
               <th className="p-3 text-center">إلغاء</th>
@@ -859,13 +861,13 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
               return (
               <React.Fragment key={opt.id}>
                   <tr className={`transition-all ${!isActive ? 'opacity-50 grayscale bg-slate-100 dark:bg-slate-800/50' : ''}`}>
-                    <td className="p-2 w-40"><input type="text" disabled={!isActive} className="w-full bg-slate-50 dark:bg-slate-800 px-2 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.label} onChange={(e) => updateShippingOption(opt.id, 'label', e.target.value)} /></td>
-                    <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.deliveryPrice} onChange={(e) => updateShippingOption(opt.id, 'deliveryPrice', Number(e.target.value))} /></td>
-                    <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.exchangePrice} onChange={(e) => updateShippingOption(opt.id, 'exchangePrice', Number(e.target.value))} /></td>
-                    <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.returnPrice} onChange={(e) => updateShippingOption(opt.id, 'returnPrice', Number(e.target.value))} /></td>
-                    <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.cashCollectionPrice} onChange={(e) => updateShippingOption(opt.id, 'cashCollectionPrice', Number(e.target.value))} /></td>
-                    <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.returnToSenderPrice} onChange={(e) => updateShippingOption(opt.id, 'returnToSenderPrice', Number(e.target.value))} /></td>
-                    <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.extraKgPrice} onChange={(e) => updateShippingOption(opt.id, 'extraKgPrice', Number(e.target.value))} /></td>
+                    <td className="p-2 w-40"><input type="text" disabled={!isActive} className="w-full bg-slate-50 dark:bg-slate-800 px-2 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.label ?? ''} onChange={(e) => updateShippingOption(opt.id, 'label', e.target.value)} /></td>
+                    <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.deliveryPrice ?? ''} onChange={(e) => updateShippingOption(opt.id, 'deliveryPrice', Number(e.target.value))} /></td>
+                    {showExchange && <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.exchangePrice ?? ''} onChange={(e) => updateShippingOption(opt.id, 'exchangePrice', Number(e.target.value))} /></td>}
+                    {showReturn && <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.returnPrice ?? ''} onChange={(e) => updateShippingOption(opt.id, 'returnPrice', Number(e.target.value))} /></td>}
+                    {showCashCollection && <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.cashCollectionPrice ?? ''} onChange={(e) => updateShippingOption(opt.id, 'cashCollectionPrice', Number(e.target.value))} /></td>}
+                    {showReturnToSender && <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.returnToSenderPrice ?? ''} onChange={(e) => updateShippingOption(opt.id, 'returnToSenderPrice', Number(e.target.value))} /></td>}
+                    <td className="p-1"><input type="number" disabled={!isActive} className="w-full text-center bg-white dark:bg-slate-800 px-1 py-2 border border-slate-200 dark:border-slate-700 rounded-md font-bold text-[11px] text-slate-900 dark:text-white disabled:bg-transparent" value={opt.extraKgPrice ?? ''} onChange={(e) => updateShippingOption(opt.id, 'extraKgPrice', Number(e.target.value))} /></td>
                     <td className="p-2 text-center">
                         <button disabled={!isActive} onClick={() => toggleExpand(opt.id)} className={`p-2 rounded-lg transition-colors ${expandedZoneId === opt.id ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'} disabled:opacity-50`}>
                             <Map size={16} />
@@ -910,10 +912,10 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
                                               <div className="text-right pr-2">المدينة</div>
                                               <div>ربط</div>
                                               <div>توصيل</div>
-                                              <div>تبديل</div>
-                                              <div>إرجاع</div>
-                                              <div>تحصيل</div>
-                                              <div>إرجاع لك</div>
+                                              {showExchange && <div>تبديل</div>}
+                                              {showReturn && <div>إرجاع</div>}
+                                              {showCashCollection && <div>تحصيل</div>}
+                                              {showReturnToSender && <div>إرجاع لك</div>}
                                               <div>ز.كجم</div>
                                               <div>حالة</div>
                                           </div>
@@ -941,22 +943,22 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
                                                               </button>
                                                           </div>
                                                           <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                              <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.deliveryPrice : city.deliveryPrice} onChange={(e) => updateCityField(opt.id, city.id, 'deliveryPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
+                                                              <input type="number" disabled={isLinked || !isActive} value={(isLinked ? opt.deliveryPrice : city.deliveryPrice) ?? ''} onChange={(e) => updateCityField(opt.id, city.id, 'deliveryPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
                                                           </div>
+                                                          {showExchange && <div className={`${isLinked ? 'opacity-50' : ''}`}>
+                                                              <input type="number" disabled={isLinked || !isActive} value={(isLinked ? opt.exchangePrice : city.exchangePrice) ?? ''} onChange={(e) => updateCityField(opt.id, city.id, 'exchangePrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
+                                                          </div>}
+                                                          {showReturn && <div className={`${isLinked ? 'opacity-50' : ''}`}>
+                                                              <input type="number" disabled={isLinked || !isActive} value={(isLinked ? opt.returnPrice : city.returnPrice) ?? ''} onChange={(e) => updateCityField(opt.id, city.id, 'returnPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
+                                                          </div>}
+                                                          {showCashCollection && <div className={`${isLinked ? 'opacity-50' : ''}`}>
+                                                              <input type="number" disabled={isLinked || !isActive} value={(isLinked ? opt.cashCollectionPrice : city.cashCollectionPrice) ?? ''} onChange={(e) => updateCityField(opt.id, city.id, 'cashCollectionPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
+                                                          </div>}
+                                                          {showReturnToSender && <div className={`${isLinked ? 'opacity-50' : ''}`}>
+                                                              <input type="number" disabled={isLinked || !isActive} value={(isLinked ? opt.returnToSenderPrice : city.returnToSenderPrice) ?? ''} onChange={(e) => updateCityField(opt.id, city.id, 'returnToSenderPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
+                                                          </div>}
                                                           <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                              <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.exchangePrice : city.exchangePrice} onChange={(e) => updateCityField(opt.id, city.id, 'exchangePrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
-                                                          </div>
-                                                          <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                              <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.returnPrice : city.returnPrice} onChange={(e) => updateCityField(opt.id, city.id, 'returnPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
-                                                          </div>
-                                                          <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                              <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.cashCollectionPrice : city.cashCollectionPrice} onChange={(e) => updateCityField(opt.id, city.id, 'cashCollectionPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
-                                                          </div>
-                                                          <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                              <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.returnToSenderPrice : city.returnToSenderPrice} onChange={(e) => updateCityField(opt.id, city.id, 'returnToSenderPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
-                                                          </div>
-                                                          <div className={`${isLinked ? 'opacity-50' : ''}`}>
-                                                              <input type="number" disabled={isLinked || !isActive} value={isLinked ? opt.extraKgPrice : city.extraKgPrice} onChange={(e) => updateCityField(opt.id, city.id, 'extraKgPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
+                                                              <input type="number" disabled={isLinked || !isActive} value={(isLinked ? opt.extraKgPrice : city.extraKgPrice) ?? ''} onChange={(e) => updateCityField(opt.id, city.id, 'extraKgPrice', Number(e.target.value))} className="w-full px-1 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold outline-none focus:border-indigo-500 disabled:bg-transparent" />
                                                           </div>
                                                       <div>
                                                           <button onClick={() => toggleCityStatus(opt.id, city.id)} className={`p-1.5 rounded transition-colors ${isActive ? 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20' : 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`} title={isActive ? "إلغاء تفعيل المدينة" : "إعادة تفعيل المدينة"}>
@@ -989,10 +991,10 @@ const ZonesEditor: React.FC<any> = ({ companyName, settings, setSettings }) => {
                                               </button>
                                               
                                               <input type="number" disabled={newCityUseParent} placeholder="توصيل" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityDelivery} onChange={(e) => setNewCityDelivery(e.target.value)} />
-                                              <input type="number" disabled={newCityUseParent} placeholder="تبديل" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityExchange} onChange={(e) => setNewCityExchange(e.target.value)} />
-                                              <input type="number" disabled={newCityUseParent} placeholder="إرجاع" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityReturn} onChange={(e) => setNewCityReturn(e.target.value)} />
-                                              <input type="number" disabled={newCityUseParent} placeholder="تحصيل" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityCashCollection} onChange={(e) => setNewCityCashCollection(e.target.value)} />
-                                              <input type="number" disabled={newCityUseParent} placeholder="إرجاع لك" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityReturnToSender} onChange={(e) => setNewCityReturnToSender(e.target.value)} />
+                                              {showExchange && <input type="number" disabled={newCityUseParent} placeholder="تبديل" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityExchange} onChange={(e) => setNewCityExchange(e.target.value)} />}
+                                              {showReturn && <input type="number" disabled={newCityUseParent} placeholder="إرجاع" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityReturn} onChange={(e) => setNewCityReturn(e.target.value)} />}
+                                              {showCashCollection && <input type="number" disabled={newCityUseParent} placeholder="تحصيل" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityCashCollection} onChange={(e) => setNewCityCashCollection(e.target.value)} />}
+                                              {showReturnToSender && <input type="number" disabled={newCityUseParent} placeholder="إرجاع لك" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityReturnToSender} onChange={(e) => setNewCityReturnToSender(e.target.value)} />}
                                               <input type="number" disabled={newCityUseParent} placeholder="ز.كجم" className="w-full px-1 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-center outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800" value={newCityExtraKg} onChange={(e) => setNewCityExtraKg(e.target.value)} />
                                               
                                               <button 
@@ -1095,21 +1097,42 @@ const CompanyFinancialsEditor: React.FC<any> = ({ companyName, settings, setSett
                         <div className="space-y-4">
                             <PolicyToggle 
                                 label="تفعيل تسعير الاستبدال" 
-                                description="يضيف عمود 'سعر الاستبدال' في جدول تسعير المناطق."
-                                active={companyFees.enableExchange} onToggle={() => handleCompanyFeeChange('enableExchange', !companyFees.enableExchange)} />
+                                description="يضيف عمود 'تبديل' في جدول تسعير المناطق ويفعل خيار الاستبدال في الطلبات."
+                                active={companyFees.enableExchange !== false} onToggle={() => handleCompanyFeeChange('enableExchange', companyFees.enableExchange === false ? true : false)} />
                             <PolicyToggle 
-                                label="تفعيل تسعير الإرجاع بعد المعاينة" 
-                                description="يضيف عمود 'سعر الإرجاع بعد المعاينة' في جدول تسعير المناطق."
-                                active={companyFees.enableReturnAfter} onToggle={() => handleCompanyFeeChange('enableReturnAfter', !companyFees.enableReturnAfter)} />
+                                label="تفعيل تسعير الإرجاع" 
+                                description="يضيف عمود 'إرجاع' في جدول تسعير المناطق."
+                                active={companyFees.enableReturn !== false} onToggle={() => handleCompanyFeeChange('enableReturn', companyFees.enableReturn === false ? true : false)} />
                             <PolicyToggle 
-                                label="تفعيل تسعير الإرجاع بدون معاينة" 
-                                description="يضيف عمود 'سعر الإرجاع بدون معاينة' في جدول تسعير المناطق."
-                                active={companyFees.enableReturnWithout} onToggle={() => handleCompanyFeeChange('enableReturnWithout', !companyFees.enableReturnWithout)} />
+                                label="تفعيل تسعير التحصيل" 
+                                description="يضيف عمود 'تحصيل' في جدول تسعير المناطق."
+                                active={companyFees.enableCashCollection !== false} onToggle={() => handleCompanyFeeChange('enableCashCollection', companyFees.enableCashCollection === false ? true : false)} />
+                            <PolicyToggle 
+                                label="تفعيل تسعير إرجاع لك" 
+                                description="يضيف عمود 'إرجاع لك' في جدول تسعير المناطق."
+                                active={companyFees.enableReturnToSender !== false} onToggle={() => handleCompanyFeeChange('enableReturnToSender', companyFees.enableReturnToSender === false ? true : false)} />
                             <PolicyToggle 
                                 label="تطبيق رسوم مرتجع ثابتة" 
                                 description="يخصم مبلغ 'مرتجع ثابت' من المحفظة كخسارة إضافية عند إرجاع أي طلب."
                                 active={companyFees.enableFixedReturn} 
                                 onToggle={() => handleCompanyFeeChange('enableFixedReturn', !companyFees.enableFixedReturn)} />
+                            <PolicyToggle 
+                                label="تفعيل خدمة فليكس شيب (Flex Ship)" 
+                                description="عند تفعيل خدمة فليكس شيب، يُطلب من المستلم دفع رسوم خدمة إضافية إذا رفض استلام الشحنة."
+                                active={companyFees.enableFlexShip || false} 
+                                onToggle={() => handleCompanyFeeChange('enableFlexShip', !companyFees.enableFlexShip)} />
+                            {companyFees.enableFlexShip && (
+                                <div className="mr-6 space-y-1.5 p-3 bg-violet-50 dark:bg-violet-950/20 rounded-xl border border-violet-100 dark:border-violet-900/30 animate-in slide-in-from-top-2 duration-200">
+                                    <label className="text-xs font-bold text-violet-800 dark:text-violet-400">رسوم خدمة فليكس شيب الإضافية عند رفض الاستلام (ج.م)</label>
+                                    <input 
+                                        type="number" 
+                                        value={companyFees.flexShipFee || 0} 
+                                        onChange={(e) => handleCompanyFeeChange('flexShipFee', Number(e.target.value))} 
+                                        className="w-full max-w-xs p-3 bg-white dark:bg-slate-800 border border-violet-200 dark:border-violet-850 rounded-xl font-bold text-slate-850 dark:text-white" 
+                                        placeholder="مثلاً 50"
+                                    />
+                                </div>
+                            )}
                         </div>
                      </div>
                 </div>

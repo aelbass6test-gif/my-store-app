@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Settings, PlatformIntegration, Store } from '../types';
-import { Link2, CheckCircle2, Database, Upload, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe, CreditCard, Smartphone, Banknote, ShoppingBasket, LayoutDashboard, UserPlus, TrendingUp, Settings as SettingsIcon, Grid, UserCog } from 'lucide-react';
+import { Link2, CheckCircle2, Database, Upload, RefreshCw, AlertTriangle, Check, Trash2, XCircle, Lock, ShoppingCart, Package, Users, Wallet, Activity, Tag, MessageSquare, PhoneCall, Plus, Edit3, Save, X, Link, AppWindow, Globe, CreditCard, Smartphone, Banknote, ShoppingBasket, LayoutDashboard, UserPlus, TrendingUp, Settings as SettingsIcon, Grid, UserCog, Loader2 } from 'lucide-react';
 import { clearStoreData } from '../services/databaseService';
 
 interface SettingsPageProps {
@@ -9,6 +9,10 @@ interface SettingsPageProps {
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   onManualSave?: () => Promise<{ success: boolean, error?: string } | void>;
   activeStore?: Store;
+  dbSyncMode?: 'manual' | 'auto';
+  setDbSyncMode?: (mode: 'manual' | 'auto') => void;
+  forceSync?: () => Promise<void>;
+  saveStatus?: any;
 }
 
 const handleImportData = (file: File) => {
@@ -64,7 +68,120 @@ const handleExportData = () => {
   });
 };
 
-const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onManualSave, activeStore }) => {
+const DatabaseCard: React.FC<{
+  dbSyncMode: 'manual' | 'auto';
+  setDbSyncMode: (mode: 'manual' | 'auto') => void;
+  forceSync: () => Promise<void>;
+  saveStatus: any;
+}> = ({ dbSyncMode, setDbSyncMode, forceSync, saveStatus }) => {
+  return (
+    <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-right">
+      <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400 mb-6 border-b border-slate-200 dark:border-slate-800 pb-6">
+        <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg"><Database size={24}/></div>
+        <div>
+          <h2 className="text-xl font-black dark:text-white">وضع مزامنة وتأمين قاعدة البيانات (ديسك توب وسحابي)</h2>
+          <p className="text-xs text-slate-500">اختر الطريقة الأكثر ملاءمة لطبيعة تشغيل متجرك وإدارة الطلبات بمرونة تامة.</p>
+        </div>
+      </div>
+      
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* وضع ديسك توب محلي */}
+          <button 
+            type="button"
+            onClick={() => setDbSyncMode('manual')}
+            className={`text-right p-6 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+              dbSyncMode === 'manual' 
+                ? 'bg-indigo-50/20 border-indigo-500 dark:bg-indigo-950/20' 
+                : 'border-slate-200 dark:border-slate-850 hover:border-slate-300'
+            }`}
+          >
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-extrabold text-slate-800 dark:text-white">🖥️ وضع ديسك توب محلي (أقصى سرعة CRM)</span>
+                {dbSyncMode === 'manual' && <CheckCircle2 size={20} className="text-indigo-500" />}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                تُحفظ البيانات وتُعالج على جهازك فوراً بصورة محلية فائقة السرعة وبدون انتظار استجابة السيرفر. مثالي لإدخال الطلبات والسرعة الفائقة لشركات الشحن. يتم فقط الرفع السحابي وتأمين البيانات عند النقر على المزامنة يدوياً.
+              </p>
+            </div>
+            <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-extrabold tracking-wider uppercase mt-4">
+              تشغيل محلي بالكامل • أمان فائق للبيانات • استهلاك منعدم للإنترنت
+            </div>
+          </button>
+
+          {/* وضع سحابي فوري تلقائي */}
+          <button 
+            type="button"
+            onClick={() => setDbSyncMode('auto')}
+            className={`text-right p-6 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+              dbSyncMode === 'auto' 
+                ? 'bg-emerald-50/20 border-emerald-500 dark:bg-emerald-950/20' 
+                : 'border-slate-200 dark:border-slate-850 hover:border-slate-300'
+            }`}
+          >
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-extrabold text-slate-800 dark:text-white">☁️ وضع سحابي فوري تلقائي (متعدد الأجهزة)</span>
+                {dbSyncMode === 'auto' && <CheckCircle2 size={20} className="text-emerald-500" />}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                يتم مزامنة كل طلب أو تعديل تجريه سحابياً فور إتمام الإجراء لضمان تطابق البيانات لحظياً بين كافة الأجهزة المفتوحة. يتطلب اتصال إنترنت مستمر وثابت لتقديم التزامن اللحظي.
+              </p>
+            </div>
+            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-extrabold tracking-wider uppercase mt-4">
+              تزامن فوري تلقائي • متعدد الحسابات والأجهزة • تواصل حي
+            </div>
+          </button>
+        </div>
+
+        <div className="flex flex-col md:flex-row items-center justify-between bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 gap-4 mt-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400"><RefreshCw size={18}/></div>
+            <div>
+              <h4 className="text-sm font-black dark:text-white text-right">بوابة المزامنة يدوية مع السحاب</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 text-right">اصنع ترحيلاً كاملاً لبياناتك المحلية إلى قواعد البيانات السحابية الآمنة واستقبل الجديد بضغطة واحدة.</p>
+            </div>
+          </div>
+          
+          <button 
+            type="button"
+            onClick={forceSync} 
+            disabled={saveStatus === 'saving'}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all shadow-lg text-white cursor-pointer ${
+              saveStatus === 'saving' 
+                ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed' 
+                : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'
+            }`}
+          >
+            {saveStatus === 'saving' ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                <span>جاري مزامنة قاعدة البيانات...</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw size={14} />
+                <span>مزامنة سحابية يدوية الآن</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const SettingsPage: React.FC<SettingsPageProps> = ({ 
+  settings, 
+  setSettings, 
+  onManualSave, 
+  activeStore,
+  dbSyncMode = 'manual',
+  setDbSyncMode = () => {},
+  forceSync = async () => {},
+  saveStatus = 'idle'
+}) => {
   
   const handleIntegrationSave = (integration: PlatformIntegration) => {
     setSettings(prev => ({ ...prev, integration }));
@@ -120,6 +237,13 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, setSettings, onMa
             </label>
         </div>
       </div>
+
+      <DatabaseCard 
+        dbSyncMode={dbSyncMode} 
+        setDbSyncMode={setDbSyncMode} 
+        forceSync={forceSync} 
+        saveStatus={saveStatus} 
+      />
 
       {onManualSave && (
           <DatabaseManagementCard onSync={onManualSave} />

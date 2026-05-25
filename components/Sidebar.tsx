@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import { 
-    LayoutDashboard, ShoppingCart, Eye, PhoneForwarded,
+    LayoutDashboard, ShoppingCart, Eye, PhoneForwarded, Plus,
     Archive, Package, ClipboardList, ListOrdered, Star, Grid3x3, Users, Truck, Percent, 
     Wallet as WalletIcon, ArrowRightLeft, LayoutGrid, Brush, FileText, Globe, BarChart2, Shield, 
     AppWindow, Settings2, CreditCard, Landmark, Users2, Code, Receipt, ChevronRight, X, UserCog, History, Megaphone, MessageSquare, Wand2, DollarSign 
@@ -44,6 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
             type: 'group',
             title: 'إدارة الطلبات',
             links: [
+                { to: '/create-order', label: 'طلب جديد ＋', icon: <Plus size={20} /> },
                 { to: '/confirmation-queue', label: 'تأكيد الطلبات', icon: <PhoneForwarded size={20} /> },
                 { to: '/orders', label: 'الطلبات', icon: <ShoppingCart size={20} /> },
                 { to: '/abandoned-carts', label: 'السلات المتروكة', icon: <Archive size={20} /> },
@@ -171,7 +172,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeStore, isOpen, onClose }) => {
                                 {item.links.map(link => (
                                     <NavLink 
                                         to={link.to} 
-                                        key={link.to} 
+                                        key={link.to + link.label}
                                         end={link.to === '/'}
                                         className={({ isActive }) => `sidebar-item ${isActive ? 'sidebar-item-active' : ''}`}
                                     >

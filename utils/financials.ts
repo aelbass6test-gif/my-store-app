@@ -151,7 +151,11 @@ export const calculateOrderProfitLoss = (order: Order, settings: Settings): { pr
     const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;
     const returnFeeAmount = applyReturnFee ? (useCustom ? (compFees?.returnShippingFee ?? 0) : settings.returnShippingFee) : 0;
     const inspectionFeeCollected = order.inspectionFeePaidByCustomer ? effectiveInspectionCost : 0;
-    loss = (insuranceFee + order.shippingFee + effectiveInspectionCost + returnFeeAmount + bostaVat - inspectionFeeCollected);
+    
+    const isFlexShipEnabled = useCustom ? (compFees?.enableFlexShip ?? false) : (settings.enableFlexShip ?? false);
+    const flexShipCollected = (isFlexShipEnabled && order.flexShipFeePaidByCustomer) ? (order.flexShipFee ?? (useCustom ? (compFees?.flexShipFee ?? 0) : (settings.flexShipFee ?? 0))) : 0;
+    
+    loss = (insuranceFee + order.shippingFee + effectiveInspectionCost + returnFeeAmount + bostaVat - inspectionFeeCollected - flexShipCollected);
   } else if (order.status === 'مرتجع_جزئي') {
     loss = (insuranceFee + effectiveInspectionCost + bostaVat);
   } else if (order.status === 'مرتجع_بعد_الاستلام') {

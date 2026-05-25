@@ -168,6 +168,9 @@ export interface CompanyFees {
   enableReturnAfter: boolean;    
   enableReturnWithout: boolean;  
   enableExchange: boolean;       
+  enableReturn?: boolean;
+  enableCashCollection?: boolean;
+  enableReturnToSender?: boolean;
   enableFixedReturn: boolean;    
   baseWeight?: number;
   enableCodFees: boolean;
@@ -177,6 +180,8 @@ export interface CompanyFees {
   postCollectionReturnRefundsProductPrice: boolean;
   insuranceBasis?: 'cost' | 'price' | 'total' | 'base';
   shippingVatRate?: number;
+  enableFlexShip?: boolean;
+  flexShipFee?: number;
 }
 
 export const PERMISSIONS = {
@@ -421,6 +426,8 @@ export interface Settings {
   enableInspection: boolean; 
   returnShippingFee: number;
   enableReturnShipping: boolean; 
+  enableFlexShip?: boolean;
+  flexShipFee?: number;
   enableReturnAfterPrice: boolean;
   enableReturnWithoutPrice: boolean;
   enableExchangePrice: boolean;
@@ -612,6 +619,7 @@ export interface Order {
   loyaltyPointsAwarded?: boolean;
   stockDeducted?: boolean;
   orderType?: 'standard' | 'exchange';
+  shipmentType?: 'delivery' | 'partial_delivery' | 'exchange' | 'return' | 'cash_collection';
   originalOrderId?: string;
   confirmationLogs?: ConfirmationLog[];
   cancellationReason?: string;
@@ -633,6 +641,19 @@ export interface Order {
   advancePaymentTreasuryId?: string;
   advancePaymentRecipientPhone?: string;
   advancePaymentSenderDetails?: string;
+  useProductsForShipment?: boolean;
+  shipmentDescription?: string;
+  shipmentQuantity?: number;
+  customShipmentPrice?: number;
+  useProductsForReturn?: boolean;
+  returnProductId?: string;
+  returnVariantId?: string;
+  returnDescription?: string;
+  returnQuantity?: number;
+  returnImage?: string;
+  enableFlexShip?: boolean;
+  flexShipFee?: number;
+  flexShipFeePaidByCustomer?: boolean;
 }
 
 export interface TreasuryAccount {
