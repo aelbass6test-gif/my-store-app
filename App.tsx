@@ -6,7 +6,6 @@ import * as db from './services/databaseService';
 import { onSnapshot, collection, query, where, doc } from 'firebase/firestore';
 import { db as firebaseDb } from './services/firebaseClient';
 import { INITIAL_SETTINGS } from './constants';
-import GlobalSaveIndicator, { SaveStatus } from './components/GlobalSaveIndicator';
 import { oneToolzProducts } from './data/one-toolz-products';
 
 import { triggerWebhooks } from './utils/webhook';
@@ -76,10 +75,35 @@ interface EmployeeRegisterRequestData {
   email: string;
 }
 
-const MainLayout = ({ currentUser, handleLogout, isSidebarOpen, setSidebarOpen, activeStore, theme, setTheme }: any) => {
+const MainLayout = ({ 
+    currentUser, 
+    handleLogout, 
+    isSidebarOpen, 
+    setSidebarOpen, 
+    activeStore, 
+    theme, 
+    setTheme,
+    dbSyncMode,
+    setDbSyncMode,
+    forceSync,
+    saveStatus,
+    saveMessage
+}: any) => {
     return (
         <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-50" dir="rtl">
-    <Header currentUser={currentUser} onLogout={handleLogout} onToggleSidebar={() => setSidebarOpen(true)} theme={theme} setTheme={setTheme} activeStore={activeStore} />
+    <Header 
+        currentUser={currentUser} 
+        onLogout={handleLogout} 
+        onToggleSidebar={() => setSidebarOpen(true)} 
+        theme={theme} 
+        setTheme={setTheme} 
+        activeStore={activeStore} 
+        dbSyncMode={dbSyncMode}
+        setDbSyncMode={setDbSyncMode}
+        forceSync={forceSync}
+        saveStatus={saveStatus}
+        saveMessage={saveMessage}
+    />
     <div className="flex flex-1 overflow-hidden">
         <Sidebar activeStore={activeStore} isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
         <main className="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar">
@@ -160,7 +184,12 @@ const OwnerLayoutWrapper = ({
     setIsSidebarOpen,
     activeStore,
     theme,
-    setTheme
+    setTheme,
+    dbSyncMode,
+    setDbSyncMode,
+    forceSync,
+    saveStatus,
+    saveMessage
 }: any) => {
     const location = useLocation();
 
@@ -200,7 +229,22 @@ const OwnerLayoutWrapper = ({
         return <WelcomeLoader userName={currentUser?.fullName.split(' ')[0] || ''} />;
     }
 
-    return <MainLayout currentUser={currentUser} handleLogout={handleLogout} isSidebarOpen={isSidebarOpen} setSidebarOpen={setIsSidebarOpen} activeStore={activeStore} theme={theme} setTheme={setTheme} />;
+    return (
+        <MainLayout 
+            currentUser={currentUser} 
+            handleLogout={handleLogout} 
+            isSidebarOpen={isSidebarOpen} 
+            setSidebarOpen={setIsSidebarOpen} 
+            activeStore={activeStore} 
+            theme={theme} 
+            setTheme={setTheme} 
+            dbSyncMode={dbSyncMode}
+            setDbSyncMode={setDbSyncMode}
+            forceSync={forceSync}
+            saveStatus={saveStatus}
+            saveMessage={saveMessage}
+        />
+    );
 };
 
 const CatchAllRedirect = ({ currentUser, isEmployeeSession }: any) => {
@@ -227,6 +271,18 @@ export const AppComponent = () => {
     const [welcomeScreenShown, setWelcomeScreenShown] = useState<boolean>(false);
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
     const [saveMessage, setSaveMessage] = useState('');
+    
+    const [dbSyncMode, setDbSyncModeState] = useState<'manual' | 'auto'>(() => {
+        const value = localStorage.getItem('dbSyncMode');
+        return (value === 'auto' || value === 'manual') ? value : 'manual';
+    });
+
+    const setDbSyncMode = (mode: 'manual' | 'auto') => {
+        localStorage.setItem('dbSyncMode', mode);
+        setDbSyncModeState(mode);
+        // Force state update to trigger listener changes
+        window.dispatchEvent(new Event('storage'));
+    };
     
     const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const refreshDebounceTimers = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
@@ -300,6 +356,13 @@ export const AppComponent = () => {
             return;
         }
 
+        // Bypasses auto-cloud writes when in manual (local desktop) mode.
+        if (dbSyncMode === 'manual') {
+            setSaveStatus('local_saved');
+            setSaveMessage('محفوظ محلياً (ديسك توب)');
+            return;
+        }
+
         if (saveStatus !== 'saving') {
             setSaveStatus('pending');
             setSaveMessage('تغييرات غير محفوظة...');
@@ -359,7 +422,7 @@ export const AppComponent = () => {
         return () => {
             if (debounceTimer.current) clearTimeout(debounceTimer.current);
         };
-    }, [users, allStoresData, activeStore, activeStoreId, isInitialLoad]);
+    }, [users, allStoresData, activeStore, activeStoreId, isInitialLoad, dbSyncMode]);
 
     // 3. Emergency save on close/visibility change
     useEffect(() => {
@@ -768,6 +831,11 @@ export const AppComponent = () => {
     };
 
     useEffect(() => {
+        if (dbSyncMode === 'manual') {
+            console.log('[REALTIME] Manual desktop database mode active: Live cloud listeners and background intervals are paused.');
+            return () => {};
+        }
+
         console.log('[REALTIME] Setting up Firestore snapshots...');
         
         const unsubscribers: (() => void)[] = [];
@@ -846,7 +914,7 @@ export const AppComponent = () => {
             clearInterval(pollingInterval);
             clearInterval(autoSyncInterval);
         };
-    }, [activeStoreId]); 
+    }, [activeStoreId, dbSyncMode]); 
 
     if (!authChecked) {
         return <GlobalLoader />;
@@ -914,6 +982,10 @@ export const AppComponent = () => {
         treasury: activeStoreId ? allStoresData[activeStoreId]?.treasury || { accounts: [{ id: '1', name: 'الخزينة الرئيسية', type: 'safe', balance: 0, currency: 'EGP' }, { id: '2', name: 'فودافون كاش', type: 'wallet', balance: 0, currency: 'EGP' }, { id: '3', name: 'الحساب البنكي', type: 'bank', balance: 0, currency: 'EGP' }], transactions: [] } : undefined,
         cart,
         forceSync,
+        dbSyncMode,
+        setDbSyncMode,
+        saveStatus,
+        saveMessage,
         onRefresh: async () => { if (activeStoreId) await refreshStoreData(activeStoreId); },
         customers: activeStoreId ? allStoresData[activeStoreId]?.customers || [] : [],
         setCustomers: (updater: any) => {
@@ -1142,11 +1214,17 @@ export const AppComponent = () => {
                         activeStore={activeStore}
                         theme={theme}
                         setTheme={setTheme}
+                        dbSyncMode={dbSyncMode}
+                        setDbSyncMode={setDbSyncMode}
+                        forceSync={forceSync}
+                        saveStatus={saveStatus}
+                        saveMessage={saveMessage}
                     />
                 }>
                     <Route index element={<Dashboard {...pageProps} />} />
                     <Route path="confirmation-queue" element={<ConfirmationQueuePage currentUser={currentUser} orders={pageProps.orders} setOrders={pageProps.setOrders} settings={pageProps.settings} activeStore={pageProps.activeStore} onRefresh={() => pageProps.activeStore?.id && refreshStoreData(pageProps.activeStore.id)} forceSync={pageProps.forceSync} />} />
                     <Route path="orders" element={<OrdersList {...pageProps} currentUser={currentUser} addLoyaltyPointsForOrder={() => {}} />} />
+                    <Route path="create-order" element={<OrdersList {...pageProps} currentUser={currentUser} addLoyaltyPointsForOrder={() => {}} defaultShowAdd={true} />} />
                     <Route path="products" element={<ProductsPage {...pageProps} />} />
                     <Route path="customers" element={<CustomersPage orders={pageProps.orders} loyaltyData={{}} updateCustomerLoyaltyPoints={() => {}} />} />
                     <Route path="wallet" element={<WalletPage {...pageProps} />} />
@@ -1176,7 +1254,7 @@ export const AppComponent = () => {
                     <Route path="team-chat" element={<TeamChatPage {...pageProps} activeStoreId={activeStoreId} />} />
                     <Route path="whatsapp" element={<WhatsAppPage {...pageProps} />} />
                     <Route path="account-settings" element={<AccountSettingsPage currentUser={currentUser} setCurrentUser={setCurrentUser} users={users} setUsers={setUsers} />} />
-                    <Route path="treasury" element={<TreasuryPage settings={pageProps.settings} />} />
+                    <Route path="treasury" element={<TreasuryPage settings={pageProps.settings} treasury={pageProps.treasury} setTreasury={pageProps.setTreasury} />} />
                     
                     {/* Coming Soon Routes */}
                     <Route path="product-attributes" element={<ComingSoonPage />} />
@@ -1202,7 +1280,6 @@ export const AppComponent = () => {
                     message="تم تفعيل المتجر الخاص بك بنجاح. يمكنك الآن البدء في استقبال الطلبات وإدارة منتجاتك بسهولة."
                 />
             )}
-            <GlobalSaveIndicator status={saveStatus} message={saveMessage} onRetry={forceSync} />
             <UniversalInstallPrompt 
                 installPrompt={installPrompt} 
                 onInstall={() => installPrompt?.prompt()} 
