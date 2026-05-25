@@ -81,20 +81,22 @@ export const generateEgyptShippingOptions = (): ShippingOption[] => {
       id: `gov_${index + 1}`,
       label: gov.name,
       details: 'شحن محافظات',
-      price: defaultPrice, 
+      deliveryPrice: defaultPrice, 
       baseWeight: 1,
       extraKgPrice: 10,
-      returnAfterPrice: 35,
-      returnWithoutPrice: 35,
+      returnPrice: 35,
       exchangePrice: 35,
+      cashCollectionPrice: 15,
+      returnToSenderPrice: 35,
       cities: gov.cities.map((city, cIndex) => ({
         id: `city_${index + 1}_${cIndex + 1}`,
         name: city,
-        shippingPrice: defaultPrice,
+        deliveryPrice: defaultPrice,
         extraKgPrice: 10,
-        returnAfterPrice: 35,
-        returnWithoutPrice: 35,
+        returnPrice: 35,
         exchangePrice: 35,
+        cashCollectionPrice: 15,
+        returnToSenderPrice: 35,
         useParentFees: true
       }))
     };

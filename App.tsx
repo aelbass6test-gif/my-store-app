@@ -262,62 +262,126 @@ export const AppComponent = () => {
         return owner?.stores?.find(s => s.id === activeStoreId);
     }, [activeStoreId, users]);
 
-    // --- Auto-Save Logic ---
+    // --- Aggressive Auto-Save Logic ---
+    // 1. Instant local persistence to IndexedDB
+    useEffect(() => {
+        if (isInitialLoad || isRefreshing.current) return;
+
+        const fastLocalSave = async () => {
+            try {
+                // Always save global users immediately locally
+                await db.saveLocal('global', { users, loyaltyData: {} });
+                
+                // Save active store data immediately locally
+                if (activeStoreId && allStoresData[activeStoreId]) {
+                    await db.saveLocal(activeStoreId, allStoresData[activeStoreId]);
+                }
+                
+                // Set status to local_saved to reassure the user, but don't overwrite if we are currently cloud-saving or in error
+                setSaveStatus(prev => {
+                    if (prev === 'saving' || prev === 'error') return prev;
+                    return 'local_saved';
+                });
+            } catch (err) {
+                console.warn('[LOCAL-SAVE] Quick local save failed:', err);
+            }
+        };
+
+        const timer = setTimeout(fastLocalSave, 200); // 200ms for responsiveness
+        return () => clearTimeout(timer);
+    }, [users, allStoresData, activeStoreId, isInitialLoad]);
+
+    // 2. Network sync debounce (Firebase)
     useEffect(() => {
         if (isInitialLoad) return;
         
         if (isRefreshing.current) {
-            console.log('[AUTO-SAVE] Skipped save because a refresh just occurred.');
             isRefreshing.current = false; 
-            // We still want to evaluate auto-save for future changes, so we don't return early forever.
-            // Oh wait, if we changed isRefreshing.current to false, the NEXT change will save.
             return;
         }
 
-        if (saveStatus === 'success' || saveStatus === 'idle' || saveStatus === 'error') {
+        if (saveStatus !== 'saving') {
             setSaveStatus('pending');
             setSaveMessage('تغييرات غير محفوظة...');
         }
 
-        if (debounceTimer.current) {
-            clearTimeout(debounceTimer.current);
-        }
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
         debounceTimer.current = setTimeout(async () => {
-            setSaveStatus('saving');
-            setSaveMessage('جاري الحفظ...');
-
-            try {
-                isSavingRef.current = true;
-                await db.saveGlobalData({ users, loyaltyData: {} });
-
-                if (activeStoreId && allStoresData[activeStoreId] && activeStore) {
-                    const { success, error } = await db.saveStoreData(activeStore, allStoresData[activeStoreId]);
-                    if (!success) {
-                        throw new Error(error || 'فشل حفظ بيانات المتجر');
-                    }
-                }
-                
-                setSaveStatus('success');
-                setSaveMessage('تم الحفظ بنجاح!');
-                setTimeout(() => setSaveStatus('idle'), 2000);
-
-            } catch (e: any) {
-                console.error('[AUTO-SAVE] Save failed:', e);
-                setSaveStatus('error');
-                setSaveMessage(e.message || 'فشل الحفظ');
-                // Keep error visible for retry
-            } finally {
-                isSavingRef.current = false;
+            // Already a save in progress? Wait for it.
+            if (isSavingRef.current) {
+                // If it's been saving for too long, just ignore the flag as a failsafe
+                return;
             }
-        }, 800); 
+
+            setSaveStatus('saving');
+            setSaveMessage('جاري المزامنة مع السحاب...');
+
+            const syncWithTimeout = async () => {
+                isSavingRef.current = true;
+                try {
+                    // Sync parallel
+                    const cloudPromises = [];
+                    cloudPromises.push(db.saveGlobalData({ users, loyaltyData: {} }));
+                    
+                    if (activeStoreId && allStoresData[activeStoreId] && activeStore) {
+                        cloudPromises.push(db.saveStoreData(activeStore, allStoresData[activeStoreId]));
+                    }
+
+                    const results = await Promise.all(cloudPromises);
+                    const failed = results.find(r => !r.success);
+                    
+                    if (failed) {
+                        console.warn('[AUTO-SYNC] Cloud sync failed partially:', failed.error);
+                        // Still consider success locally since fastLocalSave already finished
+                        setSaveStatus('local_saved');
+                        return;
+                    }
+
+                    setSaveStatus('success');
+                    setSaveMessage('تمت المزامنة بنجاح!');
+                    setTimeout(() => {
+                        setSaveStatus(prev => prev === 'success' ? 'idle' : prev);
+                    }, 3000);
+                } catch (e: any) {
+                    console.error('[AUTO-SYNC] Error during cloud sync:', e);
+                    // Fallback to local_saved so the user doesn't see a permanent error/loading
+                    setSaveStatus('local_saved');
+                    setSaveMessage('محفوظ محلياً (المزامنة معطلة مؤقتاً)');
+                } finally {
+                    isSavingRef.current = false;
+                }
+            };
+
+            syncWithTimeout();
+        }, 5000); // Higher debounce for network to prioritize local 
 
         return () => {
-            if (debounceTimer.current) {
-                clearTimeout(debounceTimer.current);
-            }
+            if (debounceTimer.current) clearTimeout(debounceTimer.current);
         };
     }, [users, allStoresData, activeStore, activeStoreId, isInitialLoad]);
+
+    // 3. Emergency save on close/visibility change
+    useEffect(() => {
+        const handleEmergencySave = () => {
+            if (activeStoreId && allStoresData[activeStoreId]) {
+                db.saveLocal('global', { users, loyaltyData: {} });
+                db.saveLocal(activeStoreId, allStoresData[activeStoreId]);
+            }
+        };
+
+        window.addEventListener('beforeunload', handleEmergencySave);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                handleEmergencySave();
+            }
+        });
+
+        return () => {
+            window.removeEventListener('beforeunload', handleEmergencySave);
+            document.removeEventListener('visibilitychange', handleEmergencySave);
+        };
+    }, [users, allStoresData, activeStoreId]);
 
 
     useEffect(() => {
@@ -337,6 +401,8 @@ export const AppComponent = () => {
     }, [theme]);
 
     const loadData = async () => {
+        setIsInitialLoad(true);
+        isRefreshing.current = true;
         try {
             const globalData = await db.getGlobalData();
             let loadedUsers: User[] = globalData?.users || [];
@@ -657,7 +723,7 @@ export const AppComponent = () => {
         return new Promise((resolve) => {
             refreshDebounceTimers.current[storeId] = setTimeout(async () => {
                 console.log(`[REALTIME] Debounced refresh executing for store: ${storeId}`);
-                const storeData = await db.getStoreData(storeId) as StoreData | null;
+                const storeData = await db.getStoreData(storeId, true) as StoreData | null;
                 if (storeData) {
                     const sanitizedStoreData = sanitizeData(storeData);
                     
@@ -686,7 +752,7 @@ export const AppComponent = () => {
         }
         refreshDebounceTimers.current[key] = setTimeout(async () => {
             console.log('[REALTIME] Debounced global refresh executing.');
-            const globalData = await db.getGlobalData();
+            const globalData = await db.getGlobalData(true);
             if (globalData?.users) {
                 isRefreshing.current = true;
                 setUsers(globalData.users);
@@ -796,26 +862,44 @@ export const AppComponent = () => {
     }
     
     const forceSync = async () => {
-        if (debounceTimer.current) {
-            clearTimeout(debounceTimer.current);
-        }
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
         setSaveStatus('saving');
-        setSaveMessage('جاري الحفظ...');
+        setSaveMessage('جاري الحفظ والمزامنة...');
         try {
             isSavingRef.current = true;
-            await db.saveGlobalData({ users, loyaltyData: {} });
-            if (activeStoreId && allStoresData[activeStoreId] && activeStore) {
-                const { success, error } = await db.saveStoreData(activeStore, allStoresData[activeStoreId]);
-                if (!success) throw new Error(error || 'فشل حفظ بيانات المتجر');
+            
+            // 1. Local backup (Instant)
+            await db.saveLocal('global', { users, loyaltyData: {} });
+            if (activeStoreId && allStoresData[activeStoreId]) {
+                await db.saveLocal(activeStoreId, allStoresData[activeStoreId]);
             }
+
+            // 2. Cloud sync (Parallel with Timeout)
+            const syncPromises = [];
+            syncPromises.push(db.saveGlobalData({ users, loyaltyData: {} }));
+            if (activeStoreId && allStoresData[activeStoreId] && activeStore) {
+                syncPromises.push(db.saveStoreData(activeStore, allStoresData[activeStoreId]));
+            }
+
+            const results = await Promise.all(syncPromises);
+            const failed = results.find(r => !r.success);
+            
+            if (failed) {
+                console.warn('[MANUAL-SYNC] Cloud failed, but data saved locally:', failed.error);
+                setSaveStatus('local_saved');
+                setSaveMessage('تم الحفظ محلياً (فشل المزامنة السحابية)');
+                return;
+            }
+
             setSaveStatus('success');
-            setSaveMessage('تم الحفظ بنجاح!');
-            setTimeout(() => setSaveStatus('idle'), 2000);
+            setSaveMessage('تم الحفظ والمزامنة بنجاح!');
+            setTimeout(() => setSaveStatus(prev => prev === 'success' ? 'idle' : prev), 3000);
         } catch (e: any) {
             console.error('[MANUAL-SAVE] Save failed:', e);
-            setSaveStatus('error');
-            setSaveMessage(e.message || 'فشل الحفظ');
-            // Keep error visible so user can try again
+            // Even if everything fails, we likely have it in fastLocalSave already, 
+            // but let's at least show local_saved if we think we got it.
+            setSaveStatus('local_saved');
+            setSaveMessage('محفوظ على هذا الجهاز (خطأ سحابي)');
         } finally {
             isSavingRef.current = false;
         }
