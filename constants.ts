@@ -184,6 +184,7 @@ export const INITIAL_SETTINGS: Settings = {
   collections: [],
   whatsappTemplates: DEFAULT_WHATSAPP_TEMPLATES,
   callScripts: DEFAULT_CALL_SCRIPTS,
+  expenseCategories: ['expense_ads', 'expense_salary', 'expense_rent', 'expense_packaging', 'expense_shipping_fees', 'expense_other'],
   employeeDashboardSettings: {
     showAssignedOrders: true,
     showOrderStatuses: ['في_انتظار_المكالمة', 'قيد_التنفيذ', 'جاري_المراجعة'],

@@ -58,6 +58,7 @@ import WelcomeLoader from './components/WelcomeLoader';
 import GlobalLoader from './components/GlobalLoader';
 import EmployeesPage from './components/EmployeesPage';
 import ReportsPage from './components/ReportsPage';
+import { TreasuryPage } from './components/TreasuryPage';
 import ChatBot from './components/ChatBot';
 import CongratsModal from './components/CongratsModal';
 import OrderTrackingPage from './components/OrderTrackingPage';
@@ -65,6 +66,7 @@ import OtpVerificationPage from './components/OtpVerificationPage';
 import IosInstallPrompt from './components/IosInstallPrompt';
 import ComingSoonPage from './components/ComingSoonPage';
 import AppsPage from './components/AppsPage';
+import UniversalInstallPrompt from './components/UniversalInstallPrompt';
 
 interface EmployeeRegisterRequestData {
   fullName: string;
@@ -825,6 +827,7 @@ export const AppComponent = () => {
         products: activeStoreId ? allStoresData[activeStoreId]?.settings?.products || [] : [],
         settings: activeStoreId ? allStoresData[activeStoreId]?.settings || INITIAL_SETTINGS : INITIAL_SETTINGS,
         wallet: activeStoreId ? allStoresData[activeStoreId]?.wallet || { balance: 0, transactions: [] } : { balance: 0, transactions: [] },
+        treasury: activeStoreId ? allStoresData[activeStoreId]?.treasury || { accounts: [{ id: '1', name: 'الخزينة الرئيسية', type: 'safe', balance: 0, currency: 'EGP' }, { id: '2', name: 'فودافون كاش', type: 'wallet', balance: 0, currency: 'EGP' }, { id: '3', name: 'الحساب البنكي', type: 'bank', balance: 0, currency: 'EGP' }], transactions: [] } : undefined,
         cart,
         forceSync,
         onRefresh: async () => { if (activeStoreId) await refreshStoreData(activeStoreId); },
@@ -896,6 +899,24 @@ export const AppComponent = () => {
                         [activeStoreId]: {
                             ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
                             wallet: newWallet
+                        }
+                    };
+                });
+            }
+        },
+        setTreasury: (updater: any) => {
+             if(activeStoreId) {
+                setAllStoresData(p => {
+                    const currentTreasury = p[activeStoreId]?.treasury || { accounts: [{ id: '1', name: 'الخزينة الرئيسية', type: 'safe', balance: 0, currency: 'EGP' }, { id: '2', name: 'فودافون كاش', type: 'wallet', balance: 0, currency: 'EGP' }, { id: '3', name: 'الحساب البنكي', type: 'bank', balance: 0, currency: 'EGP' }], transactions: [] };
+                    const newTreasury = typeof updater === 'function' ? updater(currentTreasury) : updater;
+                    
+                    if (currentTreasury === newTreasury) return p;
+
+                    return {
+                        ...p,
+                        [activeStoreId]: {
+                            ...(p[activeStoreId] || { orders: [], settings: INITIAL_SETTINGS, wallet: { balance: 0, transactions: [] }, cart: [], customers: [] }),
+                            treasury: newTreasury
                         }
                     };
                 });
@@ -1055,7 +1076,7 @@ export const AppComponent = () => {
                     <Route path="reviews" element={<ReviewsPage {...pageProps} />} />
                     <Route path="collections" element={<CollectionsPage {...pageProps} />} />
                     <Route path="product-options" element={<ProductOptionsPage {...pageProps} />} />
-                    <Route path="expenses" element={<ExpensesPage {...pageProps} settings={pageProps.settings} updateSettings={pageProps.setSettings} />} />
+                    <Route path="expenses" element={<ExpensesPage {...pageProps} settings={pageProps.settings} updateSettings={pageProps.setSettings} treasury={pageProps.treasury} setTreasury={pageProps.setTreasury} />} />
                     <Route path="marketing" element={<MarketingPage {...pageProps} />} />
                     <Route path="ai-assistant" element={<ChatBot {...pageProps} />} />
                     <Route path="reports" element={<AnalyticsPage {...pageProps} />} />
@@ -1071,6 +1092,7 @@ export const AppComponent = () => {
                     <Route path="team-chat" element={<TeamChatPage {...pageProps} activeStoreId={activeStoreId} />} />
                     <Route path="whatsapp" element={<WhatsAppPage {...pageProps} />} />
                     <Route path="account-settings" element={<AccountSettingsPage currentUser={currentUser} setCurrentUser={setCurrentUser} users={users} setUsers={setUsers} />} />
+                    <Route path="treasury" element={<TreasuryPage settings={pageProps.settings} />} />
                     
                     {/* Coming Soon Routes */}
                     <Route path="product-attributes" element={<ComingSoonPage />} />
@@ -1097,6 +1119,12 @@ export const AppComponent = () => {
                 />
             )}
             <GlobalSaveIndicator status={saveStatus} message={saveMessage} onRetry={forceSync} />
+            <UniversalInstallPrompt 
+                installPrompt={installPrompt} 
+                onInstall={() => installPrompt?.prompt()} 
+                isStandalone={isStandalone} 
+                isIos={isIos} 
+            />
         </>
     );
 };
