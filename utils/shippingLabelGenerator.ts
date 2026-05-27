@@ -13,7 +13,7 @@ export const generateShippingLabelHTML = (order: Order, storeName: string) => {
   <head>
     <meta charset="UTF-8">
     <title>بوليصة شحن ${order.orderNumber}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet" crossorigin="anonymous">
     <style>
       @page { size: 100mm 150mm; margin: 5mm; }
       body { font-family: 'Cairo', sans-serif; margin: 0; padding: 0; font-size: 11px; }

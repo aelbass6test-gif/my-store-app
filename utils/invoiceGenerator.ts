@@ -46,7 +46,7 @@ export const generateInvoiceHTML = (order: Order, settings: Settings, storeName:
     <head>
       <meta charset="UTF-8">
       <title>فاتورة رقم ${order.orderNumber}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
       <style>
         body { font-family: 'Cairo', sans-serif; margin: 0; padding: 20px; color: #333; }
         .invoice-container { max-width: 800px; margin: auto; border: 1px solid #ddd; padding: 30px; border-radius: 10px; }
