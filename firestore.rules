@@ -2,16 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Allow read/write for treasury accounts
-    match /treasury_accounts/{accountId} {
-      allow read, write: if true;
-    }
-
-    // Allow read/write for treasury transactions
-    match /treasury_transactions/{transactionId} {
-      allow read, write: if true;
-    }
-
     // Default deny catch-all
     match /{document=**} {
       allow read, write: if false;
