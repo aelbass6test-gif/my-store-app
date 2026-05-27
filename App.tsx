@@ -314,7 +314,6 @@ export const AppComponent = () => {
 
     // تتبع حالة الحفظ لمنع تداخل التحديثات اللحظية
     const isSavingRef = useRef(false);
-    const isDirtyRef = useRef(false);
     useEffect(() => {
         isSavingRef.current = (saveStatus === 'saving' || saveStatus === 'pending');
     }, [saveStatus]);
@@ -375,7 +374,6 @@ export const AppComponent = () => {
             setSaveMessage('تغييرات غير محفوظة...');
         }
 
-        isDirtyRef.current = true;
         if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
         debounceTimer.current = setTimeout(async () => {
@@ -409,7 +407,6 @@ export const AppComponent = () => {
                         return;
                     }
 
-                    isDirtyRef.current = false;
                     setSaveStatus('success');
                     setSaveMessage('تمت المزامنة بنجاح!');
                     setTimeout(() => {
@@ -778,8 +775,8 @@ export const AppComponent = () => {
     };
 
     const refreshStoreData = (storeId: string): Promise<void> => {
-        if (isSavingRef.current || isDirtyRef.current) {
-            console.log(`[REALTIME] Ignoring refresh to prevent flicker during active save or pending changes.`);
+        if (isSavingRef.current) {
+            console.log(`[REALTIME] Ignoring refresh to prevent flicker during active save.`);
             return Promise.resolve();
         }
 
@@ -818,10 +815,6 @@ export const AppComponent = () => {
     };
 
     const refreshGlobalData = () => {
-        if (isSavingRef.current || isDirtyRef.current) {
-            console.log(`[REALTIME] Ignoring global refresh to prevent flicker during active save or pending changes.`);
-            return;
-        }
         const key = 'global';
         if (refreshDebounceTimers.current[key]) {
             clearTimeout(refreshDebounceTimers.current[key]!);
@@ -862,7 +855,7 @@ export const AppComponent = () => {
         if (activeStoreId) {
             // Listen for changes on store configuration
             const unsubStore = onSnapshot(doc(firebaseDb, 'stores_data', activeStoreId), (snap) => {
-                if (snap.exists() && !isSavingRef.current && !isDirtyRef.current && !snap.metadata.hasPendingWrites) {
+                if (snap.exists() && !isSavingRef.current) {
                     console.log('[REALTIME] Store settings change detected via Firestore snapshot');
                     refreshStoreDataRef.current(activeStoreId);
                 }
@@ -872,7 +865,7 @@ export const AppComponent = () => {
             // Listen for changes on orders
             const qOrders = query(collection(firebaseDb, 'orders'), where('storeId', '==', activeStoreId));
             const unsubOrders = onSnapshot(qOrders, (snap) => {
-                if (!isSavingRef.current && !isDirtyRef.current && !snap.metadata.hasPendingWrites) {
+                if (!isSavingRef.current) {
                     console.log('[REALTIME] Orders change detected via Firestore snapshot');
                     refreshStoreDataRef.current(activeStoreId);
                 }
@@ -882,16 +875,14 @@ export const AppComponent = () => {
 
         // Listen for user collections change
         const unsubUsers = onSnapshot(collection(firebaseDb, 'users'), (snap) => {
-            if (!isSavingRef.current && !isDirtyRef.current && !snap.metadata.hasPendingWrites) {
-                console.log('[REALTIME] Users collection change detected via Firestore snapshot');
-                refreshGlobalDataRef.current();
-            }
+            console.log('[REALTIME] Users collection change detected via Firestore snapshot');
+            refreshGlobalDataRef.current();
         });
         unsubscribers.push(unsubUsers);
 
         // Fallback polling mechanism 
         const pollingInterval = setInterval(() => {
-            if (activeStoreId && !isSavingRef.current && !isDirtyRef.current) {
+            if (activeStoreId && !isSavingRef.current) {
                 refreshStoreDataRef.current(activeStoreId);
             }
         }, 8000); // Poll every 8 seconds

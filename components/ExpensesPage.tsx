@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Wallet, Transaction, TransactionCategory, Settings, Treasury, TreasuryTransaction, PartnerTransaction } from '../types';
-import { DollarSign, Plus, TrendingDown, PieChart as PieChartIcon, Calendar, Trash2, Tag, Receipt, Landmark, User } from 'lucide-react';
+import { Wallet, Transaction, TransactionCategory, Settings, Treasury, TreasuryTransaction } from '../types';
+import { DollarSign, Plus, TrendingDown, PieChart as PieChartIcon, Calendar, Trash2, Tag, Receipt, Landmark } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface ExpensesPageProps {
@@ -17,8 +17,6 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [accountId, setAccountId] = useState('');
-  const [paymentSource, setPaymentSource] = useState<'treasury' | 'partner'>('treasury');
-  const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [category, setCategory] = useState<TransactionCategory>(
       (settings.expenseCategories && settings.expenseCategories.length > 0) 
       ? (settings.expenseCategories[0] as TransactionCategory) 
@@ -48,9 +46,9 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
 
   const expenses = useMemo(() => {
       return wallet.transactions
-        .filter(t => t.type === 'سحب' && t.category && (t.category.startsWith('expense_') || (settings.expenseCategories || []).includes(t.category)))
+        .filter(t => t.category && (t.category.startsWith('expense_') || (settings.expenseCategories || []).includes(t.category)))
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [wallet.transactions, settings.expenseCategories]);
+  }, [wallet.transactions]);
 
   const expenseCategoriesConfig = useMemo(() => {
     // A simple hash function to generate consistent colors based on the category name
@@ -101,111 +99,63 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) return;
 
-    if (paymentSource === 'treasury' && !accountId) {
+    if (!accountId) {
       showToast('الرجاء اختيار حساب الخزينة', 'error');
-      return;
-    }
-    
-    if (paymentSource === 'partner' && !selectedPartnerId) {
-      showToast('الرجاء اختيار الشريك', 'error');
       return;
     }
 
     const newTransactionId = Date.now().toString();
 
-    if (paymentSource === 'partner') {
-      const partner = (settings.partners || []).find(p => p.id === selectedPartnerId);
-      if (!partner) return;
+    // 1. Add to Wallet Tracking (Expenses are synced into the Wallet Ledger for reports)
+    const newTransaction: Transaction = {
+        id: newTransactionId,
+        type: 'سحب',
+        amount: numAmount,
+        date: new Date().toISOString(),
+        note: description || 'مصروف جديد',
+        category: category,
+        status: 'completed',
+        details: { treasuryAccountId: accountId }
+    };
 
-      const categoryLabel = category === 'expense_ads' ? 'إعلانات' : 
-             category === 'expense_salary' ? 'رواتب' : 
-             category === 'expense_rent' ? 'إيجار' : 
-             category === 'expense_packaging' ? 'تغليف' : 
-             category === 'expense_shipping_fees' ? 'رسوم شحن' : 
-             category === 'expense_other' ? 'أخرى' : category;
-
-      const partnerTx: PartnerTransaction = {
-          id: newTransactionId + 'pt',
-          partnerId: selectedPartnerId,
-          type: 'expense_coverage',
-          amount: numAmount,
-          date: new Date().toISOString(),
-          note: `دفع مصروف شخصياً: ${description || 'مصروف جديد'} (${categoryLabel})`
-      };
-
-      updateSettings({
-          ...settings,
-          partners: (settings.partners || []).map(p => p.id === selectedPartnerId ? { ...p, balance: (p.balance || 0) + numAmount } : p),
-          partnerTransactions: [partnerTx, ...(settings.partnerTransactions || [])]
-      });
-
-      // Add to Wallet for reporting (but no global balance deduction as it was personal funds)
-      const walletTransaction: Transaction = {
-          id: newTransactionId,
-          type: 'سحب',
-          amount: numAmount,
-          date: new Date().toISOString(),
-          note: `مصروف (بواسطة ${partner.name}): ${description || 'مصروف جديد'}`,
-          category: category,
-          status: 'completed',
-          details: { paidByPartnerId: selectedPartnerId }
-      };
-
-      setWallet(prev => ({
-          ...prev,
-          transactions: [walletTransaction, ...prev.transactions]
-      }));
-
-    } else {
-      // 1. Add to Wallet Tracking (Expenses are synced into the Wallet Ledger for reports)
-      const newTransaction: Transaction = {
-          id: newTransactionId,
-          type: 'سحب',
-          amount: numAmount,
-          date: new Date().toISOString(),
-          note: description || 'مصروف جديد',
-          category: category,
-          status: 'completed',
-          details: { treasuryAccountId: accountId }
-      };
-
-      setWallet(prevWallet => {
-          const currentBalance = Number(prevWallet.balance) || 0;
-          return {
-              ...prevWallet,
-              balance: currentBalance - numAmount,
-              transactions: [newTransaction, ...prevWallet.transactions]
-          };
-      });
-
-      // 2. Add to Treasury
-      if (setTreasury) {
-        const treasuryTx: TreasuryTransaction = {
-          id: newTransactionId,
-          date: new Date().toISOString(),
-          type: 'withdrawal',
-          amount: numAmount,
-          description: `مصروف: ${description || 'مصروف جديد'}`,
-          fromAccountId: accountId
+    setWallet(prevWallet => {
+        // Here we do NOT deduct from Global Wallet Balance if we are deducting from a specific Treasury Account instead.
+        // Wait, if it's coming from Treasury, does it affect the main store wallet? 
+        // Typically, expenses paid from the cash drawer shouldn't reduce the virtual Wallet platform balance unless they are linked.
+        // But the previous implementation deducted it from wallet.balance. Let's keep that but also deduct from Treasury to keep it consistent.
+        const currentBalance = Number(prevWallet.balance) || 0;
+        return {
+            ...prevWallet,
+            balance: currentBalance - numAmount,
+            transactions: [newTransaction, ...prevWallet.transactions]
         };
-        
-        setTreasury((prev: Treasury) => {
-          const updatedAccounts = prev.accounts.map(acc => 
-            acc.id === accountId ? { ...acc, balance: acc.balance - numAmount } : acc
-          );
-          return {
-            ...prev,
-            accounts: updatedAccounts,
-            transactions: [treasuryTx, ...(prev.transactions || [])]
-          };
-        });
-      }
+    });
+
+    // 2. Add to Treasury
+    if (setTreasury) {
+      const treasuryTx: TreasuryTransaction = {
+        id: newTransactionId,
+        date: new Date().toISOString(),
+        type: 'withdrawal',
+        amount: numAmount,
+        description: `مصروف: ${description || 'مصروف جديد'}`,
+        fromAccountId: accountId
+      };
+      
+      setTreasury((prev: Treasury) => {
+        const updatedAccounts = prev.accounts.map(acc => 
+          acc.id === accountId ? { ...acc, balance: acc.balance - numAmount } : acc
+        );
+        return {
+          accounts: updatedAccounts,
+          transactions: [treasuryTx, ...prev.transactions]
+        };
+      });
     }
 
     setShowAddModal(false);
     setAmount('');
     setDescription('');
-    setSelectedPartnerId('');
   };
 
   const deleteExpense = (id: string) => {
@@ -224,20 +174,11 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
             }
             
             txAccountToRefund = transactionToDelete.details?.treasuryAccountId;
-            const paidByPartnerId = transactionToDelete.details?.paidByPartnerId;
             amntoRefund = Number(transactionToDelete.amount) || 0;
             const updatedTransactions = prevWallet.transactions.filter(t => t.id !== id);
             
             const currentBalance = Number(prevWallet.balance) || 0;
-            const newBalance = txAccountToRefund ? currentBalance + amntoRefund : currentBalance;
-
-            if (paidByPartnerId) {
-                updateSettings({
-                    ...settings,
-                    partners: (settings.partners || []).map(p => p.id === paidByPartnerId ? { ...p, balance: p.balance - amntoRefund } : p),
-                    partnerTransactions: (settings.partnerTransactions || []).filter(pt => pt.id !== id + 'pt')
-                });
-            }
+            const newBalance = currentBalance + amntoRefund;
 
             return {
                 ...prevWallet,
@@ -306,7 +247,7 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
                 </div>
                 <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center gap-3 text-red-700 dark:text-red-400 text-sm font-bold">
                     <TrendingDown size={20}/>
-                    <span>المصروفات من الخزينة تخصم من الرصيد، أما المدفوعة شخصياً فتسجل كمديونية للشريك.</span>
+                    <span>هذه المبالغ تخصم مباشرة من رصيد المحفظة.</span>
                 </div>
             </div>
 
@@ -369,14 +310,7 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
                                 const catInfo = expenseCategoriesConfig.find(c => c.key === exp.category);
                                 return (
                                     <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <td className="px-6 py-4">
-                                            <div className="font-bold text-slate-700 dark:text-slate-300">{exp.note}</div>
-                                            {exp.details?.paidByPartnerId && (
-                                                <div className="text-[10px] text-indigo-500 font-bold flex items-center gap-1 mt-1">
-                                                    <User size={10} /> سدد شخصياً بواسطة: {settings.partners?.find(p => p.id === exp.details.paidByPartnerId)?.name}
-                                                </div>
-                                            )}
-                                        </td>
+                                        <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">{exp.note}</td>
                                         <td className="px-6 py-4">
                                             <span className="px-3 py-1 rounded-full text-xs font-bold text-white" style={{ backgroundColor: catInfo?.color || '#94a3b8' }}>
                                                 {catInfo?.label || 'عام'}
@@ -400,15 +334,7 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in zoom-in duration-200">
                     <h2 className="text-xl font-black text-slate-800 dark:text-white mb-6">تسجيل مصروف جديد</h2>
-          <form onSubmit={handleAddExpense} className="space-y-4">
-                        <div>
-                          <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-2 block">مصدر الدفع</label>
-                          <div className="flex gap-2">
-                             <button type="button" onClick={() => setPaymentSource('treasury')} className={`flex-1 py-2 px-3 rounded-xl border-2 text-xs font-bold transition-all ${paymentSource === 'treasury' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-100 dark:border-slate-800'}`}>الخزينة / المحفظة</button>
-                             <button type="button" onClick={() => setPaymentSource('partner')} className={`flex-1 py-2 px-3 rounded-xl border-2 text-xs font-bold transition-all ${paymentSource === 'partner' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-100 dark:border-slate-800'}`}>شريك (من جيبه)</button>
-                          </div>
-                        </div>
-
+                    <form onSubmit={handleAddExpense} className="space-y-4">
                         <div>
                             <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">قيمة المصروف</label>
                             <div className="relative">
@@ -416,48 +342,25 @@ const ExpensesPage: React.FC<ExpensesPageProps> = ({ wallet, setWallet, settings
                                 <DollarSign className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
                             </div>
                         </div>
-
-                        {paymentSource === 'treasury' ? (
-                          <div>
-                              <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">من حساب (الخزينة/المحفظة)</label>
-                              <div className="relative">
-                                  <select 
-                                      required={paymentSource === 'treasury'} 
-                                      value={accountId} 
-                                      onChange={e => setAccountId(e.target.value)} 
-                                      className="w-full pl-4 pr-10 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-bold dark:text-white appearance-none"
-                                  >
-                                      <option value="" disabled>اختر حساب الخزينة</option>
-                                      {treasury?.accounts.map(acc => (
-                                          <option key={acc.id} value={acc.id}>
-                                              {acc.name} - ({acc.balance.toLocaleString()} ج.م)
-                                          </option>
-                                      ))}
-                                  </select>
-                                  <Landmark className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                              </div>
-                          </div>
-                        ) : (
-                          <div>
-                              <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">اختر الشريك</label>
-                              <div className="relative">
-                                  <select 
-                                      required={paymentSource === 'partner'} 
-                                      value={selectedPartnerId} 
-                                      onChange={e => setSelectedPartnerId(e.target.value)} 
-                                      className="w-full pl-4 pr-10 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-bold dark:text-white appearance-none"
-                                  >
-                                      <option value="" disabled>اختر الشريك المسدد</option>
-                                      {(settings.partners || []).map(p => (
-                                          <option key={p.id} value={p.id}>
-                                              {p.name} - (مديونية: {p.balance.toLocaleString()} ج.م)
-                                          </option>
-                                      ))}
-                                  </select>
-                                  <User className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                              </div>
-                          </div>
-                        )}
+                        <div>
+                            <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">من حساب (الخزينة/المحفظة)</label>
+                            <div className="relative">
+                                <select 
+                                    required 
+                                    value={accountId} 
+                                    onChange={e => setAccountId(e.target.value)} 
+                                    className="w-full pl-4 pr-10 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-bold dark:text-white appearance-none"
+                                >
+                                    <option value="" disabled>اختر حساب الخزينة</option>
+                                    {treasury?.accounts.map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.name} - ({acc.balance.toLocaleString()} ج.م)
+                                        </option>
+                                    ))}
+                                </select>
+                                <Landmark className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                            </div>
+                        </div>
                         <div>
                             <label className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-1 block">التصنيف</label>
                             <div className="grid grid-cols-2 gap-2">
