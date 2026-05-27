@@ -3,6 +3,7 @@ import { Search, History, TrendingUp, Coins, ShieldCheck, Banknote, Calendar, Pa
 import { Order, Settings, Store } from '../types';
 import { generateCollectionsReportHTML } from '../utils/reportGenerator';
 import { isBosta, calculateInsuranceFee, calculateBostaVat } from '../utils/financials';
+import { printHTMLDirectly } from '../utils/printHelper';
 
 interface CollectionsReportPageProps {
   orders: Order[];
@@ -132,13 +133,7 @@ const CollectionsReportPage: React.FC<CollectionsReportPageProps> = ({ orders, s
   const handlePrintReport = () => {
     const storeName = activeStore?.name || 'متجري';
     const html = generateCollectionsReportHTML(collectedOrders, settings, storeName);
-    const win = window.open('', '_blank');
-    if (win) {
-        win.document.write(html);
-        win.document.close();
-    } else {
-        alert("يرجى السماح بالنوافذ المنبثقة لطباعة التقرير.");
-    }
+    printHTMLDirectly(html);
   };
 
 

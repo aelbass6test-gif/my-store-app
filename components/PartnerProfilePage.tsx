@@ -46,7 +46,7 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
     return transactions
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
         .map(t => {
-            if (['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type)) {
+            if (['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution', 'expense_coverage'].includes(t.type)) {
                 currentBalance += t.amount;
             } else {
                 currentBalance -= t.amount;
@@ -224,14 +224,16 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex items-center gap-3">
                         <div className={`p-2 rounded-xl flex items-center justify-center ${
-                          ['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type) 
+                          ['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution', 'expense_coverage'].includes(t.type) 
                             ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' 
                             : 'bg-rose-100 dark:bg-rose-900/30 text-rose-600'
                         }`}>
                           {['loan', 'customer_advance'].includes(t.type) ? <ArrowDownRight size={16}/> : 
                            t.type === 'capital_addition' ? <ArrowUpLeft size={16}/> : 
                            t.type === 'shipping_funding' ? <Truck size={16}/> : 
-                           t.type === 'repayment' ? <Check size={16}/> : 
+                           t.type === 'expense_repayment' ? <Check size={16}/> : 
+                           t.type === 'expense_coverage' ? <DollarSign size={16}/> :
+                           t.type === 'repayment' ? <Check size={16}/> :
                            t.type === 'supply_funding' ? <PackageIcon size={16}/> : <DollarSign size={16}/>}
                         </div>
                         <div>
@@ -242,7 +244,9 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
                              t.type === 'shipping_funding' ? 'إيداع مصاريف الشحن' : 
                              t.type === 'profit_withdrawal' ? 'سحب من حصة الأرباح' : 
                              t.type === 'profit_distribution' ? 'إضافة أرباح من المستحقات' : 
-                             t.type === 'supply_funding' ? 'تمويل شراء بضاعة' : 'سداد سلفة مالية'}
+                             t.type === 'supply_funding' ? 'تمويل شراء بضاعة' : 
+                             t.type === 'expense_coverage' ? 'مصروف شخصي مدفوع' :
+                             t.type === 'expense_repayment' ? 'رد مصروفات شخصية' : 'سداد سلفة مالية'}
                           </p>
                           <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 mt-0.5">
                              <Calendar size={10} />
@@ -250,8 +254,8 @@ const PartnerProfilePage: React.FC<PartnerProfilePageProps> = ({ settings, updat
                           </div>
                         </div>
                       </div>
-                      <span className={`text-base font-black ${['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type) ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {['loan', 'profit_withdrawal'].includes(t.type) ? '-' : '+'}{t.amount.toLocaleString()} 
+                      <span className={`text-base font-black ${['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution', 'expense_coverage'].includes(t.type) ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {['loan', 'profit_withdrawal', 'expense_repayment'].includes(t.type) ? '-' : '+'}{t.amount.toLocaleString()} 
                           <span className="text-[10px] ml-1">ج.م</span>
                       </span>
                     </div>
