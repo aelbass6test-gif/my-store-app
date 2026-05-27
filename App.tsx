@@ -269,7 +269,7 @@ export const AppComponent = () => {
     const [theme, setTheme] = useState<string>(localStorage.getItem('theme') || 'system');
     const [showCongratsModal, setShowCongratsModal] = useState<boolean>(false);
     const [welcomeScreenShown, setWelcomeScreenShown] = useState<boolean>(false);
-    const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'local_saved' | 'success' | 'pending' | 'error'>('idle');
     const [saveMessage, setSaveMessage] = useState('');
     
     const [dbSyncMode, setDbSyncModeState] = useState<'manual' | 'auto'>(() => {
@@ -287,6 +287,12 @@ export const AppComponent = () => {
     const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const refreshDebounceTimers = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
     const isRefreshing = useRef(false);
+    
+    // Stable refs for unstable dependencies
+    const refreshStoreDataRef = useRef<any>(null);
+    const refreshGlobalDataRef = useRef<any>(null);
+    const activeStoreRef = useRef<any>(null);
+    const allStoresDataRef = useRef<any>(null);
     
     // 2FA State
     const [userForOtp, setUserForOtp] = useState<User | null>(null);
@@ -308,6 +314,7 @@ export const AppComponent = () => {
 
     // تتبع حالة الحفظ لمنع تداخل التحديثات اللحظية
     const isSavingRef = useRef(false);
+    const isDirtyRef = useRef(false);
     useEffect(() => {
         isSavingRef.current = (saveStatus === 'saving' || saveStatus === 'pending');
     }, [saveStatus]);
@@ -368,6 +375,7 @@ export const AppComponent = () => {
             setSaveMessage('تغييرات غير محفوظة...');
         }
 
+        isDirtyRef.current = true;
         if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
         debounceTimer.current = setTimeout(async () => {
@@ -401,6 +409,7 @@ export const AppComponent = () => {
                         return;
                     }
 
+                    isDirtyRef.current = false;
                     setSaveStatus('success');
                     setSaveMessage('تمت المزامنة بنجاح!');
                     setTimeout(() => {
@@ -769,8 +778,8 @@ export const AppComponent = () => {
     };
 
     const refreshStoreData = (storeId: string): Promise<void> => {
-        if (isSavingRef.current) {
-            console.log(`[REALTIME] Ignoring refresh to prevent flicker during active save.`);
+        if (isSavingRef.current || isDirtyRef.current) {
+            console.log(`[REALTIME] Ignoring refresh to prevent flicker during active save or pending changes.`);
             return Promise.resolve();
         }
 
@@ -809,6 +818,10 @@ export const AppComponent = () => {
     };
 
     const refreshGlobalData = () => {
+        if (isSavingRef.current || isDirtyRef.current) {
+            console.log(`[REALTIME] Ignoring global refresh to prevent flicker during active save or pending changes.`);
+            return;
+        }
         const key = 'global';
         if (refreshDebounceTimers.current[key]) {
             clearTimeout(refreshDebounceTimers.current[key]!);
@@ -838,14 +851,20 @@ export const AppComponent = () => {
 
         console.log('[REALTIME] Setting up Firestore snapshots...');
         
+        // Update refs with current values
+        refreshStoreDataRef.current = refreshStoreData;
+        refreshGlobalDataRef.current = refreshGlobalData;
+        activeStoreRef.current = activeStore;
+        allStoresDataRef.current = allStoresData;
+        
         const unsubscribers: (() => void)[] = [];
 
         if (activeStoreId) {
             // Listen for changes on store configuration
             const unsubStore = onSnapshot(doc(firebaseDb, 'stores_data', activeStoreId), (snap) => {
-                if (snap.exists() && !isSavingRef.current) {
+                if (snap.exists() && !isSavingRef.current && !isDirtyRef.current && !snap.metadata.hasPendingWrites) {
                     console.log('[REALTIME] Store settings change detected via Firestore snapshot');
-                    refreshStoreData(activeStoreId);
+                    refreshStoreDataRef.current(activeStoreId);
                 }
             });
             unsubscribers.push(unsubStore);
@@ -853,9 +872,9 @@ export const AppComponent = () => {
             // Listen for changes on orders
             const qOrders = query(collection(firebaseDb, 'orders'), where('storeId', '==', activeStoreId));
             const unsubOrders = onSnapshot(qOrders, (snap) => {
-                if (!isSavingRef.current) {
+                if (!isSavingRef.current && !isDirtyRef.current && !snap.metadata.hasPendingWrites) {
                     console.log('[REALTIME] Orders change detected via Firestore snapshot');
-                    refreshStoreData(activeStoreId);
+                    refreshStoreDataRef.current(activeStoreId);
                 }
             });
             unsubscribers.push(unsubOrders);
@@ -863,23 +882,25 @@ export const AppComponent = () => {
 
         // Listen for user collections change
         const unsubUsers = onSnapshot(collection(firebaseDb, 'users'), (snap) => {
-            console.log('[REALTIME] Users collection change detected via Firestore snapshot');
-            refreshGlobalData();
+            if (!isSavingRef.current && !isDirtyRef.current && !snap.metadata.hasPendingWrites) {
+                console.log('[REALTIME] Users collection change detected via Firestore snapshot');
+                refreshGlobalDataRef.current();
+            }
         });
         unsubscribers.push(unsubUsers);
 
         // Fallback polling mechanism 
         const pollingInterval = setInterval(() => {
-            if (activeStoreId && !isSavingRef.current) {
-                refreshStoreData(activeStoreId);
+            if (activeStoreId && !isSavingRef.current && !isDirtyRef.current) {
+                refreshStoreDataRef.current(activeStoreId);
             }
         }, 8000); // Poll every 8 seconds
 
         // Background Auto-Sync for Platforms (Wuilt, etc.)
         const autoSyncInterval = setInterval(async () => {
-            if (activeStoreId && !isSavingRef.current && activeStore) {
-                const connectedPlatforms = allStoresData[activeStoreId]?.settings?.connectedPlatforms || [];
-                const platformConfigs = (allStoresData[activeStoreId]?.settings as any)?.platformConfigs || {};
+            if (activeStoreId && !isSavingRef.current && activeStoreRef.current) {
+                const connectedPlatforms = allStoresDataRef.current[activeStoreId]?.settings?.connectedPlatforms || [];
+                const platformConfigs = (allStoresDataRef.current[activeStoreId]?.settings as any)?.platformConfigs || {};
 
                 for (const platformId of connectedPlatforms) {
                     const config = platformConfigs[platformId];
@@ -895,7 +916,7 @@ export const AppComponent = () => {
                             
                             if (response.ok) {
                                 console.log(`[AUTO-SYNC] Successfully synced orders for ${platformId}`);
-                                await refreshStoreData(activeStoreId);
+                                await refreshStoreDataRef.current(activeStoreId);
                             } else {
                                 isRefreshing.current = false;
                             }
@@ -1291,7 +1312,7 @@ export const AppComponent = () => {
 };
 
 export const AppWrapper = () => (
-    <HashRouter>
+    <HashRouter future={{ v7_relativeSplatPath: true }}>
         <AppComponent />
     </HashRouter>
 );
