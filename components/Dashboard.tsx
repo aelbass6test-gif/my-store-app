@@ -434,6 +434,9 @@ const Dashboard = ({ orders, settings, wallet, currentUser, activeStore }: { ord
                 <h4 className="text-4xl font-black text-slate-900 dark:text-white tabular-nums">
                   {(wallet?.transactions || []).reduce((sum, t) => {
                       const amount = Number(t.amount) || 0;
+                      // Exclude partner personal expenses
+                      if (t.details?.paidByPartnerId) return sum;
+
                       if (t.type === 'إيداع') return t.status === 'completed' ? sum + amount : sum;
                       if (t.type === 'سحب') return t.status === 'cancelled' ? sum : sum - amount;
                       return sum;
