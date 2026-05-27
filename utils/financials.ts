@@ -46,19 +46,17 @@ export const calculateInsuranceFee = (order: Order, insuranceRate: number, setti
     const defaultBasis = isCompanyBosta ? 'cost' : 'total';
     const basis = useCustom ? (compFees?.insuranceBasis ?? defaultBasis) : (settings?.insuranceBasis ?? defaultBasis);
     
-    let result = 0;
     if (basis === 'cost') {
         const productCost = getOrderProductCost(order);
-        result = (productCost * insuranceRate) / 100;
+        return (productCost * insuranceRate) / 100;
     } else if (basis === 'price') {
-        result = (order.productPrice * insuranceRate) / 100;
+        return (order.productPrice * insuranceRate) / 100;
     } else if (basis === 'base') {
         const basePrice = getOrderBasePrice(order, settings);
-        result = (basePrice * insuranceRate) / 100;
+        return (basePrice * insuranceRate) / 100;
     } else {
-        result = ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
+        return ((order.productPrice + order.shippingFee) * insuranceRate) / 100;
     }
-    return Math.round(result * 100) / 100;
 };
 
 export const calculateBostaVat = (order: Order, insuranceFee: number, settings?: Settings): number => {
@@ -69,8 +67,7 @@ export const calculateBostaVat = (order: Order, insuranceFee: number, settings?:
     const defaultVatRate = isCompanyBosta ? 0.14 : 0;
     const vatRate = useCustom ? (compFees?.shippingVatRate ?? defaultVatRate) : (settings?.shippingVatRate ?? defaultVatRate);
     
-    const result = (order.shippingFee + insuranceFee) * vatRate;
-    return Math.round(result * 100) / 100;
+    return (order.shippingFee + insuranceFee) * vatRate;
 };
 
 export const calculateCodFee = (order: Order, settings: Settings): number => {
@@ -88,8 +85,7 @@ export const calculateCodFee = (order: Order, settings: Settings): number => {
     if (totalAmount <= threshold) return 0;
     const taxableAmount = totalAmount - threshold;
     const fee = taxableAmount * rate;
-    const result = fee * (1 + tax);
-    return Math.round(result * 100) / 100;
+    return fee * (1 + tax);
 };
 
 export const getLatestProductCost = (productId: string, settings: Settings): number => {
@@ -172,9 +168,5 @@ export const calculateOrderProfitLoss = (order: Order, settings: Settings): { pr
     loss = (insuranceFee + order.shippingFee + effectiveInspectionCost + returnFeeAmount + codFee + bostaVat - inspectionFeeCollected);
   }
   
-  const finalProfit = Math.round(profit * 100) / 100;
-  const finalLoss = Math.round(loss * 100) / 100;
-  const finalNet = Math.round((finalProfit - finalLoss) * 100) / 100;
-  
-  return { profit: finalProfit, loss: finalLoss, net: finalNet };
+  return { profit, loss, net: profit - loss };
 }

@@ -26,9 +26,7 @@
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#1e293b" />
     
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Readex+Pro:wght@300;400;600;700&family=Tajawal:wght@300;400;700&display=swap" rel="stylesheet" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Readex+Pro:wght@300;400;600;700&family=Tajawal:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
       html {
         scroll-behavior: smooth;
@@ -65,7 +63,37 @@
         to { transform: rotate(360deg); }
       }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1?dev",
+    "react/": "https://esm.sh/react@18.3.1/",
+    "react-dom": "https://esm.sh/react-dom@18.3.1?dev",
+    "react-dom/": "https://esm.sh/react-dom@18.3.1/",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?dev",
+    "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime?dev",
+    "lucide-react": "https://esm.sh/lucide-react@0.563.0?dev&deps=react@18.3.1",
+    "recharts": "https://esm.sh/recharts@2.12.7?dev&deps=react@18.3.1",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.24.1?dev&deps=react@18.3.1",
+    "@google/genai": "https://esm.sh/@google/genai@0.15.0",
+    "framer-motion": "https://esm.sh/framer-motion@11.3.8?dev&deps=react@18.3.1",
+    "rxjs": "https://esm.sh/rxjs@7.8.2?conditions=es2015",
+    "rxjs/operators": "https://esm.sh/rxjs@7.8.2/operators?conditions=es2015",
+    "rxjs/ajax": "https://esm.sh/rxjs@7.8.2/ajax?conditions=es2015",
+    "rxjs/webSocket": "https://esm.sh/rxjs@7.8.2/webSocket?conditions=es2015",
+    "rxjs/testing": "https://esm.sh/rxjs@7.8.2/testing?conditions=es2015",
+    "rxjs/fetch": "https://esm.sh/rxjs@7.8.2/fetch?conditions=es2015",
+    "vite": "https://esm.sh/vite@6.2.0?external=rxjs",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@5.0.0?external=rxjs",
+    "url": "https://esm.sh/url@0.11.4?external=rxjs",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.4",
+    "vite-plugin-singlefile": "https://esm.sh/vite-plugin-singlefile@2.0.1?external=rxjs",
+    "web-vitals": "https://esm.sh/web-vitals@4.2.1"
+  }
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
+<!-- <link rel="stylesheet" href="/index.css"> -->
 </head>
   <body>
     <div id="root"></div>

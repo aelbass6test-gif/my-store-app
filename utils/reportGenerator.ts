@@ -1,17 +1,13 @@
 import { Order, Settings, Wallet, OrderItem } from '../types';
 
-const getPrintControlBarCSS = () => ``;
-
-const getPrintControlBarHTML = (reportTitle: string) => ``;
-
-export const generatePurchasesAndInventoryReportHTML = (stats: any, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false, dateRangeText?: string): string => {
+export const generatePurchasesAndInventoryReportHTML = (stats: any, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false): string => {
     return `
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
     <head>
       <meta charset="UTF-8">
       <title>تقرير المشتريات والمخزون - ${storeName}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet" crossorigin="anonymous">
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
       <style>
         @page { 
           size: ${orientation === 'landscape' ? 'A4 landscape' : 'A4 portrait'}; 
@@ -97,21 +93,16 @@ export const generatePurchasesAndInventoryReportHTML = (stats: any, storeName: s
         .pill.neutral { background-color: #f1f5f9; color: #475569; }
         
         .font-mono { font-family: monospace; font-size: 11.5px; }
-        ${getPrintControlBarCSS()}
       </style>
     </head>
     <body>
-      ${getPrintControlBarHTML('المشتريات والمخزون')}
       <div class="report-wrapper">
       <div class="report-container">
           <div class="report-header">
             <div class="header-titles">
               <h1>${storeName}</h1>
               <p class="subtitle">تقرير المشتريات والمخزون</p>
-              <p class="date">
-                ${dateRangeText ? `<strong style="color: #2563eb;">الفترة: ${dateRangeText}</strong><br/>` : ''}
-                تاريخ الاستخراج: ${new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-              </p>
+              <p class="date">${new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
             </div>
             <div>
                <div class="profit-card">
@@ -227,7 +218,7 @@ export const generateInvoiceHTML = (order: Order, settings: Settings, storeName:
     <head>
       <meta charset="UTF-8">
       <title>فاتورة رقم ${order.orderNumber}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
       <style>
         body { font-family: 'Cairo', sans-serif; margin: 0; padding: 20px; color: #333; }
         .invoice-container { max-width: 800px; margin: auto; border: 1px solid #ddd; padding: 30px; border-radius: 10px; }
@@ -336,7 +327,7 @@ export const generateInvoiceHTML = (order: Order, settings: Settings, storeName:
   `;
 };
 
-export const generateOrdersReportHTML = (orders: Order[], settings: Settings, storeName: string, dateRangeText?: string): string => {
+export const generateOrdersReportHTML = (orders: Order[], settings: Settings, storeName: string): string => {
   
   const tableRows = orders.map(order => {
     const amountToCollect = order.totalAmountOverride ?? (order.productPrice + order.shippingFee - (order.discount || 0));
@@ -379,7 +370,7 @@ export const generateOrdersReportHTML = (orders: Order[], settings: Settings, st
     <head>
       <meta charset="UTF-8">
       <title>تقرير الطلبات - ${storeName}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
       <style>
         @page { size: A4 landscape; margin: 1cm; }
         body { font-family: 'Cairo', sans-serif; font-size: 9px; -webkit-print-color-adjust: exact; color-adjust: exact; }
@@ -390,17 +381,12 @@ export const generateOrdersReportHTML = (orders: Order[], settings: Settings, st
         th, td { padding: 6px; border: 1px solid #ddd; text-align: right; }
         th { background-color: #1f2937 !important; color: white !important; font-size: 10px; }
         tbody tr:nth-child(even) { background-color: #f9fafb !important; }
-        ${getPrintControlBarCSS()}
       </style>
     </head>
     <body>
-      ${getPrintControlBarHTML('تقرير الطلبات والمبيعات')}
       <div class="report-container">
         <h1>تقرير الطلبات لمتجر "${storeName}"</h1>
-        <p>
-          ${dateRangeText ? `<strong style="color: #2563eb;">الفترة: ${dateRangeText}</strong><br/>` : ''}
-          تاريخ التقرير: ${new Date().toLocaleString('ar-EG')}
-        </p>
+        <p>تاريخ التقرير: ${new Date().toLocaleString('ar-EG')}</p>
         <table>
           <thead>
             <tr>
@@ -429,7 +415,7 @@ export const generateOrdersReportHTML = (orders: Order[], settings: Settings, st
   `;
 };
 
-export const generateCollectionsReportHTML = (orders: Order[], settings: Settings, storeName: string, dateRangeText?: string): string => {
+export const generateCollectionsReportHTML = (orders: Order[], settings: Settings, storeName:string): string => {
     let totalGross = 0;
     let totalNetProfit = 0;
 
@@ -467,7 +453,7 @@ export const generateCollectionsReportHTML = (orders: Order[], settings: Setting
     <head>
       <meta charset="UTF-8">
       <title>تقرير التحصيلات - ${storeName}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
       <style>
         @page { size: A4; margin: 1cm; }
         body { font-family: 'Cairo', sans-serif; font-size: 10px; color: #333; }
@@ -482,18 +468,12 @@ export const generateCollectionsReportHTML = (orders: Order[], settings: Setting
         th, td { padding: 8px; border: 1px solid #ddd; text-align: right; }
         th { background-color: #f3f4f6; font-weight: bold; font-size: 11px; }
         tbody tr:nth-child(even) { background-color: #f9fafb; }
-        ${getPrintControlBarCSS()}
       </style>
     </head>
     <body>
-      ${getPrintControlBarHTML('تقرير التحصيلات والأمان')}
       <div class="report-container">
         <h1>تقرير التحصيلات المفصّل</h1>
-        <p class="subtitle">
-          متجر "${storeName}"
-          ${dateRangeText ? `<br/><strong style="color: #2563eb;">الفترة: ${dateRangeText}</strong>` : ''}
-          <br/>تاريخ التقرير: ${new Date().toLocaleString('ar-EG')}
-        </p>
+        <p class="subtitle">متجر "${storeName}" - تاريخ التقرير: ${new Date().toLocaleString('ar-EG')}</p>
 
         <div class="summary-grid">
             <div class="stat-box">
@@ -534,7 +514,7 @@ export const generateCollectionsReportHTML = (orders: Order[], settings: Setting
     `;
 };
 
-export const generatePartnersFinancialReportHTML = (stats: any, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false, dateRangeText?: string): string => {
+export const generatePartnersFinancialReportHTML = (stats: any, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false): string => {
     const { allTimeNetProfit, undistributedProfit, distributedProfit, totals, partnerDetails } = stats;
 
     return `
@@ -543,7 +523,7 @@ export const generatePartnersFinancialReportHTML = (stats: any, storeName: strin
     <head>
       <meta charset="UTF-8">
       <title>تقرير الشركاء والمركز المالي - ${storeName}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet" crossorigin="anonymous">
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
       <style>
         @page { 
           size: ${orientation === 'landscape' ? 'A4 landscape' : 'A4 portrait'}; 
@@ -632,21 +612,16 @@ export const generatePartnersFinancialReportHTML = (stats: any, storeName: strin
         .pill.blue { background-color: #dbeafe; color: #2563eb; }
         
         .font-mono { font-family: monospace; font-size: 13px; }
-        ${getPrintControlBarCSS()}
       </style>
     </head>
     <body>
-      ${getPrintControlBarHTML('تقرير الشركاء والمركز المالي')}
       <div class="report-wrapper">
       <div class="report-container">
           <div class="report-header">
             <div class="header-titles">
               <h1>${storeName}</h1>
               <p class="subtitle">تقرير الشركاء والمركز المالي</p>
-              <p class="date">
-                ${dateRangeText ? `<strong style="color: #4f46e5;">الفترة: ${dateRangeText}</strong><br/>` : ''}
-                تاريخ الاستخراج: ${new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-              </p>
+              <p class="date">${new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
             </div>
             <div>
                <div class="profit-card">
@@ -716,7 +691,7 @@ export const generatePartnersFinancialReportHTML = (stats: any, storeName: strin
     `;
 };
 
-export const generateLossesReportHTML = (orders: Order[], settings: Settings, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false, dateRangeText?: string): string => {
+export const generateLossesReportHTML = (orders: Order[], settings: Settings, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false): string => {
     let totalLoss = 0;
     let totalProductPrice = 0;
     let totalShippingFee = 0;
@@ -771,7 +746,7 @@ export const generateLossesReportHTML = (orders: Order[], settings: Settings, st
     <head>
       <meta charset="UTF-8">
       <title>تقرير الخسائر - ${storeName}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
       <style>
         @page { size: A4 ${orientation}; margin: ${isContinuous ? '0' : '1cm'}; }
         body { font-family: 'Cairo', sans-serif; font-size: 9px; color: #333; margin: 0; padding: 0; background: white; }
@@ -811,18 +786,12 @@ export const generateLossesReportHTML = (orders: Order[], settings: Settings, st
           .stat-box p { font-size: 16px; }
           h1 { font-size: 18px; }
         ` : ''}
-        ${getPrintControlBarCSS()}
       </style>
     </head>
     <body>
-      ${getPrintControlBarHTML('تقرير مسببات الخسائر المرتجعة')}
       <div class="report-container">
         <h1>تقرير الخسائر المفصّل</h1>
-        <p class="subtitle">
-          متجر "${storeName}"
-          ${dateRangeText ? `<br/><strong style="color: #b91c1c;">الفترة: ${dateRangeText}</strong>` : ''}
-          <br/><span style="font-size: 10px; color: #94a3b8;">تاريخ الاستخراج: ${new Date().toLocaleString('ar-EG')}</span>
-        </p>
+        <p class="subtitle">متجر "${storeName}" - تاريخ التقرير: ${new Date().toLocaleString('ar-EG')}</p>
 
         <div class="summary-grid">
             <div class="stat-box">
@@ -879,6 +848,7 @@ export const generateLossesReportHTML = (orders: Order[], settings: Settings, st
               
               const height = container.scrollHeight;
               
+              // More accurate mm calculation
               const div = document.createElement('div');
               div.style.height = '100mm';
               div.style.position = 'absolute';
@@ -887,19 +857,17 @@ export const generateLossesReportHTML = (orders: Order[], settings: Settings, st
               const mmInPx = div.offsetHeight / 100;
               document.body.removeChild(div);
               
-              const heightMm = Math.ceil(height / mmInPx) + 35; 
+              const heightMm = Math.ceil(height / mmInPx) + 20;
               const pageWidth = "${orientation}" === "landscape" ? "297mm" : "210mm";
               
               const style = document.createElement('style');
               style.innerHTML = "@page { size: " + pageWidth + " " + heightMm + "mm !important; margin: 0 !important; } " +
-                                "body, html { margin: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; min-height: 0 !important; } " +
+                                "body, html { margin: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; } " +
                                 ".report-container { margin: 0 !important; padding: 40px !important; border: none !important; box-shadow: none !important; width: 100% !important; max-width: none !important; } " +
-                                "* { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; break-inside: avoid-page !important; } " +
-                                "table, tr, td, th { break-inside: auto !important; } " +
-                                ".no-break { break-inside: avoid !important; }";
+                                "* { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }";
               document.head.appendChild(style);
               
-              setTimeout(() => { window.print(); }, 1200);
+              setTimeout(() => { window.print(); }, 500);
             }, 500);
           } else {
             setTimeout(() => { window.print(); }, 800);
@@ -911,7 +879,7 @@ export const generateLossesReportHTML = (orders: Order[], settings: Settings, st
     `;
 };
 
-export const generateComprehensiveFinancialReportHTML = (orders: Order[], settings: Settings, wallet: Wallet, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false, dateRangeText?: string): string => {
+export const generateComprehensiveFinancialReportHTML = (orders: Order[], settings: Settings, wallet: Wallet, storeName: string, orientation: 'portrait' | 'landscape' = 'landscape', isContinuous: boolean = false): string => {
     const collectedOrders = (orders || []).filter(o => o.status === 'تم_التحصيل' || o.status === 'مدفوعة');
     const failedOrders = (orders || []).filter(o => ['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي', 'تمت_الاعادة_لشركة_الشحن'].includes(o.status));
     const notCollectedOrders = (orders || []).filter(o => o.status === 'تم_توصيلها' && !o.collectionProcessed);
@@ -1221,7 +1189,7 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
     <head>
       <meta charset="UTF-8">
       <title>ملخص شامل لأداء متجرك والمركز المالي للشركاء - ${storeName}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet" crossorigin="anonymous">
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
       <style>
         @page { 
           size: A4 ${orientation}; 
@@ -1514,18 +1482,15 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
         }
 
         tfoot { display: table-row-group; }
-        ${getPrintControlBarCSS()}
       </style>
     </head>
     <body>
-      ${getPrintControlBarHTML('ملخص الأداء والمركز المالي')}
       <div class="watermark">${storeName}</div>
       <div class="report-container">
         <div class="report-header">
           <div class="store-info">
             <h1>${storeName}</h1>
             <p>ملخص شامل لأداء متجرك والمركز المالي للشركاء</p>
-            ${dateRangeText ? `<p style="color: #1e3a8a; font-weight: bold; margin: 4px 0;">الفترة: ${dateRangeText}</p>` : ''}
             <p>${new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           </div>
           <div class="report-meta">
@@ -1862,6 +1827,7 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
               
               const height = container.scrollHeight;
               
+              // More accurate mm calculation
               const div = document.createElement('div');
               div.style.height = '100mm';
               div.style.position = 'absolute';
@@ -1870,19 +1836,17 @@ export const generateComprehensiveFinancialReportHTML = (orders: Order[], settin
               const mmInPx = div.offsetHeight / 100;
               document.body.removeChild(div);
               
-              const heightMm = Math.ceil(height / mmInPx) + 35; 
+              const heightMm = Math.ceil(height / mmInPx) + 20;
               const pageWidth = "${orientation}" === "landscape" ? "297mm" : "210mm";
               
               const style = document.createElement('style');
               style.innerHTML = "@page { size: " + pageWidth + " " + heightMm + "mm !important; margin: 0 !important; } " +
-                                "body, html { margin: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; min-height: 0 !important; } " +
+                                "body, html { margin: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; } " +
                                 ".report-container { margin: 0 !important; padding: 40px !important; border: none !important; box-shadow: none !important; width: 100% !important; max-width: none !important; } " +
-                                "* { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; break-inside: avoid-page !important; } " +
-                                "table, tr, td, th { break-inside: auto !important; } " +
-                                ".no-break { break-inside: avoid !important; }";
+                                "* { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }";
               document.head.appendChild(style);
               
-              setTimeout(() => { window.print(); }, 1200);
+              setTimeout(() => { window.print(); }, 500);
             }, 500);
           } else {
             setTimeout(() => { window.print(); }, 800);

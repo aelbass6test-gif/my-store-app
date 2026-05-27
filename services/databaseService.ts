@@ -240,15 +240,13 @@ export const getStoreData = async (storeId: string, forceRemote: boolean = false
         };
 
         const [
-            products, orders, transactions, treasuryAccounts, treasuryTransactions, suppliers, supplyOrders, reviews, abandonedCarts, 
+            products, orders, transactions, suppliers, supplyOrders, reviews, abandonedCarts, 
             activityLogs, employees, discountCodes, collectionsList, customPages, 
             paymentMethods, customers, globalOptions, shippingIntegrations
         ] = await Promise.all([
             fetchCollection<Product>('products'),
             fetchCollection<Order>('orders'),
             fetchCollection<Transaction>('transactions'),
-            fetchCollection<TreasuryAccount>('treasury_accounts'),
-            fetchCollection<TreasuryTransaction>('treasury_transactions'),
             fetchCollection<Supplier>('suppliers'),
             fetchCollection<SupplyOrder>('supply_orders'),
             fetchCollection<Review>('reviews'),
@@ -275,7 +273,6 @@ export const getStoreData = async (storeId: string, forceRemote: boolean = false
         const walletSettingsObj = storeSettings.wallet_settings;
         const withdrawRequestsArr = storeSettings.withdraw_requests || [];
         const supplyBalanceNum = storeSettings.supply_balance || 0;
-        const mainBalanceNum = storeSettings.wallet_balance || 0;
 
         const fullData: StoreData = {
             settings: {
@@ -297,15 +294,11 @@ export const getStoreData = async (storeId: string, forceRemote: boolean = false
             },
             orders: orders,
             wallet: { 
-                balance: mainBalanceNum,
+                balance: 0,
                 supplyBalance: supplyBalanceNum,
                 transactions: transactions,
                 settings: walletSettingsObj,
                 withdrawRequests: withdrawRequestsArr
-            },
-            treasury: {
-                accounts: treasuryAccounts,
-                transactions: treasuryTransactions
             },
             cart: [],
             customers: customers
@@ -330,14 +323,13 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             ...cleanSettings 
         } = data.settings;
         
-        const { orders = [], wallet = { balance: 0, transactions: [] }, treasury = { accounts: [], transactions: [] }, customers = [] } = data;
+        const { orders = [], wallet = { balance: 0, transactions: [] }, customers = [] } = data;
 
         const cleanSettingsFinal = cleanUndefined({
             ...cleanSettings,
             wallet_settings: wallet.settings || null,
             withdraw_requests: wallet.withdrawRequests || [],
-            supply_balance: wallet.supplyBalance || 0,
-            wallet_balance: wallet.balance || 0
+            supply_balance: wallet.supplyBalance || 0
         });
 
         const syncCollection = async (collectionName: string, stateItems: any[], idField = 'id') => {
@@ -348,7 +340,7 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
                 }
                 
                 const existingDbDocs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                const stateIds = new Set(stateItems.map(item => String(item[idField] || `${store.id}_${item.phone || item.id}`)));
+                const stateIds = new Set(stateItems.map(item => String(item[idField] || `${store.id}_${item.phone}`)));
 
                 const deletePromises = snap.docs
                     .filter(doc => !stateIds.has(doc.id))
@@ -357,7 +349,7 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
                 await Promise.all(deletePromises);
 
                 const upsertPromises = stateItems.map(async (item) => {
-                    const docId = String(item[idField] || `${store.id}_${item.phone || item.id}`);
+                    const docId = String(item[idField] || `${store.id}_${item.phone}`);
                     const docRef = doc(firebaseDb, collectionName, docId);
                     const payload = cleanUndefined({ ...item, storeId: store.id, store_id: store.id });
                     await setDoc(docRef, payload, { merge: true }).catch(err => {
@@ -375,8 +367,6 @@ export const saveStoreData = async (store: Store, data: StoreData): Promise<{ su
             syncCollection('products', products),
             syncCollection('orders', orders),
             syncCollection('transactions', wallet.transactions),
-            syncCollection('treasury_accounts', treasury.accounts),
-            syncCollection('treasury_transactions', treasury.transactions),
             syncCollection('suppliers', suppliers),
             syncCollection('supply_orders', supplyOrders),
             syncCollection('reviews', reviews),

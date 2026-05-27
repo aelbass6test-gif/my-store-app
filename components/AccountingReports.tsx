@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { Order, Settings, Wallet, Store, OrderStatus, TransactionCategory } from '../types';
+import { Order, Settings, Wallet, Store, OrderStatus } from '../types';
 import { getLatestProductCost } from '../utils/financials';
 import { 
   BarChart, Wallet as WalletIcon, TrendingUp, Users, Truck, FileText, 
   ArrowDown, ArrowUp, DollarSign, Package, Download, Eye, X, Loader2, Printer, 
   PieChart, Calendar, Percent, Sparkles, TrendingDown, Layers, CheckCircle2, AlertCircle, ShoppingBag
 } from 'lucide-react';
-import * as htmlToImage from 'html-to-image';
-import { jsPDF } from 'jspdf';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 
 interface Props {
   orders: Order[];
@@ -60,8 +60,6 @@ export const AccountingReports: React.FC<Props> = ({ orders, settings, wallet, a
     const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'last_month' | 'custom'>('all');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
-    const [isExporting, setIsExporting] = useState(false);
-    const reportRef = React.useRef<HTMLDivElement>(null);
 
     // Dynamically filter both orders and wallet transactions for a unified database query simulation
     const filteredOrders = useMemo(() => {
@@ -76,33 +74,8 @@ export const AccountingReports: React.FC<Props> = ({ orders, settings, wallet, a
         };
     }, [wallet, timeFilter, startDate, endDate]);
 
-    const handleExportPDF = async () => {
-        if (!reportRef.current) return;
-        setIsExporting(true);
-        try {
-            const dataUrl = await htmlToImage.toPng(reportRef.current, { backgroundColor: '#ffffff' });
-            const pdf = new jsPDF('landscape', 'mm', 'a4');
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-            
-            const imgProps = pdf.getImageProperties(dataUrl);
-            const imgWidth = pdfWidth;
-            const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-
-            let position = 0;
-            pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
-            
-            pdf.save(`التقرير_المالي_${new Date().toISOString().split('T')[0]}.pdf`);
-        } catch (error) {
-            console.error('PDF generation failed:', error);
-            alert('حدث خطأ أثناء تصدير PDF');
-        } finally {
-            setIsExporting(false);
-        }
-    };
-
     return (
-        <div ref={reportRef} className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-0 overflow-hidden animate-in fade-in-5 duration-300">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-0 overflow-hidden animate-in fade-in-5 duration-300">
             {/* Header */}
             <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/30">
                 <div className="flex items-center gap-3">
@@ -117,18 +90,10 @@ export const AccountingReports: React.FC<Props> = ({ orders, settings, wallet, a
                 
                 <div className="flex flex-wrap items-center gap-2">
                     <button 
-                        onClick={handleExportPDF}
-                        disabled={isExporting}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white border border-transparent rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
-                    >
-                        {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} 
-                        {isExporting ? 'تصدير...' : 'تصدير PDF'}
-                    </button>
-                    <button 
                         onClick={() => window.print()}
                         className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-705 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-55 transition-colors shadow-sm"
                     >
-                        <Printer size={16} /> معاينة الطباعة
+                        <Printer size={16} /> طباعة القوائم
                     </button>
                 </div>
             </div>
@@ -187,7 +152,7 @@ export const AccountingReports: React.FC<Props> = ({ orders, settings, wallet, a
                 {subTab === 'receivables' && <ReceivablesAging orders={filteredOrders} />}
                 {subTab === 'wallet' && <WalletLedger wallet={filteredWallet} />}
                 {subTab === 'product_profitability' && <ProductProfitability orders={filteredOrders} settings={settings} />}
-                {subTab === 'partner_equity' && <PartnerEquity settings={settings} wallet={wallet} setSettings={setSettings} setWallet={setWallet} orders={orders} />}
+                {subTab === 'partner_equity' && <PartnerEquity settings={settings} wallet={wallet} setSettings={setSettings} orders={orders} />}
                 {subTab === 'marketing_roi' && <MarketingROI orders={filteredOrders} wallet={filteredWallet} />}
                 {subTab === 'inventory_velocity' && <InventoryVelocity orders={filteredOrders} settings={settings} />}
             </div>
@@ -823,12 +788,10 @@ const WalletLedger = ({ wallet }: { wallet: Wallet }) => {
 };
 
 // 8. Partner Equity Component (with beautiful, secure profit allocation trigger)
-const PartnerEquity = ({ settings, wallet, setSettings, setWallet, orders }: { settings: Settings, wallet: Wallet, setSettings?: React.Dispatch<React.SetStateAction<Settings>>, setWallet?: React.Dispatch<React.SetStateAction<Wallet>>, orders: Order[] }) => {
+const PartnerEquity = ({ settings, wallet, setSettings, orders }: { settings: Settings, wallet: Wallet, setSettings?: React.Dispatch<React.SetStateAction<Settings>>, orders: Order[] }) => {
     const [fundingAmount, setFundingAmount] = useState('');
     const [fundingPartnerId, setFundingPartnerId] = useState('');
-    const [fundingType, setFundingType] = useState<'loan' | 'capital_addition' | 'profit_withdrawal' | 'repayment' | 'supply_funding' | 'profit_distribution' | 'shipping_funding' | 'customer_advance'>('capital_addition');
-    const [fundingDate, setFundingDate] = useState(new Date().toISOString().split('T')[0]);
-    const [fundingNote, setFundingNote] = useState('');
+    const [fundingType, setFundingType] = useState<'capital_addition' | 'loan'>('capital_addition');
     
     // Custom Confirmation Dialog states to strictly avoid window.alerts or iframe restrictions
     const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string; payload?: any } | null>(null);
@@ -851,7 +814,6 @@ const PartnerEquity = ({ settings, wallet, setSettings, setWallet, orders }: { s
             drawings: number;
             repayments: number;
             distributions: number;
-            advances: number;
             currentBalance: number;
         }> = {};
 
@@ -864,7 +826,6 @@ const PartnerEquity = ({ settings, wallet, setSettings, setWallet, orders }: { s
                  drawings: 0,
                  repayments: 0,
                  distributions: 0,
-                 advances: 0,
                  currentBalance: p.balance
              };
         });
@@ -879,8 +840,6 @@ const PartnerEquity = ({ settings, wallet, setSettings, setWallet, orders }: { s
                     perPartner[t.partnerId].repayments += t.amount;
                 } else if (t.type === 'profit_distribution') {
                     perPartner[t.partnerId].distributions += t.amount;
-                } else if (t.type === 'customer_advance') {
-                    perPartner[t.partnerId].advances += t.amount;
                 }
             }
         });
@@ -999,48 +958,20 @@ const PartnerEquity = ({ settings, wallet, setSettings, setWallet, orders }: { s
         const partner = (settings.partners || []).find(p => p.id === fundingPartnerId);
         if (!partner) return;
 
-        let noteText = fundingNote.trim();
-        if (!noteText) {
-            if (fundingType === 'capital_addition') {
-                noteText = `إضافة رأس مال وتمويل نقدي من الشريك ${partner.name}`;
-            } else if (fundingType === 'profit_withdrawal') {
-                noteText = `مسحوبات شخصية من الأرباح المستحقة للشريك ${partner.name}`;
-            } else if (fundingType === 'loan') {
-                noteText = `سحب سلفة شريك من الخزينة للشريك ${partner.name}`;
-            } else if (fundingType === 'repayment') {
-                noteText = `سداد قيمة سلفة / مديونية من الشريك ${partner.name} للخزينة`;
-            } else if (fundingType === 'profit_distribution') {
-                noteText = `توزيع أرباح يدوية للشريك ${partner.name}`;
-            } else if (fundingType === 'customer_advance') {
-                noteText = `استلام عربون عهدة مبيعات في حوزة الشريك ${partner.name}`;
-            } else {
-                noteText = `قيد معالجة مالية للشريك ${partner.name}`;
-            }
-        }
-
-        const dateISO = fundingDate ? new Date(fundingDate).toISOString() : new Date().toISOString();
-
         const tx = {
             id: `fund_${Date.now()}`,
             partnerId: fundingPartnerId,
             type: fundingType,
             amount: amt,
-            date: dateISO,
-            note: noteText
+            date: new Date().toISOString(),
+            note: fundingType === 'capital_addition' ? 'إضافة رأس مال وتمويل نقدي من الشريك' : 'سلفة شريك من الخزينة'
         };
-
-        let balanceImpact = 0;
-        if (fundingType === 'capital_addition' || fundingType === 'profit_distribution' || fundingType === 'repayment') {
-            balanceImpact = amt;
-        } else if (fundingType === 'profit_withdrawal' || fundingType === 'loan' || fundingType === 'customer_advance') {
-            balanceImpact = -amt;
-        }
 
         const updatedPartners = (settings.partners || []).map(p => {
             if (p.id === fundingPartnerId) {
                 return {
                     ...p,
-                    balance: (p.balance || 0) + balanceImpact
+                    balance: fundingType === 'capital_addition' ? (p.balance || 0) + amt : (p.balance || 0) - amt
                 };
             }
             return p;
@@ -1052,32 +983,8 @@ const PartnerEquity = ({ settings, wallet, setSettings, setWallet, orders }: { s
             partnerTransactions: [...(settings.partnerTransactions || []), tx]
         });
 
-        if (setWallet && fundingType !== 'profit_distribution') {
-            const walletTxType = (fundingType === 'capital_addition' || fundingType === 'repayment' || fundingType === 'customer_advance') ? 'إيداع' : 'سحب';
-            const newWalletTx = {
-                id: `p_tx_${Date.now()}`,
-                type: walletTxType as 'إيداع' | 'سحب',
-                amount: amt,
-                date: dateISO,
-                note: `[معاملة شريك - ${partner.name}] ${noteText}`,
-                category: fundingType as TransactionCategory,
-                status: 'completed' as const
-            };
-
-            setWallet(prevWallet => {
-                const currentBalance = prevWallet.balance || 0;
-                const newBalance = walletTxType === 'إيداع' ? currentBalance + amt : currentBalance - amt;
-                return {
-                    ...prevWallet,
-                    balance: newBalance,
-                    transactions: [newWalletTx, ...(prevWallet.transactions || [])]
-                };
-            });
-        }
-
         setFundingAmount('');
-        setFundingNote('');
-        showToast('تم تسجيل تمويل الشريك بنجاح وتسجيل عملية القيد المالي والربط بالخزينة');
+        showToast('تم تسجيل تمويل الشريك بنجاح وتسجيل عملية القيد');
     };
 
     return (
@@ -1138,20 +1045,16 @@ const PartnerEquity = ({ settings, wallet, setSettings, setWallet, orders }: { s
                                     <span className="font-bold text-emerald-600">{p.capital.toLocaleString('ar-EG')} ج.م</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500 font-medium">تمويلات الأرباح الموزعة (+)</span>
+                                    <span className="text-slate-500">تمويلات الأرباح الموزعة (+)</span >
                                     <span className="font-bold text-blue-600">{p.distributions.toLocaleString('ar-EG')} ج.م</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500">المسحوبات الشخصية والسلف (-)</span>
+                                    <span className="text-slate-500">المسحوبات الشخصية والسلف (-)</span >
                                     <span className="font-bold text-red-600">{p.drawings.toLocaleString('ar-EG')} ج.م</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-teal-600 font-medium font-bold">العربونات المستلمة عهدة (-)</span>
-                                    <span className="font-bold text-teal-600">{(p.advances || 0).toLocaleString('ar-EG')} ج.م</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500 font-medium">السدادات للمديونية (+)</span>
-                                    <span className="font-bold text-amber-600">{p.repayments.toLocaleString('ar-EG')} ج.م</span>
+                                    <span className="text-slate-550">السدادات للمديونية (+)</span >
+                                    <span className="font-bold text-amber-600">{p.repayments.toLocaleString('ar-EG')} ج.m</span>
                                 </div>
                             </div>
 
@@ -1168,83 +1071,51 @@ const PartnerEquity = ({ settings, wallet, setSettings, setWallet, orders }: { s
 
              {/* Simple integrated Quick Transaction form for accounting operations */}
              {setSettings && (
-                 <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-3xl mx-auto shadow-sm">
+                 <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-2xl mx-auto shadow-sm">
                      <h4 className="font-bold text-sm text-slate-850 dark:text-slate-200 mb-4 flex items-center gap-2">
-                         <Layers size={16} className="text-purple-600" /> نموذج قيد وتسجيل تمويل الشركاء والمسحوبات
+                         <Layers size={16} className="text-purple-600" /> نموذج قيد وتسجيل تمويل الشركاء
                      </h4>
-                     <form onSubmit={handleAddFunding} className="space-y-4">
-                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                             <div>
-                                 <label className="block text-xs text-slate-400 font-bold mb-1.5">اختر الشريك</label>
-                                 <select
-                                     value={fundingPartnerId}
-                                     onChange={(e) => setFundingPartnerId(e.target.value)}
-                                     className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2.5 px-3 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-purple-500 transition-all text-slate-700 dark:text-slate-200"
-                                     required
-                                 >
-                                     <option value="">-- اختر شريكاً --</option>
-                                     {(settings.partners || []).map(p => (
-                                         <option key={p.id} value={p.id}>{p.name}</option>
-                                     ))}
-                                 </select>
-                             </div>
-                             <div>
-                                 <label className="block text-xs text-slate-400 font-bold mb-1.5">نوع التمويل / القيد</label>
-                                 <select
-                                     value={fundingType}
-                                     onChange={(e) => setFundingType(e.target.value as any)}
-                                     className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2.5 px-3 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-purple-500 transition-all text-slate-700 dark:text-slate-200"
-                                 >
-                                     <option value="capital_addition">تحويل مالي (إضافة رأس مال) (+)</option>
-                                     <option value="profit_withdrawal">مسحوبات شخصية من الأرباح (-)</option>
-                                     <option value="loan">سحب نقدي (سلفة شريك شخصية) (-)</option>
-                                     <option value="repayment">سداد سلفة / مديونية شريك للخزينة (+)</option>
-                                     <option value="profit_distribution">توزيع يدوي لأرباح مستحقة لشريك معين (+)</option>
-                                     <option value="customer_advance">استلام عربون عهدة مبيعات في حوزة الشريك (-)</option>
-                                 </select>
-                             </div>
-                             <div>
-                                 <label className="block text-xs text-slate-400 font-bold mb-1.5">تاريخ القيد</label>
-                                 <input
-                                     type="date"
-                                     value={fundingDate}
-                                     onChange={(e) => setFundingDate(e.target.value)}
-                                     className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2.5 px-3 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-purple-500 transition-all text-slate-700 dark:text-slate-200"
-                                     required
-                                 />
-                             </div>
+                     <form onSubmit={handleAddFunding} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                         <div>
+                             <label className="block text-xs text-slate-400 font-bold mb-1.5">اختر الشريك</label>
+                             <select
+                                 value={fundingPartnerId}
+                                 onChange={(e) => setFundingPartnerId(e.target.value)}
+                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2 px-3 rounded-xl text-xs font-bold focus:outline-none"
+                             >
+                                 <option value="">-- اختر شريكاً --</option>
+                                 {(settings.partners || []).map(p => (
+                                     <option key={p.id} value={p.id}>{p.name}</option>
+                                 ))}
+                             </select>
                          </div>
-                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                             <div className="md:col-span-2">
-                                 <label className="block text-xs text-slate-400 font-bold mb-1.5">البيان / ملاحظات القيد</label>
+                         <div>
+                             <label className="block text-xs text-slate-400 font-bold mb-1.5">نوع التمويل / القيد</label>
+                             <select
+                                 value={fundingType}
+                                 onChange={(e) => setFundingType(e.target.value as any)}
+                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2 px-3 rounded-xl text-xs font-bold focus:outline-none"
+                             >
+                                 <option value="capital_addition">تحويل مالي (إضافة رأس مال)</option>
+                                 <option value="loan">سحب نقدي (مسحوبات / سلف)</option>
+                             </select>
+                         </div>
+                         <div>
+                             <label className="block text-xs text-slate-400 font-bold mb-1.5">المبلغ المطلوب (ج.م)</label>
+                             <div className="flex gap-2">
                                  <input
-                                     type="text"
-                                     value={fundingNote}
-                                     onChange={(e) => setFundingNote(e.target.value)}
-                                     placeholder="أدخل بياناً اختيارياً (مثال: تمويل توريد الشحنات أو شراء أصل)"
-                                     className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2.5 px-3 rounded-xl text-xs font-bold focus:outline-none"
+                                     type="number"
+                                     value={fundingAmount}
+                                     onChange={(e) => setFundingAmount(e.target.value)}
+                                     placeholder="أدخل القيمة"
+                                     className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2 px-3 rounded-xl text-xs font-bold focus:outline-none"
                                  />
-                             </div>
-                             <div>
-                                 <label className="block text-xs text-slate-400 font-bold mb-1.5">المبلغ المطلوب (ج.م)</label>
-                                 <div className="flex gap-2">
-                                     <input
-                                         type="number"
-                                         value={fundingAmount}
-                                         onChange={(e) => setFundingAmount(e.target.value)}
-                                         placeholder="أدخل القيمة"
-                                         className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-2.5 px-3 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-purple-500 transition-all text-slate-700 dark:text-slate-200"
-                                         required
-                                         min="0.01"
-                                         step="any"
-                                     />
-                                     <button
-                                         type="submit"
-                                         className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-lg transition-all hover:scale-102 shrink-0"
-                                     >
-                                         قيد وتسجيل ✅
-                                     </button>
-                                 </div>
+                                 <button
+                                     type="submit"
+                                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl"
+                                 >
+                                     تسجيل
+                                 </button>
                              </div>
                          </div>
                      </form>

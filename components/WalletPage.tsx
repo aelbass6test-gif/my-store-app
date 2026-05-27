@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Wallet as WalletIcon, Plus, Minus, ArrowUpRight, ArrowDownLeft, Trash2, Calendar, Shield, Eye, Truck, TrendingUp, Info, AlertTriangle, AlertCircle, Coins, Receipt, X, Layers, CreditCard, Smartphone, Banknote, Settings as SettingsIcon, ChevronRight, Check, History, Search, Filter, CheckCircle, Clock } from 'lucide-react';
-import { Wallet, Transaction, Order, Settings, TransactionCategory, WithdrawRequest, WalletSettings, BankAccount, Treasury } from '../types';
+import { Wallet, Transaction, Order, Settings, TransactionCategory, WithdrawRequest, WalletSettings, BankAccount } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const containerVariants = {
@@ -26,13 +26,10 @@ interface WalletPageProps {
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   orders: Order[];
   settings: Settings;
-  treasury?: Treasury;
-  setTreasury?: (updater: any) => void;
 }
 
-const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings, orders, settings, treasury, setTreasury }) => {
+const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings, orders, settings }) => {
   const [modalMode, setModalMode] = useState<'none' | 'charge' | 'withdraw' | 'settings' | 'history' | 'bank' | 'cod_history' | 'withdraw_confirm' | 'error' | 'transfer_supply'>('none');
-  const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>('');
   const [errorConfig, setErrorConfig] = useState({ title: '', message: '' });
   const [supplyAmount, setSupplyAmount] = useState('');
   const [transferDirection, setTransferDirection] = useState<'to_supply' | 'from_supply'>('to_supply');
@@ -48,8 +45,8 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
     wallet.settings?.bankAccount || { accountHolder: '', bankName: '', iban: '', accountNumber: '' }
   );
   const [localMobileWallet, setLocalMobileWallet] = useState(wallet.settings?.mobileWallet || '');
-  const [preferredMethod, setPreferredMethod] = useState<'bank' | 'wallet' | 'instapay' | 'treasury'>(
-    (wallet.settings?.preferredWithdrawMethod as 'bank' | 'wallet' | 'instapay' | 'treasury') || 'bank'
+  const [preferredMethod, setPreferredMethod] = useState<'bank' | 'wallet' | 'instapay'>(
+    (wallet.settings?.preferredWithdrawMethod as 'bank' | 'wallet' | 'instapay') || 'bank'
   );
   
   const itemsPerPage = 10;
@@ -63,9 +60,6 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
         
         // Exclude transactions that come from the Supply Wallet (they were already deducted from main during funding or never entered main)
         if (t.category === 'supply_purchase' || t.category === 'supply_deposit') return sum;
-
-        // Exclude partner personal expenses from the global wallet balance
-        if (t.details?.paidByPartnerId) return sum;
 
         // Deposits: only include when completed
         if (t.type === 'إيداع') {
@@ -171,7 +165,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
   // Derived settings or defaults
   const walletSettings: WalletSettings = useMemo(() => {
     const base = wallet.settings || {
-      preferredWithdrawMethod: 'bank' as const,
+      preferredWithdrawMethod: 'bank',
       autoWithdrawal: false,
       autoWithdrawalDays: [],
       minAutoWithdrawAmount: 100
@@ -180,7 +174,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
       ...base,
       bankAccount: localBankDetails,
       mobileWallet: localMobileWallet,
-      preferredWithdrawMethod: preferredMethod as 'bank' | 'wallet' | 'instapay'
+      preferredWithdrawMethod: preferredMethod
     };
   }, [wallet.settings, localBankDetails, localMobileWallet, preferredMethod]);
 
@@ -230,7 +224,6 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
   };
 
   const currentWithdrawFee = useMemo(() => {
-    if (preferredMethod === 'treasury') return 0;
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) return 0;
 
@@ -284,54 +277,6 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
     const fee = currentWithdrawFee;
     const totalDeduction = numAmount + fee;
     const netAmount = numAmount; 
-
-    // Handle internal treasury transfer
-    if (preferredMethod === 'treasury' && selectedTreasuryId && setTreasury && treasury) {
-      const selectedAccount = treasury.accounts.find(a => a.id === selectedTreasuryId);
-      
-      const newTransaction: Transaction = {
-        id: `WT-${Date.now()}`,
-        type: 'سحب',
-        amount: numAmount,
-        fees: 0, 
-        date: new Date().toISOString(),
-        status: 'completed',
-        note: `تحويل داخلي من المحفظة إلى خزينة: ${selectedAccount?.name || 'غير معروف'}`,
-        category: 'wallet_withdrawal'
-      };
-
-      // update wallet
-      setWallet(prev => ({
-        ...prev,
-        transactions: [newTransaction, ...prev.transactions],
-        balance: prev.balance - numAmount
-      }));
-
-      // update treasury
-      setTreasury((prev: Treasury) => {
-        const newTreasuryTx: any = {
-          id: `TWL-${Date.now()}`,
-          date: new Date().toISOString(),
-          type: 'deposit',
-          amount: numAmount,
-          description: 'تحويل وارد من محفظة الشحن الأساسية',
-          toAccountId: selectedTreasuryId
-        };
-        
-        return {
-          ...prev,
-          accounts: prev.accounts.map(acc => 
-            acc.id === selectedTreasuryId ? { ...acc, balance: acc.balance + numAmount } : acc
-          ),
-          transactions: [newTreasuryTx, ...(prev.transactions || [])]
-        };
-      });
-
-      setModalMode('none');
-      setAmount('');
-      setSelectedTreasuryId('');
-      return;
-    }
 
     const newRequest: WithdrawRequest = {
       id: Math.random().toString(36).substr(2, 9).toUpperCase(),
@@ -1251,61 +1196,25 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
                   <div className="space-y-3 text-right">
                       <div className="flex justify-between items-center flex-row-reverse px-4">
                          <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">يتم التحويل إلى</label>
-                         <div className="flex gap-2">
-                           {(['bank', 'wallet', 'treasury'] as const).map((m) => (
-                             <button
-                               key={m}
-                               type="button"
-                               onClick={() => setPreferredMethod(m)}
-                               className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${
-                                 preferredMethod === m 
-                                 ? 'bg-indigo-600 text-white' 
-                                 : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'
-                               }`}
-                             >
-                               {m === 'bank' ? 'بنك' : m === 'wallet' ? 'محفظة' : 'خزينة'}
-                             </button>
-                           ))}
+                         <button type="button" onClick={() => setModalMode('settings')} className="text-indigo-600 text-[10px] font-black hover:underline px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">تعديل الطريقة</button>
+                      </div>
+                      <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-[1.8rem] border border-slate-100 dark:border-slate-800 flex justify-between items-center flex-row-reverse group transition-all hover:bg-slate-100/50 dark:hover:bg-slate-800 cursor-pointer" onClick={() => setPreferredMethod(preferredMethod === 'bank' ? 'wallet' : 'bank')}>
+                         <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white dark:bg-slate-900 rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-800">
+                                {preferredMethod === 'bank' ? <Banknote size={20} className="text-indigo-500" /> : <Smartphone size={20} className="text-emerald-500" />}
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs font-black text-slate-800 dark:text-white">{preferredMethod === 'bank' ? 'الحساب البنكي' : 'المحفظة الإلكترونية'}</p>
+                                <p className="text-[10px] font-mono text-slate-400 mt-0.5 tracking-widest font-black">
+                                    {preferredMethod === 'bank' ? (localBankDetails.iban || localBankDetails.accountNumber || 'لم يتم الضبط') : (localMobileWallet || 'لم يتم الضبط')}
+                                </p>
+                            </div>
+                         </div>
+                         <div className="flex flex-col items-center gap-1">
+                            <CheckCircle size={20} className="text-emerald-500" />
+                            <span className="text-[8px] font-bold text-slate-400">اضغط للتغيير</span>
                          </div>
                       </div>
-
-                      {preferredMethod === 'treasury' && (
-                        <div className="space-y-3">
-                          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 text-right px-4">اختر الخزينة / الحساب (داخلي)</label>
-                          <select
-                            value={selectedTreasuryId}
-                            onChange={(e) => setSelectedTreasuryId(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-800 rounded-[1.8rem] px-6 py-4 text-right text-sm font-black outline-none focus:border-indigo-500/50 transition-all dark:text-white shadow-sm"
-                            required
-                          >
-                            <option value="">-- اختر الوجهة --</option>
-                            {treasury?.accounts.map(acc => (
-                              <option key={acc.id} value={acc.id}>{acc.name} (رصيد: {acc.balance.toLocaleString()} ج.م)</option>
-                            ))}
-                          </select>
-                          <p className="text-[10px] text-indigo-500 font-bold px-4 text-right">سيتم تحويل المبلغ فوراً إلى الخزينة المختارة وسيتم تسجيل الحركة في سجل الخزينة.</p>
-                        </div>
-                      )}
-
-                      {preferredMethod !== 'treasury' && (
-                        <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-[1.8rem] border border-slate-100 dark:border-slate-800 flex justify-between items-center flex-row-reverse group transition-all hover:bg-slate-100/50 dark:hover:bg-slate-800 cursor-pointer" onClick={() => setPreferredMethod(preferredMethod === 'bank' ? 'wallet' : 'bank')}>
-                           <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-white dark:bg-slate-900 rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-800">
-                                  {preferredMethod === 'bank' ? <Banknote size={20} className="text-indigo-500" /> : <Smartphone size={20} className="text-emerald-500" />}
-                              </div>
-                              <div className="text-right">
-                                  <p className="text-xs font-black text-slate-800 dark:text-white">{preferredMethod === 'bank' ? 'الحساب البنكي' : 'المحفظة الإلكترونية'}</p>
-                                  <p className="text-[10px] font-mono text-slate-400 mt-0.5 tracking-widest font-black">
-                                      {preferredMethod === 'bank' ? (localBankDetails.iban || localBankDetails.accountNumber || 'لم يتم الضبط') : (localMobileWallet || 'لم يتم الضبط')}
-                                  </p>
-                              </div>
-                           </div>
-                           <div className="flex flex-col items-center gap-1">
-                              <CheckCircle size={20} className="text-emerald-500" />
-                              <span className="text-[8px] font-bold text-slate-400">تبديل وجهة السحب</span>
-                           </div>
-                        </div>
-                      )}
                   </div>
 
                   <div className="flex gap-4 pt-4">
@@ -1788,15 +1697,6 @@ const WalletPage: React.FC<WalletPageProps> = ({ wallet, setWallet, setSettings,
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-800/60 rounded-[2.5rem] p-8 space-y-6 border border-slate-100 dark:border-slate-800">
-                  <div className="flex justify-between items-center flex-row-reverse border-b border-slate-200/50 dark:border-slate-700/50 pb-4">
-                    <span className="text-xs text-slate-500 font-bold">وجهة التحويل</span>
-                    <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">
-                      {preferredMethod === 'bank' ? 'حساب بنكي' : 
-                       preferredMethod === 'wallet' ? 'محفظة إلكترونية' : 
-                       preferredMethod === 'instapay' ? 'إنستاباي' : 
-                       `خزينة: ${treasury?.accounts.find(a => a.id === selectedTreasuryId)?.name || 'غير محدد'}`}
-                    </span>
-                  </div>
                   <div className="flex justify-between items-center flex-row-reverse border-b border-slate-200/50 dark:border-slate-700/50 pb-4">
                     <span className="text-xs text-slate-500 font-bold">المبلغ المسحوب</span>
                     <span className="text-sm font-black text-slate-800 dark:text-white">{parseFloat(amount).toLocaleString()} ج.م</span>

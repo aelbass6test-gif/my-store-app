@@ -222,7 +222,7 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
         }
     }
 
-    const isWithdrawal = transactionType === 'loan' || transactionType === 'profit_withdrawal' || transactionType === 'expense_repayment';
+    const isWithdrawal = transactionType === 'loan' || transactionType === 'profit_withdrawal';
     const isSupplyFunding = transactionType === 'supply_funding';
 
     if (isWithdrawal && amount > wallet.balance) {
@@ -241,7 +241,7 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
     const updatedPartners = partners.map(p => {
         if (p.id === partnerId) {
             let newBalance = p.balance;
-            if (transactionType === 'loan' || transactionType === 'profit_withdrawal' || transactionType === 'expense_repayment') {
+            if (transactionType === 'loan' || transactionType === 'profit_withdrawal') {
                 newBalance -= amount;
             } else {
                 newBalance += amount;
@@ -261,7 +261,6 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
             transactionType === 'capital_addition' ? 'إيداع رأس مال' : 
             transactionType === 'profit_withdrawal' ? 'سحب أرباح' : 
             transactionType === 'shipping_funding' ? 'إيداع مصاريف الشحن' :
-            transactionType === 'expense_repayment' ? 'رد مصروفات شخصية' :
             transactionType === 'supply_funding' ? 'تمويل شراء بضاعة (إيداع محفظة التوريد)' : 'سداد سلفة'
         }`,
         category: isSupplyFunding ? 'supply_deposit' : (isWithdrawal ? 'manual_withdrawal' : 'manual_deposit'),
@@ -633,11 +632,10 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
                             <div className="grid grid-cols-2 gap-2">
                                 {[
                                   { key: 'loan', label: 'سلفة / سحب', icon: ArrowDownRight, color: 'hover:border-rose-300 hover:text-rose-600' },
-                                  { key: 'expense_repayment', label: 'رد مصروفات شخصية', icon: Check, color: 'hover:border-emerald-300 hover:text-emerald-600' },
                                   { key: 'capital_addition', label: 'إيداع رأس مال', icon: ArrowUpLeft, color: 'hover:border-emerald-300 hover:text-emerald-600' },
                                   { key: 'shipping_funding', label: 'إيداع مصاريف شحن', icon: Truck, color: 'hover:border-blue-300 hover:text-blue-600' },
                                   { key: 'profit_withdrawal', label: 'سحب من الأرباح', icon: DollarSign, color: 'hover:border-amber-300 hover:text-amber-600' },
-                                  { key: 'repayment', label: 'سداد سداد قرض/سلفة', icon: Check, color: 'hover:border-blue-300 hover:text-blue-600' },
+                                  { key: 'repayment', label: 'سداد سلفة', icon: Check, color: 'hover:border-blue-300 hover:text-blue-600' },
                                   { key: 'supply_funding', label: 'تمويل شراء بضاعة', icon: PackageIcon, color: 'hover:border-indigo-300 hover:text-indigo-600' }
                                 ].map(type => (
                                   <button 
@@ -704,25 +702,18 @@ const PartnersPage: React.FC<PartnersPageProps> = ({ settings, updateSettings, w
                               <div key={t.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800/50">
                                   <div className="flex items-center gap-3">
                                       <div className={`p-1.5 rounded-lg ${
-                                        ['capital_addition', 'repayment', 'supply_funding', 'expense_coverage'].includes(t.type) 
+                                        ['capital_addition', 'repayment', 'supply_funding'].includes(t.type) 
                                           ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' 
                                           : 'bg-rose-100 dark:bg-rose-900/30 text-rose-600'
                                       }`}>
-                                        {['loan', 'customer_advance'].includes(t.type) ? <ArrowDownRight size={12}/> : 
-                                         t.type === 'capital_addition' ? <ArrowUpLeft size={12}/> : 
-                                         t.type === 'shipping_funding' ? <Truck size={12}/> : 
-                                         t.type === 'repayment' ? <Check size={12}/> : 
-                                         t.type === 'expense_repayment' ? <Check size={12}/> :
-                                         t.type === 'expense_coverage' ? <DollarSign size={12}/> :
-                                         t.type === 'supply_funding' ? <PackageIcon size={12}/> : <DollarSign size={12}/>}
+                                        {['loan', 'customer_advance'].includes(t.type) ? <ArrowDownRight size={12}/> : t.type === 'capital_addition' ? <ArrowUpLeft size={12}/> : t.type === 'shipping_funding' ? <Truck size={12}/> : t.type === 'repayment' ? <Check size={12}/> : t.type === 'supply_funding' ? <PackageIcon size={12}/> : <DollarSign size={12}/>}
                                       </div>
                                       <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">
-                                        {t.type === 'loan' ? 'سلفة' : t.type === 'customer_advance' ? 'عربون محصل' : t.type === 'capital_addition' ? 'رأس مال' : t.type === 'shipping_funding' ? 'شحن' : t.type === 'profit_withdrawal' ? 'سحب أرباح' : t.type === 'profit_distribution' ? 'إضافة أرباح' : t.type === 'supply_funding' ? 'تمويل بضاعة' : t.type === 'expense_coverage' ? 'مصروف شخصي' : t.type === 'expense_repayment' ? 'رد مصروفات' : 'سداد'}
+                                        {t.type === 'loan' ? 'سلفة' : t.type === 'customer_advance' ? 'عربون محصل' : t.type === 'capital_addition' ? 'رأس مال' : t.type === 'shipping_funding' ? 'شحن' : t.type === 'profit_withdrawal' ? 'سحب أرباح' : t.type === 'profit_distribution' ? 'إضافة أرباح' : t.type === 'supply_funding' ? 'تمويل بضاعة' : 'سداد'}
                                       </span>
                                   </div>
-                                  <span className={`text-[10px] font-black ${['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution', 'expense_coverage'].includes(t.type) ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                      {['loan', 'profit_withdrawal', 'expense_repayment'].includes(t.type) ? '-' : '+'}{t.amount.toLocaleString()} 
-                                      <span className="text-[10px] ml-1">ج.م</span>
+                                  <span className={`text-[10px] font-black ${['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type) ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                      {['capital_addition', 'repayment', 'supply_funding', 'shipping_funding', 'profit_distribution'].includes(t.type) ? '+' : '-'}{t.amount.toLocaleString()} ج.م
                                   </span>
                               </div>
                           ))}

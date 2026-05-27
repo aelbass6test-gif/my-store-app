@@ -10,7 +10,6 @@ import { generateShippingNote } from '../services/geminiService';
 import { calculateCodFee, getLatestProductCost, isBosta, calculateInsuranceFee, calculateBostaVat } from '../utils/financials';
 import { generateOrdersReportHTML } from '../utils/reportGenerator';
 import { triggerWebhooks } from '../utils/webhook';
-import { printHTMLDirectly } from '../utils/printHelper';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -864,104 +863,10 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         updatedOrderData.collectionProcessed = false;
         updatedOrderData.paymentStatus = 'بانتظار الدفع';
     }
-
-    // Handling reversal of shipping, vat, insurance, and inspection fees if transitioned back to pre-shipping status
-    const preShippingStatuses = ['في_انتظار_المكالمة', 'جاري_المراجعة', 'قيد_التنفيذ', 'ملغي', 'مؤجل', 'مجدول'];
-    if (orderToUpdate.shippingAndInsuranceDeducted && preShippingStatuses.includes(newStatus)) {
-        // 1. Revert shipping fee
-        newTransactions.push({ 
-            id: `revert_ship_${orderToUpdate.id}`, 
-            type: 'إيداع', 
-            amount: orderToUpdate.shippingFee, 
-            date: new Date().toISOString(), 
-            note: `إعادة مصاريف شحن أوردر #${orderToUpdate.orderNumber} (تغيير الحالة إلى ${newStatus})`, 
-            category: 'shipping', 
-            status: 'completed',
-            orderId: orderToUpdate.id,
-            orderNumber: orderToUpdate.orderNumber
-        });
-        
-        // 2. Revert insurance fee if any
-        const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
-        let insuranceFee = 0;
-        if (orderToUpdate.isInsured && insuranceRate > 0) {
-            insuranceFee = calculateInsuranceFee(orderToUpdate, insuranceRate, settings);
-            newTransactions.push({ 
-                id: `revert_insure_${orderToUpdate.id}`, 
-                type: 'إيداع', 
-                amount: insuranceFee, 
-                date: new Date().toISOString(), 
-                note: `إعادة رسوم تأمين أوردر #${orderToUpdate.orderNumber} (تغيير الحالة)`, 
-                category: 'insurance', 
-                status: 'completed',
-                orderId: orderToUpdate.id,
-                orderNumber: orderToUpdate.orderNumber
-            });
-        }
-
-        // 3. Revert VAT fee if any
-        const bostaVatAmount = calculateBostaVat(orderToUpdate, insuranceFee, settings);
-        if (bostaVatAmount > 0) {
-            newTransactions.push({ 
-                id: `revert_vat_${orderToUpdate.id}`, 
-                type: 'إيداع', 
-                amount: bostaVatAmount, 
-                date: new Date().toISOString(), 
-                note: `إعادة ضريبة القيمة المضافة لطلب شحن أوردر #${orderToUpdate.orderNumber}`, 
-                category: 'expense_other', 
-                status: 'completed',
-                orderId: orderToUpdate.id,
-                orderNumber: orderToUpdate.orderNumber
-            });
-        }
-
-        // 4. Revert inspection fee if any
-        if (orderToUpdate.includeInspectionFee && orderToUpdate.inspectionFeeDeducted) {
-            const feeAmount = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
-            if (feeAmount > 0) {
-                newTransactions.push({ 
-                    id: `revert_insp_${orderToUpdate.id}`, 
-                    type: 'إيداع', 
-                    amount: feeAmount, 
-                    date: new Date().toISOString(), 
-                    note: `إعادة رسوم معاينة أوردر #${orderToUpdate.orderNumber} (تغيير الحالة)`, 
-                    category: 'inspection', 
-                    status: 'completed',
-                    orderId: orderToUpdate.id,
-                    orderNumber: orderToUpdate.orderNumber
-                });
-            }
-        }
-
-        updatedOrderData.shippingAndInsuranceDeducted = false;
-        updatedOrderData.inspectionFeeDeducted = false;
-    }
-
-    // Handling reversal of return shipping fee if moved out of return status
-    if (orderToUpdate.returnFeeDeducted && !['مرتجع', 'فشل_التوصيل'].includes(newStatus)) {
-        const applyReturnFee = useCustom ? (compFees?.enableFixedReturn ?? false) : settings.enableReturnShipping;
-        if (applyReturnFee) {
-            const returnFeeAmount = useCustom ? (compFees?.returnShippingFee ?? 0) : settings.returnShippingFee;
-            if (returnFeeAmount > 0) {
-                newTransactions.push({ 
-                    id: `revert_return_${orderToUpdate.id}`, 
-                    type: 'إيداع', 
-                    amount: returnFeeAmount, 
-                    date: new Date().toISOString(), 
-                    note: `إعادة مصاريف مرتجع أوردر #${orderToUpdate.orderNumber} (تغيير الحالة إلى ${newStatus})`, 
-                    category: 'return', 
-                    status: 'completed',
-                    orderId: orderToUpdate.id,
-                    orderNumber: orderToUpdate.orderNumber
-                });
-                updatedOrderData.returnFeeDeducted = false;
-            }
-        }
-    }
     
-    if (newStatus === 'تم_توصيلها' && !updatedOrderData.collectionProcessed) {
+    if (newStatus === 'تم_التوصيل' && !updatedOrderData.collectionProcessed) {
         // Order delivered, now pending collection
-        updatedOrderData.status = 'تم_توصيلها' as OrderStatus;
+        updatedOrderData.status = 'تم_التوصيل' as OrderStatus;
         updatedOrderData.paymentStatus = 'بانتظار الدفع';
     } else if (newStatus === 'تم_التحصيل' && !updatedOrderData.collectionProcessed) {
         // Order payment processed
@@ -991,7 +896,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   };
 
   const updateInventoryForOrder = (order: Order, newStatus: OrderStatus, currentProducts: Product[]): { updatedProducts: Product[], stockDeducted: boolean } => {
-    const deductStatuses: OrderStatus[] = ['قيد_التنفيذ', 'تم_الارسال', 'تم_توصيلها'];
+    const deductStatuses: OrderStatus[] = ['قيد_التنفيذ', 'تم_الارسال', 'تم_التوصيل'];
     // All other statuses are considered "returnable" to stock if they were deducted
     const shouldBeDeducted = deductStatuses.includes(newStatus);
     const isCurrentlyDeducted = order.stockDeducted || false;
@@ -1182,7 +1087,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         });
     }
     
-    const updatedOrderData = { ...order, status: 'تم_توصيلها' as OrderStatus, paymentStatus: 'مدفوع' as PaymentStatus, inspectionFeePaidByCustomer: customerPaidInspection, collectionProcessed: true };
+    const updatedOrderData = { ...order, status: 'تم_التوصيل' as OrderStatus, paymentStatus: 'مدفوع' as PaymentStatus, inspectionFeePaidByCustomer: customerPaidInspection, collectionProcessed: true };
     
     setWallet(prev => {
         let newBalance = prev.balance || 0;
@@ -1301,7 +1206,13 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
 
   const handlePrintInvoice = (order: Order) => {
     const html = generateInvoiceHTML(order, settings, activeStore?.name || 'متجري');
-    printHTMLDirectly(html);
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(html);
+        win.document.close();
+    } else {
+        alert("يرجى السماح بالنوافذ المنبثقة لطباعة الفاتورة.");
+    }
   };
 
   const handlePrintShippingLabel = (order: Order) => {
@@ -1310,7 +1221,13 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         return;
     }
     const html = generateShippingLabelHTML(order, activeStore.name);
-    printHTMLDirectly(html);
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(html);
+        win.document.close();
+    } else {
+        alert("يرجى السماح بالنوافذ المنبثقة لطباعة البوليصة.");
+    }
   };
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1382,7 +1299,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                     currentProducts = nextProducts;
 
                     // 2. Create a copy to avoid side effects during financial processing
-                    let orderToUpdate: Order = { ...o, status: newStatus as OrderStatus, stockDeducted };
+                    let orderToUpdate = { ...o, status: newStatus as OrderStatus, stockDeducted };
                     
                     // 3. Add Audit Log
                     const newLog: AuditLog = {
@@ -1431,7 +1348,11 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     if (selected.length === 0) return;
     
     const html = selected.map(o => generateShippingLabelHTML(o, activeStore?.name || 'متجري')).join('<div style="page-break-after: always;"></div>');
-    printHTMLDirectly(`<html><head><title>طباعة بوالص</title></head><body>${html}</body></html>`);
+    const win = window.open('', '_blank');
+    if (win) {
+        win.document.write(`<html><head><title>طباعة بوالص</title></head><body>${html}</body></html>`);
+        win.document.close();
+    }
   };
 
   const handleExportCSV = () => {
@@ -1944,7 +1865,11 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                     <div className="flex items-center gap-3">
                         <button 
                             onClick={() => {
-                                printHTMLDirectly(reportPreviewHtml);
+                                const win = window.open('', '_blank');
+                                if (win) {
+                                    win.document.write(reportPreviewHtml);
+                                    win.document.close();
+                                }
                             }}
                             className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
                         >
@@ -3486,7 +3411,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
                 {/* شريط اختيار نوع الشحنة / العملية */}
                 <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800 flex flex-wrap gap-2.5 items-center justify-start z-10">
                     {(() => {
-                        const compFees = (settings.companySpecificFees?.[orderData.shippingCompany] || {}) as any;
+                        const compFees = settings.companySpecificFees?.[orderData.shippingCompany] || {};
                         const tabs = [
                             { id: 'delivery', label: 'توصيل شحنة', icon: <Truck size={17} /> },
                             { id: 'partial_delivery', label: 'توصيل جزئي', icon: <Package size={17} />, badge: 'جديد' }

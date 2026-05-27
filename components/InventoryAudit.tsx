@@ -5,7 +5,6 @@ import {
     Layers, SearchCode, Trash2, Sliders, Layout, Filter, Sparkles, HelpCircle, Package, Info
 } from 'lucide-react';
 import { Settings, Product, ProductVariant, InventoryAuditSession, InventoryAuditItemDiscrepancy } from '../types';
-import { printHTMLDirectly } from '../utils/printHelper';
 
 interface InventoryAuditProps {
     settings: Settings;
@@ -407,6 +406,9 @@ export const InventoryAudit: React.FC<InventoryAuditProps> = ({ settings, setSet
 
     // Print past report details
     const handlePrintReport = (session: InventoryAuditSession) => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) return;
+
         const dateStr = new Date(session.date).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
         const html = `
@@ -503,11 +505,13 @@ export const InventoryAudit: React.FC<InventoryAuditProps> = ({ settings, setSet
                     <div>توقيع مسؤول المستودع: _____________________</div>
                     <div>توقيع المدير المسؤول: _____________________</div>
                 </div>
+                <script>window.onload = function() { window.print(); }</script>
             </body>
             </html>
         `;
 
-        printHTMLDirectly(html);
+        printWindow.document.write(html);
+        printWindow.document.close();
     };
 
     return (
