@@ -101,7 +101,7 @@ export interface Product {
   stockThreshold?: number;
 }
 
-export type TransactionCategory = 'shipping' | 'insurance' | 'inspection' | 'collection' | 'cod' | 'return' | 'manual_deposit' | 'manual_withdrawal' | 'expense_ads' | 'expense_salary' | 'expense_rent' | 'expense_other' | 'inventory_purchase' | 'capital_addition' | 'profit_withdrawal' | 'loan' | 'repayment' | 'wallet_charge' | 'wallet_withdrawal' | 'partner_supply' | 'supplier_payment' | 'supply_purchase' | 'supply_deposit' | 'supply_funding';
+export type TransactionCategory = 'shipping' | 'insurance' | 'inspection' | 'collection' | 'cod' | 'return' | 'manual_deposit' | 'manual_withdrawal' | 'expense_ads' | 'expense_salary' | 'expense_rent' | 'expense_packaging' | 'expense_shipping_fees' | 'expense_other' | 'inventory_purchase' | 'capital_addition' | 'profit_withdrawal' | 'loan' | 'repayment' | 'wallet_charge' | 'wallet_withdrawal' | 'partner_supply' | 'supplier_payment' | 'supply_purchase' | 'supply_deposit' | 'supply_funding';
 
 export type WithdrawStatus = 'pending' | 'accepted' | 'rejected' | 'processing';
 
@@ -110,7 +110,7 @@ export interface WithdrawRequest {
   amount: number;
   date: string;
   status: WithdrawStatus;
-  method: 'bank' | 'wallet' | 'instapay';
+  method: 'bank' | 'wallet' | 'instapay' | 'treasury';
   details: string; // JSON or formatted string of bank/wallet details
   fee: number;
   netAmount: number;
@@ -125,7 +125,7 @@ export interface BankAccount {
 }
 
 export interface WalletSettings {
-  preferredWithdrawMethod: 'bank' | 'wallet' | 'instapay';
+  preferredWithdrawMethod: 'bank' | 'wallet' | 'instapay' | 'treasury';
   bankAccount?: BankAccount;
   mobileWallet?: string;
   instapayAddress?: string;
@@ -304,7 +304,7 @@ export interface Partner {
 export interface PartnerTransaction {
   id: string;
   partnerId: string;
-  type: 'loan' | 'capital_addition' | 'profit_withdrawal' | 'repayment' | 'supply_funding' | 'profit_distribution' | 'shipping_funding' | 'customer_advance';
+  type: 'loan' | 'capital_addition' | 'profit_withdrawal' | 'repayment' | 'supply_funding' | 'profit_distribution' | 'shipping_funding' | 'customer_advance' | 'expense_coverage' | 'expense_repayment';
   amount: number;
   date: string;
   note?: string;
@@ -662,6 +662,11 @@ export interface TreasuryAccount {
   type: 'safe' | 'bank' | 'wallet' | 'custody';
   balance: number;
   currency: string;
+  accountNumber?: string;
+  beneficiaryName?: string;
+  bankName?: string;
+  walletNumber?: string;
+  walletName?: string;
 }
 
 export interface TreasuryTransaction {

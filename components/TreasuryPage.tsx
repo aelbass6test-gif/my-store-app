@@ -12,26 +12,7 @@ import {
   Download,
   AlertCircle
 } from 'lucide-react';
-import { Settings, Treasury } from '../types';
-
-interface TreasuryAccount {
-  id: string;
-  name: string;
-  type: 'safe' | 'bank' | 'wallet' | 'custody';
-  balance: number;
-  currency: string;
-}
-
-interface TreasuryTransaction {
-  id: string;
-  date: string;
-  fromAccountId?: string;
-  toAccountId?: string;
-  amount: number;
-  type: 'deposit' | 'withdrawal' | 'transfer' | 'advance';
-  description: string;
-  reference?: string;
-}
+import { Settings, Treasury, TreasuryAccount, TreasuryTransaction } from '../types';
 
 interface TreasuryPageProps {
   settings: Settings;
@@ -53,6 +34,13 @@ export const TreasuryPage: React.FC<TreasuryPageProps> = ({ settings, treasury, 
   const [accountType, setAccountType] = useState<'safe' | 'bank' | 'wallet' | 'custody'>('safe');
   const [initialBalance, setInitialBalance] = useState('');
 
+  // New fields
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [beneficiaryName, setBeneficiaryName] = useState('');
+  const [walletNumber, setWalletNumber] = useState('');
+  const [walletName, setWalletName] = useState('');
+
   const [transAmount, setTransAmount] = useState('');
   const [fromAccount, setFromAccount] = useState('');
   const [toAccount, setToAccount] = useState('');
@@ -67,7 +55,12 @@ export const TreasuryPage: React.FC<TreasuryPageProps> = ({ settings, treasury, 
       name: accountName,
       type: accountType,
       balance: Number(initialBalance) || 0,
-      currency: 'EGP'
+      currency: 'EGP',
+      bankName: accountType === 'bank' ? bankName : undefined,
+      accountNumber: accountType === 'bank' ? accountNumber : undefined,
+      beneficiaryName: accountType === 'bank' ? beneficiaryName : undefined,
+      walletNumber: accountType === 'wallet' ? walletNumber : undefined,
+      walletName: accountType === 'wallet' ? walletName : undefined,
     };
 
     if (setTreasury) {
@@ -80,6 +73,11 @@ export const TreasuryPage: React.FC<TreasuryPageProps> = ({ settings, treasury, 
     setShowAddAccountModal(false);
     setAccountName('');
     setInitialBalance('');
+    setBankName('');
+    setAccountNumber('');
+    setBeneficiaryName('');
+    setWalletNumber('');
+    setWalletName('');
   };
 
   const handleTransaction = (e: React.FormEvent) => {
@@ -227,6 +225,22 @@ export const TreasuryPage: React.FC<TreasuryPageProps> = ({ settings, treasury, 
                 </span>
               </div>
               <h4 className="text-slate-600 dark:text-slate-300 font-bold mb-1">{acc.name}</h4>
+              
+              {acc.type === 'bank' && (
+                <div className="mb-2 space-y-0.5">
+                  <p className="text-[10px] text-slate-400 font-bold">{acc.bankName || 'البنك'}</p>
+                  <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-mono font-black">{acc.accountNumber}</p>
+                  <p className="text-[10px] text-slate-500 font-bold">{acc.beneficiaryName}</p>
+                </div>
+              )}
+
+              {acc.type === 'wallet' && (
+                <div className="mb-2 space-y-0.5">
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono font-black">{acc.walletNumber}</p>
+                  <p className="text-[10px] text-slate-500 font-bold">{acc.walletName}</p>
+                </div>
+              )}
+
               <p className="text-2xl font-black text-slate-800 dark:text-white tabular-nums">
                 {acc.balance.toLocaleString()} <span className="text-sm text-slate-500 font-bold">ج.م</span>
               </p>
@@ -330,6 +344,69 @@ export const TreasuryPage: React.FC<TreasuryPageProps> = ({ settings, treasury, 
                   <option value="custody">عهدة موظف/مندوب</option>
                 </select>
               </div>
+
+              {accountType === 'bank' && (
+                <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2 duration-200">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">اسم البنك</label>
+                    <input 
+                      type="text" 
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      placeholder="مثال: البنك الأهلي المصري"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">رقم الحساب</label>
+                    <input 
+                      type="text" 
+                      value={accountNumber}
+                      onChange={(e) => setAccountNumber(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">اسم المستفيد</label>
+                    <input 
+                      type="text" 
+                      value={beneficiaryName}
+                      onChange={(e) => setBeneficiaryName(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              {accountType === 'wallet' && (
+                <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2 duration-200">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">رقم المحفظة</label>
+                    <input 
+                      type="text" 
+                      value={walletNumber}
+                      onChange={(e) => setWalletNumber(e.target.value)}
+                      placeholder="01xxxxxxxxx"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">اسم صاحب المحفظة</label>
+                    <input 
+                      type="text" 
+                      value={walletName}
+                      onChange={(e) => setWalletName(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">الرصيد الافتتاحي (ج.م)</label>
                 <input 

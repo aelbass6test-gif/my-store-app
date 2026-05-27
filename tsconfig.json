@@ -28,5 +28,5 @@
     "noEmit": true
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["supabase/**/*", "my-store-app-main/**/*", "node_modules"]
+  "exclude": ["supabase/**/*", "my-store-app-main/**/*", "node_modules", "dist"]
 }
