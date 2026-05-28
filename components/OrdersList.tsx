@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, UploadCloud, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users, ExternalLink, Link as LinkIcon, MessageSquare, Clock, Shield, Check, TrendingUp, TrendingDown } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Plus, Search, Trash2, Edit3, ChevronDown, Package, MapPin, Coins, FileSearch, AlertCircle, ShieldCheck, ShieldAlert, Banknote, ShoppingBag, Save, XCircle, Info, UploadCloud, User as UserIcon, Building, Download, Filter, Truck, CheckCircle, RefreshCcw, Briefcase, ChevronLeft, ChevronRight, MoreVertical, Percent, Lock, Unlock, Receipt, AlertTriangle, MessageCircle, Printer, Wand2, FileText, Phone, Archive, ArrowRightLeft, Image as ImageIcon, FileDown, LayoutList, LayoutGrid, Settings as SettingsIcon, X, PhoneForwarded, Users, ExternalLink, Link as LinkIcon, MessageSquare, Clock, Shield, Check, TrendingUp, TrendingDown, Sparkles, Calculator, ArrowLeft } from 'lucide-react';
 import { Order, Settings, OrderStatus, Wallet, Transaction, PaymentStatus, PreparationStatus, OrderItem, Product, CustomerProfile, Store, Employee, User, AuditLog } from '../types';
 import { ORDER_STATUSES, EGYPT_GOVERNORATES, ORDER_STATUS_METADATA, generateEgyptShippingOptions } from '../constants';
 import { motion, Variants, AnimatePresence } from 'framer-motion';
@@ -11,6 +11,7 @@ import { calculateCodFee, getLatestProductCost, isBosta, calculateInsuranceFee, 
 import { generateOrdersReportHTML } from '../utils/reportGenerator';
 import { triggerWebhooks } from '../utils/webhook';
 import { printHTMLDirectly } from '../utils/printHelper';
+import { OrderDetailsModal } from './OrderDetailsModal';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -182,25 +183,32 @@ const WaybillModal: React.FC<{ order: Order; onClose: () => void; onSave: (waybi
 
 const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ orders, setOrders, products, settings, currentUser, setWallet, setSettings, addLoyaltyPointsForOrder, activeStore, customers, setCustomers, onRefresh, treasury, setTreasury, defaultShowAdd }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
-  const [showAddModal, setShowAddModal] = useState(defaultShowAdd || false);
-  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
-
-  // Synchronize modal state on route/parameter change for "/create-order"
-  useEffect(() => {
-    if (defaultShowAdd) {
-      setShowAddModal(true);
-    } else {
-      setShowAddModal(false);
-    }
-  }, [defaultShowAdd]);
+    useEffect(() => {
+        if (defaultShowAdd) {
+            navigate('/orders/new', { replace: true });
+        }
+    }, [defaultShowAdd, navigate]);
 
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
-  const [showSummaryModal, setShowSummaryModal] = useState<Order | null>(null);
+  const [pendingFlexShipConfirm, setPendingFlexShipConfirm] = useState<{
+    orderId: string;
+    newStatus: OrderStatus;
+    fee: number;
+    companyName: string;
+    orderNumber: string;
+  } | null>(null);
+  const [pendingInspectionConfirm, setPendingInspectionConfirm] = useState<{
+    order: Order;
+    newPaymentStatus: PaymentStatus;
+    inspectionFee: number;
+  } | null>(null);
   const [autoWhatsappData, setAutoWhatsappData] = useState<{order: Order, newStatus: string} | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Polling for real-time updates
+  const [showSummaryModal, setShowSummaryModal] = useState<Order | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState<Order | null>(null);
   useEffect(() => {
     const interval = setInterval(() => {
       if (onRefresh && document.visibilityState === 'visible') {
@@ -215,35 +223,67 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     setIsRefreshing(true);
     try {
       if (activeStore?.id) {
-          const res = await fetch(`/api/sync/all/${activeStore.id}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' }
-          });
-          if (res.ok) {
-              const data = await res.json();
+          const connectedPlatforms = settings?.connectedPlatforms || [];
+          const platformConfigs = settings?.platformConfigs || {};
+          const activePlatforms = connectedPlatforms.filter((p: string) => platformConfigs[p]?.isActive);
+
+          if (activePlatforms.length === 0) {
               await onRefresh();
-              const totalSynced = (data.results || []).reduce((acc: number, r: any) => acc + (r.inserted || 0), 0);
-              const totalUpdated = (data.results || []).reduce((acc: number, r: any) => acc + (r.updated || 0), 0);
-              
-              if (totalSynced > 0 || totalUpdated > 0) {
-                  let message = 'تمت المزامنة بنجاح!';
-                  if (totalSynced > 0) message += `\n- تم استيراد ${totalSynced} طلب جديد.`;
-                  if (totalUpdated > 0) message += `\n- تم تحديث حالة ${totalUpdated} طلب.`;
-                  alert(message);
-              } else {
-                  alert('لا توجد طلبات جديدة أو تحديثات حالياً.');
+              alert('لا توجد منصات ربط نشطة (مثل سلة أو وويلت) لمزامنة الطلبات منها حالياً. تم تحديث سجل الطلبات من السحابة بنجاح.');
+              return;
+          }
+
+          let anySuccess = false;
+          let totalSynced = 0;
+          let totalUpdated = 0;
+          let errors: string[] = [];
+
+          for (const platformId of activePlatforms) {
+              try {
+                  const res = await fetch(`/api/sync/platform/${platformId}/${activeStore.id}?type=orders`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' }
+                  });
+                  if (res.ok) {
+                      const data = await res.json();
+                      anySuccess = true;
+                      totalSynced += data.processed || 0;
+                      totalUpdated += data.actualWrites || 0;
+                  } else {
+                      const errData = await res.json().catch(() => ({}));
+                      errors.push(`فشلت المزامنة مع ${platformId}: ${errData.error || res.statusText}`);
+                  }
+              } catch (err: any) {
+                  errors.push(`خطأ اتصال مع ${platformId}: ${err.message || err}`);
               }
+          }
+
+          await onRefresh();
+
+          if (errors.length > 0) {
+              alert(`تنبيهات أثناء المزامنة مع بعض المنصات:\n${errors.join('\n')}\n\nتم تحديث وعرض الطلبات السحابية والمحلية المتوفرة.`);
+          } else if (anySuccess) {
+              if (totalSynced > 0 || totalUpdated > 0) {
+                  alert(`تمت المزامنة بنجاح من كافة المنصات!\n- تم معالجة ${totalSynced} سجل.\n- تم تحديث ${totalUpdated} طلب في قاعدة البيانات.`);
+              } else {
+                  alert('تمت المزامنة بنجاح: لا توجد طلبات جديدة أو تحديثات حالية في متاجرك المتصلة.');
+              }
+          } else {
+              alert('لم نتمكن من المزامنة مع المنصات المتصلة. يرجى التحقق من إعدادات الربط ومفاتيح API في صفحة الإعدادات.');
           }
       } else {
           await onRefresh();
       }
+    } catch (e: any) {
+        alert(`فشلت مزامنة التطبيق: ${e.message || e}`);
     } finally {
       setTimeout(() => setIsRefreshing(false), 600);
     }
   };
   
-  const [activeTab, setActiveTab] = useState('الجميع');
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [activeTab, setActiveTab ] = useState('الجميع');
+  const [showAnalyticsHub, setShowAnalyticsHub] = useState(false);
+  const [viewMode, setViewMode ] = useState<'list' | 'kanban'>('list');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
@@ -301,134 +341,15 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   }, [orders]);
 
 
-  const getInitialNewOrder = (): NewOrderState => ({
-    orderNumber: '', date: new Date().toISOString(), shippingCompany: activeCompanies[0] || 'ارامكس', shippingArea: '', customerName: '', customerPhone: '',
-    customerPhone2: '', country: 'مصر', buildingDetails: '',
-    items: [], shippingFee: 0, status: 'في_انتظار_المكالمة', includeInspectionFee: true, isInsured: true,
-    paymentStatus: 'بانتظار الدفع', preparationStatus: 'بانتظار التجهيز', discount: 0, notes: '',
-    orderType: 'standard', originalOrderId: undefined,
-    shipmentType: 'delivery',
-    totalAmountOverrideReason: '', paymentMethod: 'cod',
-    advancePayment: 0, 
-    advancePaymentPartnerId: '',
-    advancePaymentTreasuryId: '',
-    advancePaymentRecipientPhone: '',
-    advancePaymentSenderDetails: '',
-    useProductsForShipment: false,
-    shipmentDescription: '',
-    shipmentQuantity: 1,
-    customShipmentPrice: 0,
-    useProductsForReturn: false,
-    returnProductId: '',
-    returnVariantId: '',
-    returnDescription: '',
-    returnQuantity: 1,
-    returnImage: ''
-  });
-
-  const [newOrder, setNewOrder] = useState<NewOrderState>(getInitialNewOrder());
-
-  // Normalization logic for synced orders when editing
-  const normalizeSyncedOrder = (order: Order): Order => {
-    if (order.source !== 'synced') return order;
-
-    const GOVERNORATE_MAP: Record<string, string> = {
-        'CAIRO': 'القاهرة', 'GIZA': 'الجيزة', 'ALEXANDRIA': 'الإسكندرية', 'QALYUBIA': 'القليوبية',
-        'DAKAHLIA': 'الدقهلية', 'SHARKIA': 'الشرقية', 'GHARBIA': 'الغربية', 'MONUFIA': 'المنوفية',
-        'BEHEIRA': 'البحيرة', 'KAFR EL SHEIKH': 'كفر الشيخ', 'KAFRELSHEIKH': 'كفر الشيخ',
-        'DAMIETTA': 'دمياط', 'PORT SAID': 'بورسعيد', 'ISMAILIA': 'الإسماعيلية', 'SUEZ': 'السويس',
-        'BENI SUEF': 'بني سويف', 'FAYOUM': 'الفيوم', 'MINYA': 'المنيا', 'ASSUIT': 'أسيوط',
-        'SOhag': 'سوهاج', 'QENA': 'قنا', 'LUXOR': 'الأقصر', 'ASWAN': 'أسوان', 'RED SEA': 'البحر الأحمر',
-        'NEW VALLEY': 'الوادي الجديد', 'MATROUH': 'مطروح', 'NORTH SINAI': 'شمال سيناء', 'SOUTH SINAI': 'جنوب سيناء'
-    };
-
-    const govKey = (order.governorate || order.shippingArea || '').toUpperCase();
-    const mappedGov = GOVERNORATE_MAP[govKey] || order.governorate || order.shippingArea || '';
-
-    // Fix item prices and product IDs
-    const normalizedItems = (order.items || []).map(item => ({
-      ...item,
-      productId: item.productId.startsWith('wuilt-') ? item.productId : `wuilt-${item.productId}`,
-      price: (item.price === 0 && (order.items || []).length === 1 && order.productPrice > 0) ? order.productPrice : item.price
-    }));
-
-    return {
-      ...order,
-      governorate: mappedGov,
-      shippingArea: mappedGov,
-      items: normalizedItems,
-      // If shipping fee is 0 but present at root, ensure it's in orderData
-      shippingFee: order.shippingFee || 0
-    };
-  };
-
   const handleEditOrder = (order: Order) => {
-    setEditingOrder(normalizeSyncedOrder(order));
-    setShowAddModal(true);
+    navigate(`/orders/edit/${order.id}`);
   };
 
   useEffect(() => {
-    if (!showAddModal && !editingOrder) {
-        setNewOrder(getInitialNewOrder());
+    if (onRefresh && orders.length > 0) {
+      // Logic for refresh if needed
     }
-  }, [showAddModal, editingOrder, settings, activeCompanies]);
-
-  useEffect(() => {
-    const orderData = editingOrder || newOrder;
-    if (!orderData.shippingCompany && !orderData.governorate && !orderData.shippingArea) return;
-
-    const options = settings?.shippingOptions?.[orderData.shippingCompany!] || [];
-    const effectiveOptions = options.length > 0 ? options : generateEgyptShippingOptions();
-
-    const selectedOpt = effectiveOptions.find(o => o.label === (orderData.governorate || orderData.shippingArea)) || effectiveOptions[0];
-    if (selectedOpt) {
-      let baseFee = selectedOpt.deliveryPrice || 0;
-      let extraKgPrice = selectedOpt.extraKgPrice || 0;
-      if (orderData.city) {
-          const cityOpt = selectedOpt.cities?.find((c: any) => c.name === orderData.city);
-          if (cityOpt) {
-              if (cityOpt.useParentFees) {
-                  baseFee = selectedOpt.deliveryPrice || 0;
-                  extraKgPrice = selectedOpt.extraKgPrice || 0;
-              } else if (cityOpt.deliveryPrice !== undefined && cityOpt.deliveryPrice !== null) {
-                  baseFee = cityOpt.deliveryPrice;
-                  extraKgPrice = cityOpt.extraKgPrice || 0;
-              }
-          }
-      }
-
-      const compFees = settings.companySpecificFees?.[orderData.shippingCompany!];
-      const baseWeight = compFees?.useCustomFees && compFees.baseWeight !== undefined 
-          ? compFees.baseWeight 
-          : (settings.baseWeight !== undefined ? settings.baseWeight : 5);
-          
-      const totalWeight = orderData.items?.reduce((sum, item) => {
-          const itemWeight = parseFloat(item.weight?.toString() || '0');
-          const itemQuantity = parseInt(item.quantity?.toString() || '1');
-          return sum + (itemWeight * itemQuantity);
-      }, 0) || 0;
-
-      const extraWeight = Math.max(0, totalWeight - baseWeight);
-      const totalFee = baseFee + (Math.ceil(extraWeight) * extraKgPrice);
-      
-      if (orderData.shippingFee !== totalFee || (selectedOpt && orderData.shippingArea !== selectedOpt.label)) {
-        if (editingOrder) {
-          setEditingOrder(prev => (prev ? { ...prev, shippingFee: totalFee, shippingArea: selectedOpt.label } : prev));
-        } else {
-          setNewOrder(prev => ({ ...prev, shippingFee: totalFee, shippingArea: selectedOpt.label }));
-        }
-      }
-    }
-  }, [
-    (editingOrder || newOrder).shippingCompany,
-    (editingOrder || newOrder).governorate,
-    (editingOrder || newOrder).shippingArea,
-    (editingOrder || newOrder).city,
-    JSON.stringify((editingOrder || newOrder).items?.map(i => ({ w: i.weight, q: i.quantity }))),
-    settings.shippingOptions,
-    settings.companySpecificFees,
-    settings.baseWeight
-  ]);
+  }, [orders.length, onRefresh]);
 
   const filteredOrders = useMemo(() => {
     let baseFilter;
@@ -478,211 +399,82 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
 
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
 
-    const getNextOrderNumber = () => {
-        const nums = orders
-            .map(o => {
-                const match = o.orderNumber.match(/\d+/);
-                return match ? parseInt(match[0]) : null;
-            })
-            .filter((n): n is number => n !== null);
-        return nums.length > 0 ? Math.max(...nums) + 1 : 1;
+  const filteredMetrics = useMemo(() => {
+    let salesTotal = 0;
+    let expectedCollection = 0;
+    let shippingExpenses = 0;
+    let productCostTotal = 0;
+    let flexFeesTotal = 0;
+    let netProfitTotal = 0;
+    let successCount = 0;
+    let returnCount = 0;
+
+    filteredOrders.forEach(o => {
+      const safeProductPrice = Number(o.productPrice) || 0;
+      const safeShippingFee = Number(o.shippingFee) || 0;
+      const safeDiscount = Number(o.discount) || 0;
+      const safeProductCost = Number(o.productCost) || 0;
+      const safeTax = Number(o.tax) || 0;
+      const safeAdvance = Number(o.advancePayment) || 0;
+
+      const compFees = settings.companySpecificFees?.[o.shippingCompany];
+      const useCustom = compFees?.useCustomFees ?? false;
+      const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
+      const insuranceFee = (o.isInsured ?? true) ? calculateInsuranceFee(o, insuranceRate, settings) : 0;
+      const inspectionFee = (o.includeInspectionFee ?? true) ? (useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0)) : 0;
+      const codFee = calculateCodFee(o, settings);
+      const bostaVatFee = calculateBostaVat(o, insuranceFee, settings);
+
+      const inspectionAdjustment = o.inspectionFeePaidByCustomer ? 0 : inspectionFee;
+      
+      const computedTotal = safeProductPrice + safeShippingFee + safeTax - safeDiscount - safeAdvance + inspectionFee;
+      const orderTotal = o.totalAmountOverride != null ? Number(o.totalAmountOverride) : computedTotal;
+
+      const baseRevenue = safeProductPrice + safeShippingFee + safeTax;
+      const amountCollectedFromCustomer = o.totalAmountOverride !== undefined && o.totalAmountOverride !== null
+          ? o.totalAmountOverride + safeAdvance 
+          : (baseRevenue - safeDiscount);
+
+      const totalCarrierExpenses = safeShippingFee + insuranceFee + bostaVatFee;
+      const totalExpenses = safeProductCost + safeShippingFee + insuranceFee + inspectionAdjustment + codFee + bostaVatFee;
+
+      const isReturnedOrFailed = ['مرتجع', 'فشل_التوصيل'].includes(o.status);
+      const flexFeeValue = useCustom ? (compFees?.flexShipFee ?? 0) : (settings.flexShipFee ?? 0);
+      const flexPaidAmount = o.flexShipFeePaidByCustomer ? (o.flexShipFee || flexFeeValue) : 0;
+
+      const oProfit = isReturnedOrFailed
+          ? (flexPaidAmount - totalCarrierExpenses)
+          : (amountCollectedFromCustomer - totalExpenses);
+
+      salesTotal += safeProductPrice;
+      expectedCollection += orderTotal;
+      shippingExpenses += totalCarrierExpenses;
+      productCostTotal += safeProductCost;
+      flexFeesTotal += (o.flexShipFee || flexFeeValue);
+      netProfitTotal += oProfit;
+
+      if (o.status === 'تم_التحصيل' || o.status === 'تم_توصيلها') {
+        successCount++;
+      } else if (['مرتجع', 'فشل_التوصيل'].includes(o.status)) {
+        returnCount++;
+      }
+    });
+
+    const activeDeliveredOrReturned = successCount + returnCount;
+    const returnRate = activeDeliveredOrReturned > 0 ? (returnCount / activeDeliveredOrReturned) * 100 : 0;
+
+    return {
+      salesTotal,
+      expectedCollection,
+      shippingExpenses,
+      productCostTotal,
+      flexFeesTotal,
+      netProfitTotal,
+      returnRate
     };
+  }, [filteredOrders, settings]);
 
-    const handleAddOrder = (e: React.FormEvent) => {
-      e.preventDefault();
-      const orderData: NewOrderState = editingOrder || newOrder;
-      
-      const isExchangeCustom = orderData.shipmentType === 'exchange' && orderData.useProductsForShipment === false;
-      const isReturn = orderData.shipmentType === 'return';
-      const isCashCollection = orderData.shipmentType === 'cash_collection';
-      
-      const items = isExchangeCustom
-        ? [{
-            productId: 'custom-shipment',
-            name: orderData.shipmentDescription || 'شحنة تبديل مرسلة',
-            quantity: orderData.shipmentQuantity || 1,
-            price: orderData.customShipmentPrice || 0,
-            cost: 0,
-            weight: 1,
-            thumbnail: ''
-          }]
-        : (isReturn ? [{
-            productId: 'return-shipment',
-            name: orderData.useProductsForReturn ? (orderData.returnDescription || 'طلب إرجاع شحنة') : (orderData.returnDescription || 'طلب إرجاع شحنة'),
-            quantity: orderData.returnQuantity || 1,
-            price: 0,
-            cost: 0,
-            weight: 1,
-            thumbnail: orderData.returnImage || ''
-        }] : (isCashCollection ? [{
-            productId: 'cash-collection',
-            name: 'طلب تحصيل نقدي',
-            quantity: 1,
-            price: orderData.customShipmentPrice || 0,
-            cost: 0,
-            weight: 1,
-            thumbnail: ''
-        }] : (orderData.items || [])));
-      
-      if (items.length === 0) {
-        alert("يجب إضافة منتج واحد على الأقل.");
-        return;
-      }
-      
-      const fullAddress = `${orderData.customerAddress}, ${orderData.buildingDetails || ''}`.trim();
-      const finalNotes = orderData.notes || '';
-
-      const totalProductPrice = items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0);
-      const totalProductCost = items.reduce((sum, item) => sum + (item.cost || 0) * (item.quantity || 1), 0);
-      const totalWeight = items.reduce((sum, item) => sum + (item.weight || 0) * (item.quantity || 1), 0);
-      const productNames = items.map(item => item.name).join(', ');
-
-      const totalBeforeAdvance = totalProductPrice + (orderData.shippingFee || 0) - (orderData.discount || 0);
-      if ((orderData.advancePayment || 0) > totalBeforeAdvance) {
-          alert("عفواً، لا يمكن أن يكون مبلغ العربون أكبر من إجمالي الطلب.");
-          return;
-      }
-
-      const orderToAdd: Omit<Order, 'id'> & { totalAmountOverride?: number } = {
-        ...(orderData as Omit<Order, 'id'>),
-        items,
-        customerAddress: fullAddress,
-        notes: finalNotes,
-        orderNumber: orderData.orderNumber || `${getNextOrderNumber()}`,
-        productPrice: totalProductPrice,
-        productCost: totalProductCost,
-        weight: totalWeight,
-        productName: productNames,
-      };
-    
-    const creditAmount = orderData.creditAmount || 0;
-    if (orderData.orderType === 'exchange' && creditAmount > 0) {
-        const newTotal = (orderToAdd.productPrice + orderToAdd.shippingFee) - (orderToAdd.discount || 0);
-        const finalAmount = newTotal - creditAmount;
-        
-        orderToAdd.totalAmountOverride = finalAmount;
-        
-        if (finalAmount <= 0) {
-            orderToAdd.paymentStatus = 'مدفوع';
-        } else {
-            orderToAdd.paymentStatus = 'بانتظار الدفع';
-        }
-        
-        orderToAdd.notes = `طلب استبدال للطلب #${orderData.originalOrderId}. تم تطبيق رصيد بقيمة ${creditAmount.toLocaleString()} ج.م.\n${orderToAdd.notes || ''}`.trim();
-    }
-    
-    if (editingOrder) {
-      setOrders(prevOrders => prevOrders.map(o => o.id === editingOrder.id ? { ...editingOrder, ...orderToAdd } as Order : o));
-      setShowAddModal(false);
-      setEditingOrder(null);
-    } else {
-      setOrderToConfirm(orderToAdd);
-    }
-
-    const oldAdvance = editingOrder?.advancePayment || 0;
-    const newAdvance = orderToAdd.advancePayment || 0;
-    const difference = newAdvance - oldAdvance;
-    
-    if (difference !== 0 && orderToAdd.advancePaymentPartnerId) {
-        const partnerTx = {
-             id: `adv-${Date.now()}`,
-             partnerId: orderToAdd.advancePaymentPartnerId,
-             type: difference > 0 ? 'customer_advance' : 'repayment',
-             amount: Math.abs(difference),
-             date: new Date().toISOString(),
-             note: `عربون / دفع مقدم للطلب #${orderToAdd.orderNumber} ${difference < 0 ? '(تعديل بالنقصان)' : ''}`
-        } as any;
-        
-        setSettings(prev => ({
-             ...prev,
-             partnerTransactions: [...(prev.partnerTransactions || []), partnerTx],
-             partners: (prev.partners || []).map(p => p.id === orderToAdd.advancePaymentPartnerId ? { ...p, balance: (p.balance || 0) - difference } : p)
-        }));
-    } else if (difference !== 0 && orderToAdd.advancePaymentTreasuryId && setTreasury) {
-        // Record advance payment in Treasury Account directly
-        const treasuryTxId = `tx-${Date.now()}`;
-        setTreasury((prev: any) => {
-            const currentTreasury = prev || { accounts: [], transactions: [] };
-            
-            const updatedAccounts = currentTreasury.accounts.map((acc: any) => 
-                acc.id === orderToAdd.advancePaymentTreasuryId 
-                ? { ...acc, balance: acc.balance + difference } 
-                : acc
-            );
-
-            const newTx = {
-                id: treasuryTxId,
-                date: new Date().toISOString(),
-                type: difference > 0 ? 'deposit' : 'withdrawal',
-                amount: Math.abs(difference),
-                description: `عربون / دفع مقدم للطلب #${orderToAdd.orderNumber} ${difference < 0 ? '(استرداد)' : ''}`,
-                toAccountId: difference > 0 ? orderToAdd.advancePaymentTreasuryId : undefined,
-                fromAccountId: difference < 0 ? orderToAdd.advancePaymentTreasuryId : undefined,
-            };
-
-            return {
-                accounts: updatedAccounts,
-                transactions: [newTx, ...currentTreasury.transactions]
-            };
-        });
-    }
-
-    // Save/Update Customer Data
-    const cleanPhone = (orderData.customerPhone || '').replace(/\s/g, '').replace('+2', '');
-    if (cleanPhone) {
-        setCustomers(prev => {
-            const existing = prev.find(c => c.phone.replace(/\s/g, '').replace('+2', '') === cleanPhone);
-            if (existing) {
-                return prev.map(c => c.id === existing.id ? { 
-                    ...c, 
-                    name: orderData.customerName || c.name,
-                    address: orderData.customerAddress || c.address,
-                    lastOrderDate: new Date().toISOString()
-                } : c);
-            } else {
-                const newCustomer: CustomerProfile = {
-                    id: `cust-${Date.now()}`,
-                    name: orderData.customerName || '',
-                    phone: orderData.customerPhone || '',
-                    address: orderData.customerAddress || '',
-                    totalOrders: 1,
-                    successfulOrders: 0,
-                    returnedOrders: 0,
-                    totalSpent: 0,
-                    lastOrderDate: new Date().toISOString(),
-                    firstOrderDate: new Date().toISOString(),
-                    averageOrderValue: 0,
-                    loyaltyPoints: 0
-                };
-                return [newCustomer, ...prev];
-            }
-        });
-    }
-  };
-  
-  const handleConfirmAddOrder = () => {
-    if (!orderToConfirm) return;
-    const orderWithId: Order = { ...orderToConfirm, id: `order-${Date.now()}` } as Order;
-    
-    if (orderWithId.orderType === 'exchange' && orderWithId.originalOrderId) {
-        setOrders(prevOrders => {
-            const originalOrderUpdated = prevOrders.map(o => 
-                o.id === orderWithId.originalOrderId ? { ...o, status: 'تم_الاستبدال' as OrderStatus } : o
-            );
-            return [orderWithId, ...originalOrderUpdated];
-        });
-    } else {
-        setOrders(prevOrders => [orderWithId, ...prevOrders]);
-    }
-
-    triggerWebhooks(orderWithId, settings);
-
-    setShowAddModal(false);
-    setOrderToConfirm(null);
-    setShowSummaryModal(orderWithId);
-  };
-  
-  const handleDeleteOrder = () => {
+    const handleDeleteOrder = () => {
     if (!orderToDelete) {
         console.error("handleDeleteOrder called with no order to delete.");
         return;
@@ -1025,7 +817,7 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     return { updatedProducts, stockDeducted: newStockDeducted };
   };
 
-  const updateOrderStatus = async (id: string, newStatus: OrderStatus) => {
+  const updateOrderStatus = async (id: string, newStatus: OrderStatus, forcePaidFlexShip?: boolean) => {
     const orderToUpdate = orders.find((o) => o.id === id);
     if (!orderToUpdate) return;
 
@@ -1040,10 +832,19 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     const configuredFlexShipFee = useCustomFees ? (compSpecificFees?.flexShipFee ?? 0) : (settings.flexShipFee ?? 0);
 
     let isFlexShipPaid = false;
-    if (['مرتجع', 'فشل_التوصيل'].includes(newStatus) && isFlexShipEnabled && configuredFlexShipFee > 0 && !orderToUpdate.flexShipFeePaidByCustomer) {
-        isFlexShipPaid = window.confirm(
-            `الأوردر رقم ${orderToUpdate.orderNumber}\nخدمة فليكس شيب مفعلة لشركة الشحن (${orderToUpdate.shippingCompany}).\nهل قام المستلم بدفع رسوم الخدمة الإضافية بقيمة (${configuredFlexShipFee} ج.م) لرفضه استلام الشحنة؟`
-        );
+    if (['مرتجع', 'فشل_التوصيل'].includes(newStatus) && isFlexShipEnabled && configuredFlexShipFee > 0 && !orderToUpdate.flexShipFeePaidByCustomer && forcePaidFlexShip === undefined) {
+        setPendingFlexShipConfirm({
+            orderId: id,
+            newStatus,
+            fee: configuredFlexShipFee,
+            companyName: orderToUpdate.shippingCompany || '',
+            orderNumber: orderToUpdate.orderNumber
+        });
+        return;
+    }
+
+    if (forcePaidFlexShip !== undefined) {
+        isFlexShipPaid = forcePaidFlexShip;
     }
 
     const orderWithFlexShip = {
@@ -1143,6 +944,69 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
     addAuditLog(orderId, 'إضافة بوليصة', `تم إضافة بوليصة رقم ${waybill} وتغيير الحالة إلى ${newStatus}`);
   };
 
+  const handleToggleFlexShipPaid = (orderId: string) => {
+    const orderToUpdate = orders.find(o => o.id === orderId);
+    if (!orderToUpdate) return;
+    
+    const compFees = settings.companySpecificFees?.[orderToUpdate.shippingCompany];
+    const useCustom = compFees?.useCustomFees ?? false;
+    const flexShipFeeAmount = orderToUpdate.flexShipFee ?? (useCustom ? (compFees?.flexShipFee ?? 0) : (settings.flexShipFee ?? 0));
+    
+    if (flexShipFeeAmount <= 0) return;
+    
+    const isCurrentlyPaid = !!orderToUpdate.flexShipFeePaidByCustomer;
+    const isNowPaid = !isCurrentlyPaid;
+    
+    const newTransactions: Transaction[] = [];
+    if (isNowPaid) {
+        newTransactions.push({
+            id: `flexship_${orderToUpdate.id}_${Date.now()}`,
+            type: 'إيداع',
+            amount: flexShipFeeAmount,
+            date: new Date().toISOString(),
+            note: `تحصيل رسوم خدمة فليكس شيب أوردر #${orderToUpdate.orderNumber}`,
+            category: 'collection',
+            status: 'completed',
+            orderId: orderToUpdate.id,
+            orderNumber: orderToUpdate.orderNumber
+        });
+    } else {
+        newTransactions.push({
+            id: `revert_flexship_${orderToUpdate.id}_${Date.now()}`,
+            type: 'سحب',
+            amount: flexShipFeeAmount,
+            date: new Date().toISOString(),
+            note: `عكس تحصيل رسوم فليكس شيب أوردر #${orderToUpdate.orderNumber} (رفض الدفع / إلغاء)`,
+            category: 'collection',
+            status: 'completed',
+            orderId: orderToUpdate.id,
+            orderNumber: orderToUpdate.orderNumber
+        });
+    }
+    
+    setWallet(prev => {
+        let newBalance = prev.balance || 0;
+        newTransactions.forEach(t => {
+            if (t.type === 'إيداع') newBalance += t.amount;
+            else if (t.type === 'سحب') newBalance -= t.amount;
+        });
+        return {
+            ...prev,
+            balance: newBalance,
+            transactions: [...newTransactions, ...prev.transactions]
+        };
+    });
+    
+    const updatedOrderData = {
+        ...orderToUpdate,
+        flexShipFeePaidByCustomer: isNowPaid,
+        flexShipFee: flexShipFeeAmount
+    };
+    
+    setOrders(prevOrders => prevOrders.map(o => o.id === orderId ? updatedOrderData : o));
+    addAuditLog(orderId, 'تعديل رسوم الشحن', isNowPaid ? 'تم تسجيل سداد رسوم فليكس شيب من العميل' : 'تم تفريغ/إلغاء رسوم فليكس شيب بسبب رفض العميل الدفع');
+  };
+
 
   const handleCollectAction = (order: Order, customerPaidInspection: boolean) => {
     if (order.status !== 'تم_توصيلها' || order.collectionProcessed) return;
@@ -1207,8 +1071,16 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
         const compFees = settings.companySpecificFees?.[order.shippingCompany];
         const useCustom = compFees?.useCustomFees ?? false;
         const inspectionFee = useCustom ? (compFees?.inspectionFee ?? settings.inspectionFee) : settings.inspectionFee;
-        const customerPaidInspection = order.includeInspectionFee ? window.confirm(`الأوردر رقم ${order.orderNumber}\nهل قام العميل بدفع رسوم المعاينة (الـ ${inspectionFee} ج)؟`) : false;
-        handleCollectAction(updatedOrder, customerPaidInspection);
+        
+        if (order.includeInspectionFee && inspectionFee && inspectionFee > 0) {
+            setPendingInspectionConfirm({
+                order,
+                newPaymentStatus,
+                inspectionFee
+            });
+        } else {
+            handleCollectAction(updatedOrder, false);
+        }
     } else {
         updateOrderField(order.id, 'paymentStatus', newPaymentStatus);
     }
@@ -1285,18 +1157,20 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
 
     const handleStartExchange = (originalOrder: Order) => {
         const creditAmount = originalOrder.totalAmountOverride ?? (originalOrder.productPrice + originalOrder.shippingFee - (originalOrder.discount || 0));
-        setNewOrder({
-            ...getInitialNewOrder(),
-            customerName: originalOrder.customerName,
-            customerPhone: originalOrder.customerPhone,
-            customerAddress: originalOrder.customerAddress,
-            shippingCompany: originalOrder.shippingCompany,
-            shippingArea: originalOrder.shippingArea,
-            orderType: 'exchange',
-            originalOrderId: originalOrder.id,
-            creditAmount: creditAmount,
+        navigate('/orders/new', { 
+            state: { 
+                exchangeData: {
+                    customerName: originalOrder.customerName,
+                    customerPhone: originalOrder.customerPhone,
+                    customerAddress: originalOrder.customerAddress,
+                    shippingCompany: originalOrder.shippingCompany,
+                    shippingArea: originalOrder.shippingArea,
+                    orderType: 'exchange',
+                    originalOrderId: originalOrder.id,
+                    creditAmount: creditAmount,
+                }
+            } 
         });
-        setShowAddModal(true);
     };
 
   const handlePrintInvoice = (order: Order) => {
@@ -1473,32 +1347,46 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   const handleAutoAssign = () => {
     const activeEmployees = settings.employees?.filter(e => e.status === 'active') || [];
     if (activeEmployees.length === 0) {
-      alert("لا يوجد موظفين نشطين متاحين للتوزيع.");
+      confirmAction({
+         title: "تنبيه",
+         message: "لا يوجد موظفين نشطين متاحين للتوزيع. يرجى تفعيل موظف واحد على الأقل في الإعدادات.",
+         type: "warning",
+         onConfirm: () => {}
+      });
       return;
     }
     const unassignedOrders = orders.filter(o => !o.assignedTo && o.status === 'في_انتظار_المكالمة');
     if (unassignedOrders.length === 0) {
-      alert("لا توجد طلبات غير معينة في حالة انتظار المكالمة.");
+      confirmAction({
+         title: "تنبيه",
+         message: "لا توجد طلبات غير معينة في حالة انتظار المكالمة لتوزيعها.",
+         type: "info",
+         onConfirm: () => {}
+      });
       return;
     }
     
-    if (window.confirm(`سيتم توزيع ${unassignedOrders.length} طلب على ${activeEmployees.length} موظف. هل أنت متأكد؟`)) {
-      let empIndex = 0;
-      
-      setOrders(prev => prev.map(o => {
-        if (!o.assignedTo && o.status === 'في_انتظار_المكالمة') {
-          const emp = activeEmployees[empIndex];
-          empIndex = (empIndex + 1) % activeEmployees.length;
-          return {
-            ...o,
-            assignedTo: emp.phone || emp.id,
-            assignedToName: emp.name
-          };
-        }
-        return o;
-      }));
-      alert("تم التوزيع بنجاح.");
-    }
+    confirmAction({
+      title: "توزيع الطلبات تلقائياً",
+      message: `سيتم توزيع ${unassignedOrders.length} طلب على ${activeEmployees.length} موظف دليفري/اتصالات نشطين بالتساوي. هل تريد الاستمرار بالفعل؟`,
+      type: "info",
+      confirmText: "تأكيد وتوزيع الآن",
+      onConfirm: () => {
+        let empIndex = 0;
+        setOrders(prev => prev.map(o => {
+          if (!o.assignedTo && o.status === 'في_انتظار_المكالمة') {
+            const emp = activeEmployees[empIndex];
+            empIndex = (empIndex + 1) % activeEmployees.length;
+            return {
+              ...o,
+              assignedTo: emp.phone || emp.id,
+              assignedToName: emp.name
+            };
+          }
+          return o;
+        }));
+      }
+    });
   };
 
   const getWhatsAppLink = (order: Order) => {
@@ -1544,28 +1432,34 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       animate="visible"
     >
       {/* Header & Main Actions */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="flex items-center justify-between w-full lg:w-auto">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-100 dark:border-slate-800" dir="rtl">
+        <div className="flex items-center justify-between w-full lg:w-auto shrink-0">
           <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
+              <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">نظام الطلبات واللوجستيات المركزي</span>
+            </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-              <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter mb-1 truncate">سجل الطلبات</h1>
+              <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                سجل الطلبات المركزي
+              </h1>
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleManualRefresh}
-                className={`flex items-center gap-2 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm ${isRefreshing ? 'animate-spin text-indigo-600 border-indigo-200' : ''}`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm cursor-pointer ${isRefreshing ? 'animate-spin text-indigo-600 border-indigo-200' : ''}`}
                 title="مزامنة الطلبات"
               >
                 <RefreshCcw size={18} />
-                <span className="text-sm font-black uppercase tracking-tight">Sync</span>
+                <span className="text-xs font-black uppercase tracking-tight">مزامنة سحابية</span>
               </motion.button>
             </div>
             <div className="flex items-center gap-3 mt-2">
-              <div className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-900/30">
+              <div className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-full text-[10px] font-black border border-indigo-100 dark:border-indigo-900/30">
                 {filteredOrders.length} طلب نشط
               </div>
-              <div className="px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 dark:border-emerald-900/30">
-                المتجر: {activeStore?.id}
+              <div className="px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-full text-[10px] font-black border border-emerald-100 dark:border-emerald-900/30">
+                المتجر النشط: {activeStore?.id}
               </div>
             </div>
           </div>
@@ -1573,14 +1467,14 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => navigate('/create-order')}
+            onClick={() => navigate('/orders/new')}
             className="lg:hidden bg-indigo-600 text-white p-4 rounded-2xl font-black shadow-xl shadow-indigo-500/20 transition-all flex items-center justify-center shrink-0"
           >
             <Plus size={24} />
           </motion.button>
         </div>
         
-        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-2 lg:pb-0">
+        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-2 lg:pb-0 px-1">
           <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shrink-0">
             {[
                 { id: 'list', icon: LayoutList },
@@ -1617,8 +1511,8 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => navigate('/create-order')}
-            className="hidden lg:flex bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black shadow-xl shadow-indigo-500/25 transition-all items-center gap-3 text-sm shrink-0"
+            onClick={() => navigate('/orders/new')}
+            className="hidden lg:flex bg-indigo-600 text-white px-5 py-3 rounded-2xl font-black shadow-xl shadow-indigo-500/25 transition-all items-center gap-3 text-sm shrink-0"
           >
             <Plus size={20} />
             <span>طلب جديد</span>
@@ -1629,13 +1523,27 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       {/* Quick Stats Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {[
-          { label: 'بانتظار المراجعة', count: quickStats.awaitingWaybill, icon: FileSearch, color: 'indigo', hideOnMobile: false },
-          { label: 'قيد الشحن', count: quickStats.onTheWay, icon: Truck, color: 'blue', hideOnMobile: false },
-          { label: 'تم التوصيل', count: quickStats.delivered, icon: CheckCircle, color: 'emerald', hideOnMobile: false },
-          { label: 'مرتجع / فشل', count: quickStats.failed, icon: XCircle, color: 'rose', hideOnMobile: false },
-          { label: 'طلبات ملغاة', count: quickStats.canceled, icon: Trash2, color: 'slate', hideOnMobile: true },
+          { label: 'بانتظار المراجعة', count: quickStats.awaitingWaybill, icon: FileSearch, color: 'indigo', targetTab: 'جاري_المراجعة', isSelected: activeTab === 'جاري_المراجعة', hideOnMobile: false },
+          { label: 'قيد الشحن', count: quickStats.onTheWay, icon: Truck, color: 'blue', targetTab: 'تم_الارسال', isSelected: activeTab === 'تم_الارسال', hideOnMobile: false },
+          { label: 'تم التوصيل', count: quickStats.delivered, icon: CheckCircle, color: 'emerald', targetTab: 'تم_التحصيل', isSelected: activeTab === 'تم_التحصيل', hideOnMobile: false },
+          { label: 'مرتجع / فشل', count: quickStats.failed, icon: XCircle, color: 'rose', targetTab: 'مرتجع', isSelected: ['مرتجع', 'فشل_التوصيل'].includes(activeTab), hideOnMobile: false },
+          { label: 'طلبات ملغاة', count: quickStats.canceled, icon: Trash2, color: 'slate', targetTab: 'ملغي', isSelected: activeTab === 'ملغي', hideOnMobile: true },
         ].map((stat, idx) => (
-          <div key={idx} className={`bg-white dark:bg-slate-900 p-5 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group ${stat.hideOnMobile ? 'hidden lg:flex' : 'flex'}`}>
+          <div 
+            key={idx} 
+            onClick={() => {
+              if (stat.isSelected) {
+                setActiveTab('الجميع');
+              } else {
+                setActiveTab(stat.targetTab);
+              }
+            }}
+            className={`cursor-pointer select-none active:scale-[0.98] bg-white dark:bg-slate-900 p-5 rounded-[2rem] border transition-all flex flex-col justify-between group ${
+              stat.isSelected 
+                ? `border-indigo-600 dark:border-indigo-500 ring-4 ring-indigo-500/10 shadow-md` 
+                : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm hover:shadow-md'
+            } ${stat.hideOnMobile ? 'hidden lg:flex' : 'flex'}`}
+          >
             <div className="flex items-start justify-between">
                 <div className={`p-3 bg-${stat.color}-50 dark:bg-${stat.color}-900/20 text-${stat.color}-600 dark:text-${stat.color}-400 rounded-2xl group-hover:scale-110 transition-transform`}>
                     <stat.icon size={22} />
@@ -1660,6 +1568,97 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Advanced Filter Analytics Hub Option Trigger */}
+      <div className="w-full">
+         <div 
+           onClick={() => setShowAnalyticsHub(!showAnalyticsHub)}
+           className="flex justify-between items-center text-right bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-500/15 dark:border-indigo-500/10 rounded-2xl p-3 px-5 cursor-pointer transition-all select-none"
+         >
+            <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-xs flex-row-reverse">
+               <Sparkles size={14} className="animate-pulse" />
+               <span>اضغط لعرض التحليلات والتقارير المالية التفاعلية ({filteredOrders.length} طلب معروض حالياً)</span>
+            </div>
+            <div className="text-slate-400 dark:text-slate-600">
+               <ChevronDown size={16} className={`transform transition-transform duration-200 ${showAnalyticsHub ? 'rotate-180' : ''}`} />
+            </div>
+         </div>
+
+         <AnimatePresence>
+            {showAnalyticsHub && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden mt-3"
+              >
+                  <div className="bg-slate-50 dark:bg-slate-900/40 p-5 rounded-[2rem] border border-slate-200 dark:border-slate-800 space-y-4 text-right">
+                      <div className="flex justify-between items-center border-b border-slate-200/50 dark:border-slate-800 pb-3">
+                          <span className="text-xs text-slate-400 font-bold">مبني بالاعتماد على المدخلات وخيارات التصفية النشطة</span>
+                          <h4 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-1.5 flex-row-reverse">
+                             <Coins className="text-indigo-600" size={16} /> ملخص الحسابات المالية الحقيقية
+                          </h4>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-right">
+                          
+                          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                              <p className="text-[10px] text-slate-400 font-bold mb-1">إجمالي المبيعات المفلترة</p>
+                              <p className="text-lg font-black text-slate-800 dark:text-white tabular-nums">{filteredMetrics.salesTotal.toLocaleString()} ج.م</p>
+                              <div className="w-full bg-slate-150 dark:bg-slate-850 h-[3px] rounded-full mt-2.5 overflow-hidden">
+                                  <div className="bg-emerald-500 h-full w-[80%]" />
+                              </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                              <p className="text-[10px] text-slate-400 font-bold mb-1">المطلوب تحصيله</p>
+                              <p className="text-lg font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{filteredMetrics.expectedCollection.toLocaleString()} ج.م</p>
+                              <div className="w-full bg-slate-150 dark:bg-slate-850 h-[3px] rounded-full mt-2.5 overflow-hidden">
+                                  <div className="bg-indigo-500 h-full w-[65%]" />
+                              </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                              <p className="text-[10px] text-slate-400 font-bold mb-1">تقدير رسوم الشحن والتأمين</p>
+                              <p className="text-lg font-black text-slate-850 dark:text-slate-200 tabular-nums">{filteredMetrics.shippingExpenses.toLocaleString(undefined, { maximumFractionDigits: 1 })} ج.م</p>
+                              <div className="w-full bg-slate-150 dark:bg-slate-850 h-[3px] rounded-full mt-2.5 overflow-hidden">
+                                  <div className="bg-amber-500 h-full w-[45%]" />
+                              </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                              <p className="text-[10px] text-slate-400 font-bold mb-1">صافي الأرباح المتوقعة</p>
+                              <p className={`text-lg font-black tabular-nums ${filteredMetrics.netProfitTotal >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'}`}>
+                                 {filteredMetrics.netProfitTotal.toLocaleString(undefined, { maximumFractionDigits: 1 })} ج.م
+                              </p>
+                              <div className="w-full bg-slate-150 dark:bg-slate-850 h-[3px] rounded-full mt-2.5 overflow-hidden">
+                                  <div className={`h-full ${filteredMetrics.netProfitTotal >= 0 ? 'bg-emerald-500' : 'bg-rose-500'} w-[75%]`} />
+                              </div>
+                          </div>
+
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm pt-2">
+                          <div className="bg-white dark:bg-slate-900/80 p-3 px-4 rounded-xl border border-slate-100 dark:border-slate-800 flex justify-between items-center flex-row-reverse text-slate-600 dark:text-slate-350">
+                              <span className="font-bold flex items-center gap-1.5 flex-row-reverse">
+                                 <Percent size={14} className="text-rose-500" />
+                                 معدل مرتجعات المفلتر (الفعلية)
+                              </span>
+                              <span className="font-black text-rose-600 dark:text-rose-400 tabular-nums">{filteredMetrics.returnRate.toFixed(1)}%</span>
+                          </div>
+                          <div className="bg-white dark:bg-slate-900/80 p-3 px-4 rounded-xl border border-slate-100 dark:border-slate-800 flex justify-between items-center flex-row-reverse text-slate-600 dark:text-slate-350">
+                              <span className="font-bold flex items-center gap-1.5 flex-row-reverse">
+                                 <Briefcase size={14} className="text-slate-400" />
+                                 متوسط تكلفة البضائع المعروضة
+                              </span>
+                              <span className="font-black text-slate-700 dark:text-slate-300 tabular-nums">{filteredMetrics.productCostTotal.toLocaleString()} ج.م</span>
+                          </div>
+                      </div>
+                  </div>
+              </motion.div>
+            )}
+         </AnimatePresence>
       </div>
 
       {/* Floating Filter Hub */}
@@ -1821,9 +1820,11 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                   </th>
                   <th className="p-6">الطلب والعميل</th>
                   <th className="p-6">المنتجات</th>
-                  <th className="p-6">الشحن</th>
+                  <th className="p-6">مبلغ التحصيل</th>
+                  <th className="p-6">رسوم فليكس شيب</th>
                   <th className="p-6">الحالة</th>
-                  <th className="p-6">الدفع</th>
+                  <th className="p-6">المحاولات</th>
+                  <th className="p-6">حالة المبلغ المحصل</th>
                   <th className="p-6 text-left">الإجراءات</th>
                 </tr>
               </thead>
@@ -1846,6 +1847,8 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
                     onShowSummary={() => setShowSummaryModal(order)}
                     onShowAudit={() => setShowAuditLog(order)}
                     onShowAssignment={() => setShowAssignment(order)}
+                    onShowDetails={() => setShowDetailsModal(order)}
+                    onToggleFlexShipPaid={() => handleToggleFlexShipPaid(order.id)}
                     whatsappLink={getWhatsAppLink(order)}
                     settings={settings}
                   />
@@ -1968,51 +1971,13 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
       )}
 
       {/* Modals */}
-      {(showAddModal || editingOrder) && (
-        <OrderModal 
-          isOpen={showAddModal || !!editingOrder} 
-          onClose={() => {
-            setShowAddModal(false); 
-            setEditingOrder(null);
-            if (defaultShowAdd) {
-              navigate('/orders');
-            }
-          }} 
-          onSubmit={handleAddOrder} 
-          orderData={editingOrder || newOrder} 
-          setOrderData={editingOrder ? setEditingOrder as React.Dispatch<React.SetStateAction<any>> : setNewOrder} 
-          settings={settings} 
-          isEditing={!!editingOrder} 
-          customers={uniqueCustomers} 
-          orders={orders} 
-          treasury={treasury}
-        />
-      )}
       
-      {orderToConfirm && ( 
-        <OrderPreConfirmationModal 
-          order={orderToConfirm} 
-          settings={settings} 
-          onConfirm={handleConfirmAddOrder} 
-          onCancel={() => {
-            setOrderToConfirm(null);
-            if (defaultShowAdd) {
-              navigate('/orders');
-            }
-          }} 
-        /> 
-      )}
-      {showSummaryModal && ( 
-        <OrderConfirmationSummary 
-          order={showSummaryModal} 
-          settings={settings} 
-          onClose={() => {
-            setShowSummaryModal(null);
-            if (defaultShowAdd) {
-              navigate('/orders');
-            }
-          }} 
-        /> 
+      {showDetailsModal && (
+        <OrderDetailsModal
+          order={showDetailsModal}
+          settings={settings}
+          onClose={() => setShowDetailsModal(null)}
+        />
       )}
       {orderToDelete && ( <ConfirmationModal title="حذف الطلب؟" description={`هل أنت متأكد من حذف طلب العميل "${orderToDelete.customerName}"؟`} onConfirm={handleDeleteOrder} onCancel={() => setOrderToDelete(null)} /> )}
       {orderForWaybill && orderForModal && ( <WaybillModal order={orderForModal} onClose={() => setOrderForWaybill(null)} onSave={handleSaveWaybill} /> )}
@@ -2024,6 +1989,98 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
             onClose={() => setAutoWhatsappData(null)} 
             settings={settings} 
         />
+      )}
+
+      {pendingFlexShipConfirm && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl p-6 text-center animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800" style={{ direction: 'rtl' }}>
+                <div className="w-16 h-16 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-violet-100 dark:border-violet-500/20">
+                    <Truck size={32} />
+                </div>
+                <h3 className="text-xl font-black text-slate-800 dark:text-white mb-2">تأكيد رسوم الفليكس شيب (Flex Ship)</h3>
+                <p className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-6">
+                    الطلب رقم <span className="text-slate-800 dark:text-slate-200 font-extrabold">#{pendingFlexShipConfirm.orderNumber}</span> لشركة الشحن ({pendingFlexShipConfirm.companyName}).
+                    <br />
+                    هل قام المستلم بدفع الرسوم الإضافية بقيمة <span className="text-violet-600 dark:text-violet-400 font-black">{pendingFlexShipConfirm.fee} ج.م</span> لرفضه استلام الشحنة؟
+                </p>
+                
+                <div className="grid grid-cols-1 gap-2.5">
+                    <button 
+                        onClick={() => {
+                            updateOrderStatus(pendingFlexShipConfirm.orderId, pendingFlexShipConfirm.newStatus, true);
+                            setPendingFlexShipConfirm(null);
+                        }}
+                        className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-2xl transition-all shadow-md active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                        <span>نعم، تم الدفع والمستلم سدد الرسوم ✓</span>
+                    </button>
+                    <button 
+                        onClick={() => {
+                            updateOrderStatus(pendingFlexShipConfirm.orderId, pendingFlexShipConfirm.newStatus, false);
+                            setPendingFlexShipConfirm(null);
+                        }}
+                        className="w-full py-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/10 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 font-extrabold rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                        <span>لا، رفض الدفع (لم يتم التحصيل) ✗</span>
+                    </button>
+                    <button 
+                        onClick={() => {
+                            setPendingFlexShipConfirm(null);
+                        }}
+                        className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    >
+                        <span>إلغاء التغيير والرجوع</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {pendingInspectionConfirm && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] shadow-2xl p-8 text-center animate-in zoom-in duration-200 border border-slate-200 dark:border-slate-800" style={{ direction: 'rtl' }}>
+                <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-emerald-100 dark:border-emerald-500/20 shadow-sm">
+                    <Coins size={32} />
+                </div>
+                <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">تأكيد رسوم المعاينة</h3>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-6 font-sans leading-relaxed">
+                     الطلب رقم <span className="text-slate-800 dark:text-slate-200 font-extrabold">#{pendingInspectionConfirm.order.orderNumber}</span>.
+                     <br />
+                     هل قام العميل بدفع رسوم المعاينة بقيمة <span className="text-emerald-600 dark:text-emerald-400 font-black">{pendingInspectionConfirm.inspectionFee} ج.م</span>؟
+                </p>
+                
+                <div className="grid grid-cols-1 gap-2.5">
+                    <button 
+                        onClick={() => {
+                            const updatedOrder = { ...pendingInspectionConfirm.order, paymentStatus: pendingInspectionConfirm.newPaymentStatus, inspectionFeePaidByCustomer: true };
+                            handleCollectAction(updatedOrder, true);
+                            setPendingInspectionConfirm(null);
+                        }}
+                        className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-2xl transition-all shadow-md active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-xs"
+                    >
+                        <span>✓ نعم، العميل سدد كامل رسوم المعاينة</span>
+                    </button>
+                    <button 
+                        onClick={() => {
+                            const updatedOrder = { ...pendingInspectionConfirm.order, paymentStatus: pendingInspectionConfirm.newPaymentStatus, inspectionFeePaidByCustomer: false };
+                            handleCollectAction(updatedOrder, false);
+                            setPendingInspectionConfirm(null);
+                        }}
+                        className="w-full py-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/10 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 font-extrabold rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-xs"
+                    >
+                        <span>✗ لا، لم يسدد رسوم المعاينة بالزيادة</span>
+                    </button>
+                    <button 
+                        onClick={() => {
+                            setPendingInspectionConfirm(null);
+                        }}
+                        className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    >
+                        <span>إلغاء الإجراء</span>
+                    </button>
+                </div>
+            </div>
+        </div>
       )}
 
       {confirmation.isOpen && (
@@ -2083,6 +2140,49 @@ const OrdersList: React.FC<OrdersListProps & { onRefresh?: () => void }> = ({ or
   );
 };
 
+const ShipmentTypeBadge: React.FC<{ type?: string }> = ({ type }) => {
+  const t = type || 'delivery';
+  switch (t) {
+    case 'partial_delivery':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black bg-sky-55/60 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-850 whitespace-nowrap">
+          <Package size={12} />
+          <span>توصيل جزئي</span>
+          <span className="px-1 py-0.5 bg-cyan-400 dark:bg-cyan-500 text-white rounded-[4px] text-[8px] font-black leading-none animate-pulse">جديد</span>
+        </span>
+      );
+    case 'exchange':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black bg-indigo-55/60 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-205 dark:border-indigo-850 whitespace-nowrap">
+          <ArrowRightLeft size={12} />
+          <span>تبديل شحنات</span>
+        </span>
+      );
+    case 'return':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black bg-rose-55/60 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-205 dark:border-rose-850 whitespace-nowrap">
+          <RefreshCcw size={12} />
+          <span>إرجاع شحنة</span>
+        </span>
+      );
+    case 'cash_collection':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black bg-emerald-55/60 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-205 dark:border-emerald-850 whitespace-nowrap">
+          <Coins size={12} />
+          <span>تحصيل نقدي</span>
+        </span>
+      );
+    case 'delivery':
+    default:
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-750 whitespace-nowrap">
+          <Truck size={12} />
+          <span>توصيل شحنة</span>
+        </span>
+      );
+  }
+};
+
 const OrderCard = ({ 
   order, 
   isSelected, 
@@ -2121,6 +2221,7 @@ const OrderCard = ({
   settings: Settings,
   key?: any
 }) => {
+  const navigate = useNavigate();
   const statusInfo = ORDER_STATUS_METADATA[order.status] || { label: order.status, color: 'bg-slate-500', icon: 'Package' };
   const StatusIcon = {
     PhoneForwarded, FileSearch, Package, Truck, CheckCircle, Coins, RefreshCcw, XCircle, Archive
@@ -2190,12 +2291,13 @@ const OrderCard = ({
         </div>
       </div>
 
-      {/* Status Badge */}
-      <div className="mb-8">
+      {/* Status & Shipment Type Badges */}
+      <div className="flex flex-wrap items-center gap-3 mb-8">
           <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl ${statusInfo.color} text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-md`}>
               <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
               {statusInfo.label}
           </div>
+          <ShipmentTypeBadge type={order.shipmentType} />
       </div>
 
       {/* Profile Section */}
@@ -2322,6 +2424,15 @@ const OrderCard = ({
               >
                 بوليصة شحن <LayoutList size={16} /> {order.source === 'synced' && order.waybillNumber?.startsWith('http') && <ExternalLink size={12} className="text-blue-500 mr-auto" />}
               </button>
+              <button 
+                  onClick={(e) => { 
+                      e.stopPropagation(); 
+                      navigate('/orders/new', { state: { exchangeData: order } }); 
+                  }} 
+                  className="w-full text-right px-4 py-3 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors"
+              >
+                  إنشاء بوليصة استبدال <RefreshCcw size={16} />
+              </button>
               <button onClick={onShowAudit} className="w-full text-right px-4 py-3 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
                 سجل التدقيق <FileSearch size={16} />
               </button>
@@ -2362,7 +2473,7 @@ const ShippingDetailsCard: React.FC<{ order: Order }> = ({ order }) => {
     );
 };
 
-const ProfitBreakdown: React.FC<{ order: Order; settings: Settings }> = ({ order, settings }) => {
+const ProfitBreakdown: React.FC<{ order: Order; settings: Settings; onToggleFlexShipPaid?: () => void }> = ({ order, settings, onToggleFlexShipPaid }) => {
     const safeProductPrice = Number(order.productPrice) || 0;
     const safeShippingFee = Number(order.shippingFee) || 0;
     const safeDiscount = Number(order.discount) || 0;
@@ -2393,126 +2504,212 @@ const ProfitBreakdown: React.FC<{ order: Order; settings: Settings }> = ({ order
         : 0;
         
     const totalExpenses = safeProductCost + safeShippingFee + insuranceFee + inspectionAdjustment + codFee + bostaVatFee;
-    const netProfit = amountCollectedFromCustomer - totalExpenses;
+    
+    // Dynamic Profit/Loss calculations based on status
+    const carrierCost = safeShippingFee + insuranceFee + bostaVatFee;
+    const isReturnedOrFailed = ['مرتجع', 'فشل_التوصيل'].includes(order.status);
+    const flexFeeValue = useCustom ? (compFees?.flexShipFee ?? 0) : (settings.flexShipFee ?? 0);
+    const flexPaidAmount = order.flexShipFeePaidByCustomer ? (order.flexShipFee || flexFeeValue) : 0;
+
+    const netProfit = isReturnedOrFailed
+        ? (flexPaidAmount - carrierCost) // Loss is carrier costs minus what was recouped via Flex Ship
+        : (amountCollectedFromCustomer - totalExpenses);
+
+    const profitLabel = isReturnedOrFailed 
+        ? (netProfit >= 0 ? 'صافي ربح تسوية الشحن' : 'الخسارة الفعلية الموقعة')
+        : (order.status === 'تم_التحصيل' ? 'الربح الصافي المحقق' : 'الربح المتوقع من الأوردر');
 
     return (
-        <div className="bg-white dark:bg-slate-900 rounded-[32px] p-6 sm:p-8 border border-slate-100 dark:border-slate-800 shadow-xl space-y-6 min-w-[320px] text-right">
-            <h4 className="text-lg font-black text-slate-800 dark:text-white pb-4 border-b border-slate-50 dark:border-slate-800">تفاصيل معادلة الربح</h4>
+        <div id="profit-breakdown shadow-lg" className="bg-white dark:bg-slate-900 rounded-[32px] p-6 sm:p-8 border border-slate-100 dark:border-slate-800 shadow-xl space-y-6 min-w-[320px] text-right">
+            <h4 className="text-lg font-black text-slate-800 dark:text-white pb-4 border-b border-slate-50 dark:border-slate-800">تفاصيل معادلة الربح والخسارة</h4>
             
             <div className="space-y-4">
-                {/* الإيرادات */}
-                <div className="py-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">الإيرادات (ما يدفعه العميل):</p>
-                    <div className="space-y-3">
-                        <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                            <span className="text-slate-500 font-bold">سعر المنتجات</span>
-                            <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{safeProductPrice.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                            <span className="text-slate-500 font-bold">رسوم الشحن على العميل</span>
-                            <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{safeShippingFee.toLocaleString()}</span>
-                        </div>
-                        {safeTax > 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                                <span className="text-slate-500 font-bold">الضريبة المضافة للعميل</span>
-                                <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{safeTax.toLocaleString()}</span>
+                {!isReturnedOrFailed ? (
+                    <>
+                        {/* الإيرادات */}
+                        <div className="py-2">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">الإيرادات (ما يدفعه العميل):</p>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                    <span className="text-slate-500 font-bold">سعر المنتجات</span>
+                                    <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{safeProductPrice.toLocaleString()} ج.م</span>
+                                </div>
+                                <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                    <span className="text-slate-500 font-bold">رسوم الشحن على العميل</span>
+                                    <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{safeShippingFee.toLocaleString()} ج.م</span>
+                                </div>
+                                {safeTax > 0 && (
+                                    <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                        <span className="text-slate-500 font-bold">الضريبة المضافة للعميل</span>
+                                        <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{safeTax.toLocaleString()} ج.م</span>
+                                    </div>
+                                )}
+                                {safeDiscount > 0 && (
+                                    <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                        <span className="text-slate-500 font-bold">خصومات ومسماحات للعميل</span>
+                                        <span className="font-black text-rose-500 tabular-nums">-{safeDiscount.toLocaleString()} ج.م</span>
+                                    </div>
+                                )}
+                                {extraAdjustment !== 0 && (
+                                    <div className="flex justify-between items-center flex-row-reverse text-sm mb-2 border-t border-slate-100 dark:border-slate-800/50 pt-2 mt-2">
+                                        <span className="text-slate-500 font-bold">تسوية المبلغ المطلوب يدوياً</span>
+                                        <span className={`font-black ${extraAdjustment > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'} tabular-nums`}>
+                                            {extraAdjustment > 0 ? '+' : ''}{extraAdjustment.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م
+                                        </span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between items-center flex-row-reverse text-sm bg-slate-50 dark:bg-slate-800/40 p-2 rounded-lg mt-2 border border-slate-100 dark:border-slate-700/50">
+                                    <span className="text-slate-700 dark:text-slate-300 font-black">إجمالي الإيرادات =</span>
+                                    <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{amountCollectedFromCustomer.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                                </div>
                             </div>
-                        )}
-                        {safeDiscount > 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                                <span className="text-slate-500 font-bold">خصومات ومسماحات للعميل</span>
-                                <span className="font-black text-rose-500 tabular-nums">-{safeDiscount.toLocaleString()}</span>
-                            </div>
-                        )}
-                        {extraAdjustment !== 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2 border-t border-slate-100 dark:border-slate-800/50 pt-2 mt-2">
-                                <span className="text-slate-500 font-bold">تسوية المبلغ المطلوب يدوياً</span>
-                                <span className={`font-black ${extraAdjustment > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'} tabular-nums`}>
-                                    {extraAdjustment > 0 ? '+' : ''}{extraAdjustment.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                </span>
-                            </div>
-                        )}
-                        <div className="flex justify-between items-center flex-row-reverse text-sm bg-slate-50 dark:bg-slate-800/40 p-2 rounded-lg mt-2 border border-slate-100 dark:border-slate-700/50">
-                            <span className="text-slate-700 dark:text-slate-300 font-black">إجمالي الإيرادات =</span>
-                            <span className="font-black text-emerald-600 dark:text-emerald-400 tabular-nums">+{amountCollectedFromCustomer.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                         </div>
-                    </div>
-                </div>
 
-                {/* التكاليف */}
-                <div className="py-3 border-t border-slate-100 dark:border-slate-800">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 mt-1">المصروفات والتكاليف:</p>
-                    <div className="space-y-3">
-                        <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                            <span className="text-slate-500 font-bold">تكلفة شراء المنتجات</span>
-                            <span className="font-black text-rose-500 tabular-nums">-{safeProductCost.toLocaleString()}</span>
+                        {/* التكاليف */}
+                        <div className="py-3 border-t border-slate-100 dark:border-slate-800">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 mt-1">المصروفات والتكاليف:</p>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                    <span className="text-slate-500 font-bold">تكلفة شراء المنتجات</span>
+                                    <span className="font-black text-rose-500 tabular-nums">-{safeProductCost.toLocaleString()} ج.م</span>
+                                </div>
+                                <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                    <span className="text-slate-500 font-bold">تكلفة بوليصة الشحن (للشركة)</span>
+                                    <span className="font-black text-rose-500 tabular-nums">-{safeShippingFee.toLocaleString()} ج.م</span>
+                                </div>
+                                {insuranceFee > 0 && (
+                                    <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                        <span className="text-slate-500 font-bold">التأمين على الشحنة</span>
+                                        <span className="font-black text-rose-500 tabular-nums">-{insuranceFee.toFixed(2)} ج.م</span>
+                                    </div>
+                                )}
+                                {bostaVatFee > 0 && (
+                                    <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                        <span className="text-slate-500 font-bold">{dynamicVatLabel}</span>
+                                        <span className="font-black text-rose-500 tabular-nums">-{bostaVatFee.toFixed(2)} ج.م</span>
+                                    </div>
+                                )}
+                                {inspectionAdjustment > 0 && (
+                                    <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                        <span className="text-slate-500 font-bold">المعاينة</span>
+                                        <span className="font-black text-rose-500 tabular-nums">-{inspectionAdjustment.toFixed(2)} ج.م</span>
+                                    </div>
+                                )}
+                                {codFee > 0 && (
+                                    <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
+                                        <span className="text-slate-500 font-bold">رسوم التحصيل (COD)</span>
+                                        <span className="font-black text-rose-500 tabular-nums">-{codFee.toFixed(2)} ج.m</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between items-center flex-row-reverse text-sm bg-rose-50 dark:bg-rose-900/10 p-2 rounded-lg mt-2 border border-rose-100 dark:border-rose-900/30">
+                                    <span className="text-rose-700 dark:text-rose-300 font-black">إجمالي المصروفات =</span>
+                                    <span className="font-black text-rose-600 dark:text-rose-400 tabular-nums">-{totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                            <span className="text-slate-500 font-bold">تكلفة بوليصة الشحن (للشركة)</span>
-                            <span className="font-black text-rose-500 tabular-nums">-{safeShippingFee.toLocaleString()}</span>
+                    </>
+                ) : (
+                    /* Returned/Failed loss presentation breakdown */
+                    <div className="space-y-4">
+                        <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-xs text-amber-700 dark:text-amber-400 font-bold mb-2">
+                            ⚠️ تم إلغاء بيع الشحنة بسبب المرتجع. تم إرجاع المنتجات ذات تكلفة ({safeProductCost.toLocaleString()} ج.م) للمخزون دون أي خسارة في قيمة السلعة نفسها.
                         </div>
-                        {insuranceFee > 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                                <span className="text-slate-500 font-bold">التأمين على الشحنة</span>
-                                <span className="font-black text-rose-500 tabular-nums">-{insuranceFee.toFixed(2)}</span>
+                        
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">حساب مصروفات الشحن الضائعة:</p>
+                        
+                        <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                            <div className="flex justify-between items-center flex-row-reverse text-sm">
+                                <span className="text-slate-500 font-semibold">بوليصة الشحن (الذهاب):</span>
+                                <span className="font-black text-rose-500">-{safeShippingFee.toLocaleString()} ج.م</span>
                             </div>
-                        )}
-                        {bostaVatFee > 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                                <span className="text-slate-500 font-bold">{dynamicVatLabel}</span>
-                                <span className="font-black text-rose-500 tabular-nums">-{bostaVatFee.toFixed(2)}</span>
-                            </div>
-                        )}
-                        {inspectionAdjustment > 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                                <span className="text-slate-500 font-bold">المعاينة</span>
-                                <span className="font-black text-rose-500 tabular-nums">-{inspectionAdjustment.toFixed(2)}</span>
-                            </div>
-                        )}
-                        {codFee > 0 && (
-                            <div className="flex justify-between items-center flex-row-reverse text-sm mb-2">
-                                <span className="text-slate-500 font-bold">رسوم التحصيل (COD)</span>
-                                <span className="font-black text-rose-500 tabular-nums">-{codFee.toFixed(2)}</span>
-                            </div>
-                        )}
-                        <div className="flex justify-between items-center flex-row-reverse text-sm bg-rose-50 dark:bg-rose-900/10 p-2 rounded-lg mt-2 border border-rose-100 dark:border-rose-900/30">
-                            <span className="text-rose-700 dark:text-rose-300 font-black">إجمالي المصروفات =</span>
-                            <span className="font-black text-rose-600 dark:text-rose-400 tabular-nums">-{totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Cash Collection & Advance Payment Breakdown */}
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/80 space-y-2 mt-4 text-xs font-bold">
-                    <div className="flex justify-between items-center flex-row-reverse">
-                        <span className="text-slate-500">إجمالي فاتورة العميل:</span>
-                        <span className="text-slate-700 dark:text-slate-300">{amountCollectedFromCustomer.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
-                    </div>
-                    {safeAdvance > 0 && (
-                        <div className="space-y-1 py-1 border-y border-slate-100/50 dark:border-slate-800/50 my-1">
-                            <div className="flex justify-between items-center flex-row-reverse text-teal-600 dark:text-teal-400">
-                                <span>العربون المستلم مقدماً:</span>
-                                <span>-{safeAdvance.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
-                            </div>
-                            {(order.advancePaymentRecipientPhone || order.advancePaymentSenderDetails) && (
-                                <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold bg-slate-100/50 dark:bg-slate-800/40 p-2 rounded-xl mt-1">
-                                    {order.advancePaymentRecipientPhone && <div className="flex justify-between items-center flex-row-reverse"><span>رقم المستلم:</span> <span className="font-black text-slate-700 dark:text-slate-300">{order.advancePaymentRecipientPhone}</span></div>}
-                                    {order.advancePaymentSenderDetails && <div className="flex justify-between items-center flex-row-reverse mt-1"><span>المحول (من):</span> <span className="font-black text-slate-700 dark:text-slate-300">{order.advancePaymentSenderDetails}</span></div>}
+                            {insuranceFee > 0 && (
+                                <div className="flex justify-between items-center flex-row-reverse text-sm">
+                                    <span className="text-slate-500 font-semibold">التأمين المقتطع:</span>
+                                    <span className="font-black text-rose-500">-{insuranceFee.toFixed(2)} ج.م</span>
                                 </div>
                             )}
+                            {bostaVatFee > 0 && (
+                                <div className="flex justify-between items-center flex-row-reverse text-sm">
+                                    <span className="text-slate-500 font-semibold">ضريبة القيمة المضافة للبوليصة:</span>
+                                    <span className="font-black text-rose-500">-{bostaVatFee.toFixed(2)} ج.م</span>
+                                </div>
+                            )}
+                            <div className="h-[1px] bg-slate-200/50 dark:bg-slate-700/50" />
+                            <div className="flex justify-between items-center flex-row-reverse text-sm font-bold text-rose-700 dark:text-rose-400">
+                                <span>إجمالي خسائر الشحن لشركة النقل:</span>
+                                <span>-{carrierCost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                            </div>
                         </div>
-                    )}
-                    <div className="flex justify-between items-center flex-row-reverse text-indigo-600 dark:text-indigo-400 border-t border-slate-200/50 dark:border-slate-800/50 pt-1.5 font-black text-sm">
-                        <span>المتبقي للتحصيل عند الاستلام:</span>
-                        <span>{Math.max(0, amountCollectedFromCustomer - safeAdvance).toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+
+                        {/* Interactive Explanation card */}
+                        <div className="p-4 bg-violet-500/5 border border-violet-550/20 dark:border-violet-500/20 rounded-2xl text-xs space-y-2 mt-4">
+                            <h5 className="font-black text-violet-800 dark:text-violet-405 flex items-center justify-end gap-1.5">
+                                💡 كيف يتم تفادي هذه الخسائر بالفليكس شيب المعجل؟
+                            </h5>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
+                                عندما يرفض المستلم الاستلام، يتم استدعاء خدمة فليكس شيب للمطالبة بـ <strong className="text-violet-750 font-black">{flexFeeValue} ج.م</strong>.
+                            </p>
+                            <div className="space-y-1.5 mt-2 pt-2 border-t border-violet-200/50 dark:border-violet-850/50 text-[11px]">
+                                <div className="flex justify-between items-center flex-row-reverse text-slate-700 dark:text-slate-300">
+                                    <span>خسارة بوليصة الذهاب:</span>
+                                    <span>-{carrierCost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                                </div>
+                                <div className="flex justify-between items-center flex-row-reverse text-emerald-600 dark:text-emerald-400">
+                                    <span>الفليكس شيب المسترد من العميل:</span>
+                                    <span>+{flexPaidAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                                </div>
+                                <div className="h-[1.5px] bg-violet-200/50 dark:bg-violet-850/50" />
+                                <div className="flex justify-between items-center flex-row-reverse font-black text-indigo-700 dark:text-indigo-400 text-xs">
+                                    <span>صافي الخسارة الفعلية المترتبة:</span>
+                                    <span className={netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                                        {netProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="text-[10px] text-slate-450 dark:text-slate-500 font-bold leading-normal text-right mt-1 bg-white/50 dark:bg-slate-900/40 p-2 rounded-xl">
+                                {flexPaidAmount > 0 ? (
+                                    <span className="text-emerald-600 font-black">✓ فليكس الكابتن نشط! لقد وفرت {Math.round((flexPaidAmount / carrierCost) * 100)}% من تكلفة البوليصة بفضل تحصيل الرسوم من العميل.</span>
+                                ) : (
+                                    <span className="text-rose-600 font-black">ℹ️ العميل لم يدفع فليكس شيب (رفض السداد)، لذا تتحمل الشركة خسارة الشحن كاملة بقيمة {carrierCost.toLocaleString()} ج.م.</span>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </div>
+                )}
+
+                {/* Cash Collection & Advance Payment Breakdown */}
+                {!isReturnedOrFailed && (
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/80 space-y-2 mt-4 text-xs font-bold font-sans">
+                        <div className="flex justify-between items-center flex-row-reverse">
+                            <span className="text-slate-500">إجمالي فاتورة العميل:</span>
+                            <span className="text-slate-700 dark:text-slate-300">{amountCollectedFromCustomer.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                        </div>
+                        {safeAdvance > 0 && (
+                            <div className="space-y-1 py-1 border-y border-slate-100/50 dark:border-slate-800/50 my-1">
+                                <div className="flex justify-between items-center flex-row-reverse text-teal-600 dark:text-teal-400">
+                                    <span>العربون المستلم مقدماً:</span>
+                                    <span>-{safeAdvance.toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                                </div>
+                                {(order.advancePaymentRecipientPhone || order.advancePaymentSenderDetails) && (
+                                    <div className="text-[9px] text-slate-500 dark:text-slate-400 font-bold bg-slate-100/50 dark:bg-slate-800/40 p-2 rounded-xl mt-1">
+                                        {order.advancePaymentRecipientPhone && <div className="flex justify-between items-center flex-row-reverse"><span>رقم المستلم:</span> <span className="font-black text-slate-700 dark:text-slate-300">{order.advancePaymentRecipientPhone}</span></div>}
+                                        {order.advancePaymentSenderDetails && <div className="flex justify-between items-center flex-row-reverse mt-1"><span>المحول (من):</span> <span className="font-black text-slate-700 dark:text-slate-300">{order.advancePaymentSenderDetails}</span></div>}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        <div className="flex justify-between items-center flex-row-reverse text-indigo-600 dark:text-indigo-400 border-t border-slate-200/50 dark:border-slate-800/50 pt-1.5 font-black text-sm">
+                            <span>المتبقي للتحصيل عند الاستلام:</span>
+                            <span>{Math.max(0, amountCollectedFromCustomer - safeAdvance).toLocaleString(undefined, { maximumFractionDigits: 2 })} ج.م</span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Flex Ship Service Display */}
                 {(() => {
                     const isFlexEnabled = useCustom ? (compFees?.enableFlexShip ?? false) : (settings.enableFlexShip ?? false);
                     const flexFee = useCustom ? (compFees?.flexShipFee ?? 0) : (settings.flexShipFee ?? 0);
-                    if (isFlexEnabled && flexFee > 0) {
+                    if (isFlexEnabled && flexFee > 0 && !isReturnedOrFailed) {
                         return (
                             <div className="p-4 bg-violet-50 dark:bg-violet-950/20 rounded-2xl border border-violet-100 dark:border-violet-900/40 text-xs text-right mt-4 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-200">
                                 <div className="flex justify-between items-center flex-row-reverse text-violet-800 dark:text-violet-400 font-bold">
@@ -2522,12 +2719,6 @@ const ProfitBreakdown: React.FC<{ order: Order; settings: Settings }> = ({ order
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
                                     يُطالب المستلم بدفع رسوم إضافية بقيمة <strong className="text-violet-700 dark:text-violet-400 font-black">{flexFee} ج.م</strong> إذا رفض استلام الشحنة.
                                 </p>
-                                {order.flexShipFeePaidByCustomer && (
-                                    <div className="flex justify-between items-center flex-row-reverse mt-1 pt-1.5 border-t border-violet-100 dark:border-violet-900/30 text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
-                                        <span>حالة تحصيل الرسوم:</span>
-                                        <span className="font-bold">تم تحصيل {order.flexShipFee || flexFee} ج.م من المستلم ✓</span>
-                                    </div>
-                                )}
                             </div>
                         );
                     }
@@ -2536,7 +2727,7 @@ const ProfitBreakdown: React.FC<{ order: Order; settings: Settings }> = ({ order
             </div>
 
             <div className={`mt-6 p-5 rounded-3xl flex justify-between items-center flex-row-reverse ${netProfit >= 0 ? 'bg-emerald-50 border border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-900/50' : 'bg-rose-50 border border-rose-100 dark:bg-rose-900/10 dark:border-rose-900/50'}`}>
-                <span className={`text-sm font-black ${netProfit >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>الربح المتوقع</span>
+                <span className={`text-sm font-black ${netProfit >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>{profitLabel}</span>
                 <div className="flex items-baseline gap-1 flex-row-reverse">
                     <span className={`text-2xl font-black ${netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{netProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                     <span className="text-xs font-bold opacity-60">ج.م</span>
@@ -2595,6 +2786,8 @@ const OrderRow = ({
   onShowSummary,
   onShowAudit,
   onShowAssignment,
+  onShowDetails,
+  onToggleFlexShipPaid,
   whatsappLink,
   settings
 }: { 
@@ -2613,10 +2806,13 @@ const OrderRow = ({
   onShowSummary: () => void,
   onShowAudit: () => void,
   onShowAssignment: () => void,
+  onShowDetails: () => void,
+  onToggleFlexShipPaid?: () => void,
   whatsappLink: string,
   settings: Settings,
   key?: any
 }) => {
+  const navigate = useNavigate();
   const statusInfo = ORDER_STATUS_METADATA[order.status] || { label: order.status, color: 'bg-slate-500', icon: 'Package' };
   const StatusIcon = {
     PhoneForwarded, FileSearch, Package, Truck, CheckCircle, Coins, RefreshCcw, XCircle, Archive
@@ -2635,6 +2831,26 @@ const OrderRow = ({
   // Detailed Profit Calculation
   const compFees = settings.companySpecificFees?.[order.shippingCompany];
   const useCustom = compFees?.useCustomFees ?? false;
+  const getStatusBadgeStyle = (status: OrderStatus) => {
+      switch (status) {
+          case 'تم_التحصيل':
+          case 'تم_توصيلها':
+          case 'مدفوعة':
+              return 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
+          case 'مرتجع':
+          case 'فشل_التوصيل':
+          case 'مرتجع_جزئي':
+          case 'مرتجع_بعد_الاستلام':
+              return 'bg-rose-50 text-rose-605 border-rose-100 dark:bg-rose-500/10 dark:text-rose-405 dark:border-rose-500/20';
+          case 'في_انتظار_المكالمة':
+          case 'جاري_المراجعة':
+              return 'bg-indigo-50 text-indigo-650 border-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20';
+          default:
+              return 'bg-slate-50 text-slate-650 border-slate-100 dark:bg-slate-500/10 dark:text-slate-405 dark:border-slate-500/20';
+      }
+  };
+  const attemptsCount = (order.callAttempts || []).length;
+  const flexFeeValue = useCustom ? (compFees?.flexShipFee ?? 0) : (settings.flexShipFee ?? 0);
   
   const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
   const calculatedInsuranceFee = (order.isInsured ?? true) ? calculateInsuranceFee(order, insuranceRate, settings) : 0;
@@ -2677,9 +2893,9 @@ const OrderRow = ({
           className="w-5 h-5 rounded-lg border-slate-300 dark:bg-slate-800 dark:border-slate-700 text-indigo-600 focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer"
         />
       </td>
-      <td className="p-6">
+      <td className="p-6 cursor-pointer" onClick={onShowDetails}>
         <div className="flex items-center gap-4 flex-row-reverse">
-          <div className="relative group/status" onClick={onShowAudit}>
+          <div className="relative group/status" onClick={(e) => { e.stopPropagation(); onShowAudit(); }}>
             <div className={`w-14 h-14 rounded-2xl ${statusInfo.color} flex items-center justify-center text-white shadow-lg group-hover/status:scale-110 transition-transform cursor-pointer`}>
               <StatusIcon size={24} />
             </div>
@@ -2697,8 +2913,9 @@ const OrderRow = ({
           </div>
           <div className="text-right">
             <div className="flex items-center gap-2 mb-1 justify-end">
-              <h4 className="text-base font-black text-slate-900 dark:text-white tracking-tighter cursor-pointer hover:text-indigo-600" onClick={onShowSummary}>#{order.orderNumber}</h4>
-              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-emerald-500 hover:scale-110 transition-transform p-1.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
+              <ShipmentTypeBadge type={order.shipmentType} />
+              <h4 className="text-base font-black text-slate-900 dark:text-white tracking-tighter cursor-pointer hover:text-indigo-600" onClick={(e) => { e.stopPropagation(); onShowDetails(); }}>#{order.orderNumber}</h4>
+              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-emerald-500 hover:scale-110 transition-transform p-1.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
                 <MessageCircle size={14} />
               </a>
             </div>
@@ -2730,84 +2947,91 @@ const OrderRow = ({
             </div>
         </div>
       </td>
+      {/* 4. مبلغ التحصيل */}
       <td className="p-6">
         <div className="text-right space-y-1 relative">
-            <div className="flex items-center gap-2 justify-end overflow-hidden cursor-pointer" onClick={() => setShowShippingPopover(!showShippingPopover)}>
-                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{order.shippingCompany}</span>
-                <Truck size={14} className="text-slate-300" />
-            </div>
-            <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 truncate max-w-[150px]">{order.governorate}</p>
-            
-            <AnimatePresence>
-                {showShippingPopover && (
-                    <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowShippingPopover(false)}/>
-                        <motion.div 
-                            initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                            className="absolute bottom-full left-0 mb-4 z-50"
-                        >
-                            <ShippingDetailsCard order={order} />
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
-        </div>
-      </td>
-      <td className="p-6">
-        <div className="relative group/status-select">
-            <select 
-              value={order.status}
-              onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
-              className={`appearance-none text-right pr-4 pl-10 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border-none focus:ring-4 focus:ring-indigo-500/10 cursor-pointer shadow-sm transition-all ${statusInfo.color} text-white hover:brightness-110`}
-            >
-              {ORDER_STATUSES.map(s => (
-                <option key={s} value={s} className="text-slate-900 bg-white font-bold">{ORDER_STATUS_METADATA[s]?.label || s}</option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/70 pointer-events-none" />
-        </div>
-      </td>
-      <td className="p-6">
-        <div className="text-right space-y-2 relative">
-            <div className="flex flex-col items-end">
-                <div className="flex items-baseline gap-1 justify-end">
-                    <span className="text-[10px] font-black text-indigo-600">ج.م</span>
+            <div className="flex items-center gap-2 justify-end">
+                <div className="flex items-baseline gap-1 justify-end flex-row-reverse">
                     <span className="text-xl font-black text-slate-900 dark:text-white tabular-nums drop-shadow-sm">{displayTotal.toLocaleString()}</span>
+                    <span className="text-[10px] font-black text-indigo-650 dark:text-indigo-400">ج.م</span>
                 </div>
-                {(order.advancePayment || 0) > 0 && (
-                    <div className="text-[9px] text-teal-600 font-bold text-right">
-                        <span>عربون: {order.advancePayment}</span>
-                        {(order.advancePaymentRecipientPhone || order.advancePaymentSenderDetails) && (
-                            <div className="text-[8px] text-slate-400 font-medium">
-                                {order.advancePaymentRecipientPhone && <span>إلى: {order.advancePaymentRecipientPhone}</span>}
-                                {order.advancePaymentRecipientPhone && order.advancePaymentSenderDetails && <span> | </span>}
-                                {order.advancePaymentSenderDetails && <span>من: {order.advancePaymentSenderDetails}</span>}
-                            </div>
-                        )}
-                    </div>
-                )}
+                <Coins size={14} className="text-amber-500/80" />
             </div>
-            <div className="flex flex-col gap-1 items-end">
-                <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${
-                    order.paymentStatus === 'مدفوع' 
-                    ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' 
-                    : 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
-                }`}>
-                    {order.paymentStatus}
+            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 flex items-center gap-1 justify-end">
+                <span>الدفع عند الاستلام</span>
+                <span className="w-1 h-1 bg-slate-200/60 rounded-full"></span>
+                <span className="text-indigo-600 dark:text-indigo-400">{order.shippingCompany}</span>
+            </p>
+            <p className="text-[9px] font-bold text-slate-405 dark:text-slate-500 text-right">{order.governorate}</p>
+        </div>
+      </td>
+
+      {/* 5. رسوم فليكس شيب */}
+      <td className="p-6">
+        <div className="text-right space-y-0.5">
+            <div className="flex items-center gap-1 justify-end">
+                <span className="cursor-help text-slate-350 hover:text-indigo-600" title="رسوم فليكس شيب المستحقة">
+                    <Info size={11} className="inline-block" />
                 </span>
-                {safeProductCost > 0 && (
-                    <div 
-                        onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
-                        className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-tight cursor-pointer p-1 rounded-lg ${isProfitable ? 'text-emerald-500 bg-emerald-50/50' : 'text-rose-500 bg-rose-50/50'} hover:scale-105 transition-transform`}
-                    >
-                        <span>{Math.abs(currentNetProfit).toLocaleString()} {profitLabel}</span>
-                        {isProfitable ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                    </div>
-                )}
+                <span className="text-xs font-black text-slate-850 dark:text-slate-200">
+                    {flexFeeValue || 105} ج.م
+                </span>
+            </div>
+            <span className="text-[10px] font-bold block text-slate-400 text-right">
+                {['مرتجع', 'فشل_التوصيل', 'مرتجع_بعد_الاستلام', 'مرتجع_جزئي'].includes(order.status) ? 'مستحق للفصل' : 'غير مستحق بعد'}
+            </span>
+        </div>
+      </td>
+
+      {/* 6. الحالة */}
+      <td className="p-6">
+        <div className="relative group/status-select inline-block text-right">
+            {/* Overlay a custom beautiful badge below while keeping select fully functional for events */}
+            <div className={`relative flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-black border transition-all ${getStatusBadgeStyle(order.status)}`}>
+                <span>{statusInfo.label}</span>
+                {order.status === 'تم_التحصيل' ? <span>✓</span> : <StatusIcon size={12} />}
+                <ChevronDown size={11} className="opacity-50" />
+                
+                {/* Fully transparent interactive select positioned over the badge */}
+                <select 
+                  value={order.status}
+                  onChange={(e) => onStatusChange(e.target.value as OrderStatus)}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                >
+                  {ORDER_STATUSES.map(s => (
+                    <option key={s} value={s} className="text-slate-900 bg-white font-bold">{ORDER_STATUS_METADATA[s]?.label || s}</option>
+                  ))}
+                </select>
             </div>
         </div>
+      </td>
+
+      {/* 7. المحاولات */}
+      <td className="p-6">
+        <div className="flex items-center gap-2 justify-end text-xs font-bold text-slate-600 dark:text-slate-400 font-sans">
+            <div className="relative w-4.5 h-7.5 border border-slate-300 dark:border-slate-705 rounded-[6px] p-[2.5px] flex flex-col justify-end gap-[1.5px] bg-slate-50/50 dark:bg-slate-800/10">
+                {/* Top terminal pin on battery */}
+                <div className="absolute -top-[3px] left-1/2 -translate-x-1/2 w-1.5 h-[3px] bg-slate-300 dark:bg-slate-705 rounded-t-[1.5px]" />
+                {/* 3 bars */}
+                <div className={`h-1.5 rounded-[2px] transition-colors ${attemptsCount >= 3 ? 'bg-emerald-500' : 'bg-slate-100 dark:bg-slate-800'}`} />
+                <div className={`h-1.5 rounded-[2px] transition-colors ${attemptsCount >= 2 ? 'bg-amber-500' : 'bg-slate-100 dark:bg-slate-800'}`} />
+                <div className={`h-1.5 rounded-[2px] transition-colors ${attemptsCount >= 1 ? 'bg-emerald-500' : 'bg-emerald-500'}`} />
+            </div>
+            <span className="tabular-nums font-extrabold">{attemptsCount === 0 ? '1' : attemptsCount}/3</span>
+        </div>
+      </td>
+
+      {/* 8. حالة المبلغ المحصل */}
+      <td className="p-6">
+        <span 
+          className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-center inline-block cursor-default ${
+            order.paymentStatus === 'مدفوع' 
+            ? 'bg-emerald-50 text-emerald-650 border border-emerald-110 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' 
+            : 'bg-rose-50 text-rose-650 border border-rose-110 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20'
+          }`}
+        >
+          {order.paymentStatus === 'مدفوع' ? 'مدفوع' : 'غير مدفوع'}
+        </span>
       </td>
       <td className="p-6">
         <div className="flex items-center gap-2 justify-end">
@@ -2844,6 +3068,9 @@ const OrderRow = ({
                         <button onClick={(e) => { e.stopPropagation(); setShowOps(false); onPrintLabel(); }} className="w-full h-12 text-right px-4 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
                             بوليصة شحن <LayoutList size={16} className="text-blue-500" />
                         </button>
+                        <button onClick={(e) => { e.stopPropagation(); setShowOps(false); navigate('/orders/new', { state: { exchangeData: order } }); }} className="w-full h-12 text-right px-4 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
+                            إنشاء بوليصة استبدال <RefreshCcw size={16} className="text-teal-500" />
+                        </button>
                         <button onClick={(e) => { e.stopPropagation(); setShowOps(false); onShowAssignment(); }} className="w-full h-12 text-right px-4 text-xs font-black text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl flex items-center justify-end gap-3 transition-colors">
                             تعيين موظف <UserIcon size={16} className="text-purple-500" />
                         </button>
@@ -2874,7 +3101,7 @@ const OrderRow = ({
                                 <ProductDetailsList order={order} />
                             </div>
                             <div className="w-full md:w-[350px]">
-                                <ProfitBreakdown order={order} settings={settings} />
+                                <ProfitBreakdown order={order} settings={settings} onToggleFlexShipPaid={onToggleFlexShipPaid} />
                             </div>
                         </div>
                     </motion.div>
@@ -2932,8 +3159,11 @@ const KanbanView: React.FC<{ orders: Order[]; onStatusChange: (id: string, newSt
                   onClick={() => onEdit(order)}
                 >
                   <div className="absolute top-0 right-0 w-1 h-full opacity-20" style={{ backgroundColor: statusColors[status].split(' ')[0].split('-')[1] }}></div>
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="text-[10px] font-black text-slate-400 tracking-wider">#{order.orderNumber || order.id.slice(0, 4)}</span>
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-slate-400 tracking-wider">#{order.orderNumber || order.id.slice(0, 4)}</span>
+                      <ShipmentTypeBadge type={order.shipmentType} />
+                    </div>
                     <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"><Edit3 size={14}/></button>
                     </div>
@@ -3304,6 +3534,45 @@ const OrderModal: React.FC<OrderModalProps> = ({
     const totalBeforeCredit = useMemo(() => subtotal - itemDiscounts + (orderData.shippingFee || 0) - (orderData.discount || 0) + inspectionFee, [subtotal, itemDiscounts, orderData.shippingFee, orderData.discount, inspectionFee]);
     const finalAmount = totalBeforeCredit - creditAmount - (orderData.advancePayment || 0);
 
+    const liveProfitMargin = useMemo(() => {
+        const costOfItems = (orderData.items || []).reduce((sum: number, item: any) => {
+            const prod = settings.products.find(p => p.id === item.productId);
+            let itemCostByQty = Number(prod?.costPrice) || 0;
+            if (prod?.hasVariants && item.variantId) {
+                const variant = prod.variants?.find(v => v.id === item.variantId);
+                itemCostByQty = Number(variant?.costPrice) || itemCostByQty;
+            }
+            return sum + (itemCostByQty * (Number(item.quantity) || 1));
+        }, 0);
+
+        const totalCollected = orderData.totalAmountOverride !== undefined && orderData.totalAmountOverride !== null && (orderData.totalAmountOverride as any) !== ''
+            ? Number(orderData.totalAmountOverride)
+            : Number(finalAmount || 0);
+
+        const compFees = settings.companySpecificFees?.[orderData.shippingCompany!];
+        const useCustom = compFees?.useCustomFees ?? false;
+        
+        const insuranceRate = useCustom ? (compFees?.insuranceFeePercent ?? 0) : (settings.enableInsurance ? settings.insuranceFeePercent : 0);
+        const inspectionCost = useCustom ? (compFees?.inspectionFee ?? 0) : (settings.enableInspection ? settings.inspectionFee : 0);
+        
+        const insuranceFee = (orderData.isInsured !== false) ? Math.round((totalCollected * (Number(insuranceRate) / 100)) * 100) / 100 : 0;
+        const effectiveInspectionCost = orderData.includeInspectionFee ? Number(inspectionCost) : 0;
+        const codFee = Number(calculateCodFee({ status: 'تم_التحصيل', totalPrice: totalCollected, shippingFee: orderData.shippingFee || 0 } as any, settings)) || 0;
+        
+        const totalExpenses = costOfItems + Number(orderData.shippingFee || 0) + insuranceFee + effectiveInspectionCost + codFee;
+        const profit = totalCollected - totalExpenses;
+        
+        return {
+            costOfItems,
+            insuranceFee,
+            effectiveInspectionCost,
+            codFee,
+            totalExpenses,
+            profit,
+            profitPercent: totalCollected > 0 ? Math.round((profit / totalCollected) * 100) : 0
+        };
+    }, [orderData.items, orderData.totalAmountOverride, orderData.shippingFee, orderData.discount, orderData.isInsured, orderData.includeInspectionFee, orderData.shippingCompany, finalAmount, settings]);
+
     const handleFieldChange = (field: keyof NewOrderState, value: any) => setOrderData((prev: any) => ({ ...prev, [field]: value }));
     const handleReturnProductChange = (productId: string) => {
         const prod = settings.products.find(p => p.id === productId);
@@ -3469,94 +3738,140 @@ const OrderModal: React.FC<OrderModalProps> = ({
     }, 0), [orderData.items]);
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm">
-            <form onSubmit={onSubmit} className="bg-white dark:bg-slate-900 w-full max-w-5xl h-[95vh] rounded-3xl shadow-2xl flex flex-col animate-in zoom-in duration-300 border border-slate-200 dark:border-slate-800">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 rounded-t-3xl shadow-sm z-10">
-                    <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-3">
-                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                            <ShoppingBag size={20}/>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md overflow-hidden">
+            <motion.form 
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                onSubmit={onSubmit} 
+                className="bg-white/95 dark:bg-slate-900/95 w-full max-w-6xl h-[92vh] rounded-[2.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.15)] flex flex-col border border-white/20 dark:border-slate-800/50 backdrop-blur-xl"
+            >
+                {/* Header Section */}
+                <div className="px-8 py-7 flex justify-between items-center bg-gradient-to-l from-slate-50/80 to-white/80 dark:from-slate-900/80 dark:to-slate-900 rounded-t-[2.5rem] border-b border-slate-100 dark:border-slate-800/50">
+                    <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/30 text-white transform -rotate-3">
+                            <ShoppingBag size={28} strokeWidth={2.5}/>
                         </div>
-                        {isEditing ? `تعديل الطلب ${orderData.orderNumber}` : 'إنشاء طلب جديد'}
-                    </h3>
-                    <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors">
-                        <XCircle size={24}/>
+                        <div>
+                            <h3 className="text-2xl font-black text-slate-800 dark:text-white leading-none">
+                                {isEditing ? `تعديل الطلب #${orderData.orderNumber}` : 'إنشاء طلب جديد'}
+                            </h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1.5 font-medium">أكمل بيانات الطلب لبدء عملية الشحن والتحصيل.</p>
+                        </div>
+                    </div>
+                    <button 
+                        type="button" 
+                        onClick={onClose} 
+                        className="w-12 h-12 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-2xl transition-all duration-300"
+                    >
+                        <X size={28}/>
                     </button>
                 </div>
 
-                {/* شريط اختيار نوع الشحنة / العملية */}
-                <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800 flex flex-wrap gap-2.5 items-center justify-start z-10">
-                    {(() => {
-                        const compFees = (settings.companySpecificFees?.[orderData.shippingCompany] || {}) as any;
-                        const tabs = [
-                            { id: 'delivery', label: 'توصيل شحنة', icon: <Truck size={17} /> },
-                            { id: 'partial_delivery', label: 'توصيل جزئي', icon: <Package size={17} />, badge: 'جديد' }
-                        ];
-                        if (compFees.enableExchange !== false) {
-                            tabs.push({ id: 'exchange', label: 'تبديل شحنات', icon: <ArrowRightLeft size={17} /> });
-                        }
-                        if (compFees.enableReturn !== false) {
-                            tabs.push({ id: 'return', label: 'إرجاع شحنة', icon: <RefreshCcw size={17} /> });
-                        }
-                        if (compFees.enableCashCollection !== false) {
-                            tabs.push({ id: 'cash_collection', label: 'تحصيل نقدي', icon: <Coins size={17} /> });
-                        }
-                        return tabs;
-                    })().map(tab => {
-                        const isActive = (orderData.shipmentType || 'delivery') === tab.id;
-                        return (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                onClick={() => handleFieldChange('shipmentType', tab.id)}
-                                className={`flex items-center gap-2 py-2.5 px-5 rounded-2xl text-xs font-black border transition-all duration-200 cursor-pointer ${
-                                    isActive
-                                        ? 'bg-indigo-600 border-indigo-605 text-white dark:bg-indigo-600 dark:border-indigo-605 dark:text-white shadow-lg shadow-indigo-600/20 scale-102'
-                                        : 'bg-white border-slate-205 text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-700/50'
-                                }`}
-                            >
-                                {tab.icon}
-                                <span>{tab.label}</span>
-                                {tab.badge && (
-                                    <span className="text-[9px] px-1.5 py-0.5 bg-cyan-100 text-cyan-600 dark:bg-cyan-950 dark:text-cyan-400 rounded-md font-bold leading-none animate-pulse">
-                                        {tab.badge}
-                                    </span>
-                                )}
-                            </button>
-                        );
-                    })}
+                {/* Shipment Type Selector - Modern Segmented Control */}
+                <div className="px-8 py-5 border-b border-slate-100 dark:border-slate-800/50 flex flex-wrap gap-2 items-center justify-start bg-white/30 dark:bg-slate-900/30">
+                    <div className="flex p-1.5 bg-slate-100/80 dark:bg-slate-800/80 rounded-[1.25rem] border border-slate-200/50 dark:border-slate-700/50 gap-1 overflow-x-auto no-scrollbar">
+                        {(() => {
+                            const compFees = (settings.companySpecificFees?.[orderData.shippingCompany] || {}) as any;
+                            const tabs = [
+                                { id: 'delivery', label: 'توصيل شحنة', icon: <Truck size={17} /> },
+                                { id: 'partial_delivery', label: 'توصيل جزئي', icon: <Package size={17} />, badge: 'جديد' }
+                            ];
+                            if (compFees.enableExchange !== false) {
+                                tabs.push({ id: 'exchange', label: 'تبديل شحنات', icon: <ArrowRightLeft size={17} /> });
+                            }
+                            if (compFees.enableReturn !== false) {
+                                tabs.push({ id: 'return', label: 'إرجاع شحنة', icon: <RefreshCcw size={17} /> });
+                            }
+                            if (compFees.enableCashCollection !== false) {
+                                tabs.push({ id: 'cash_collection', label: 'تحصيل نقدي', icon: <Coins size={17} /> });
+                            }
+                            return tabs;
+                        })().map(tab => {
+                            const isActive = (orderData.shipmentType || 'delivery') === tab.id;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => handleFieldChange('shipmentType', tab.id)}
+                                    className={`relative flex items-center gap-2.5 py-2.5 px-6 rounded-xl text-xs font-black transition-all duration-300 shrink-0 ${
+                                        isActive
+                                            ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm ring-1 ring-slate-200 dark:ring-slate-600'
+                                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                    }`}
+                                >
+                                    {tab.icon}
+                                    <span>{tab.label}</span>
+                                    {tab.badge && (
+                                        <span className="text-[10px] px-2 py-0.5 bg-indigo-500 text-white rounded-lg font-bold leading-none">
+                                            {tab.badge}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 custom-scrollbar">
-                    <div className="lg:col-span-3 space-y-6">
-                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-5 flex items-center gap-2">
-                                <UserIcon size={18} className="text-blue-500"/> بيانات العميل
+                <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 custom-scrollbar bg-slate-50/30 dark:bg-slate-900/50">
+                    <div className="lg:col-span-7 space-y-8">
+                        {/* Customer Details Card */}
+                        <div className="p-8 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/60 shadow-sm relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -mr-16 -mt-16 transition-transform duration-700 group-hover:scale-110"></div>
+                            <h4 className="font-extrabold text-slate-800 dark:text-white mb-8 flex items-center gap-3 text-lg">
+                                <div className="w-10 h-10 bg-blue-50 dark:bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-600">
+                                    <UserIcon size={20}/>
+                                </div>
+                                بيانات العميل
                             </h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                 <div className="relative" ref={customerSearchRef}>
-                                    <input type="text" placeholder="اسم العميل أو رقم الهاتف" required value={customerSearch || orderData.customerName || ''} onChange={e => { setCustomerSearch(e.target.value); handleFieldChange('customerName', e.target.value); }} onFocus={() => setIsCustomerListOpen(true)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
+                                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">اسم العميل</label>
+                                    <input type="text" placeholder="اسم العميل أو رقم الهاتف" required value={customerSearch || orderData.customerName || ''} onChange={e => { setCustomerSearch(e.target.value); handleFieldChange('customerName', e.target.value); }} onFocus={() => setIsCustomerListOpen(true)} className="p-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl w-full focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-800 outline-none transition-all dark:text-white font-bold" />
                                     {isCustomerListOpen && filteredCustomers.length > 0 && (
-                                        <div className="absolute top-full mt-2 w-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl shadow-xl z-20 max-h-60 overflow-y-auto custom-scrollbar">
+                                        <div className="absolute top-full mt-2 w-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-[1.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.1)] z-20 max-h-60 overflow-y-auto custom-scrollbar">
                                             {filteredCustomers.map(c => (
-                                                <div key={c.phone} onClick={() => handleCustomerSelect(c)} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer border-b border-slate-50 dark:border-slate-700/50 last:border-0 transition-colors">
-                                                    <p className="font-bold text-slate-800 dark:text-slate-200">{c.name}</p>
-                                                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{c.phone}</p>
+                                                <div key={c.phone} onClick={() => handleCustomerSelect(c)} className="p-5 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer border-b border-slate-50 dark:border-slate-700/50 last:border-0 transition-colors">
+                                                    <p className="font-black text-slate-800 dark:text-slate-200">{c.name}</p>
+                                                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-2">
+                                                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                                                        {c.phone}
+                                                    </p>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                 </div>
-                                <input type="tel" placeholder="رقم الهاتف" required value={orderData.customerPhone || ''} onChange={e => handleFieldChange('customerPhone', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
-                                <input type="tel" placeholder="رقم هاتف إضافي (اختياري)" value={(orderData as NewOrderState).customerPhone2 || ''} onChange={e => handleFieldChange('customerPhone2', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
-                                <input type="text" placeholder="الدولة" value={(orderData as NewOrderState).country || 'مصر'} onChange={e => handleFieldChange('country', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">رقم الهاتف الأساسي</label>
+                                    <input type="tel" placeholder="01xxxxxxxxx" required value={orderData.customerPhone || ''} onChange={e => handleFieldChange('customerPhone', e.target.value)} className="p-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl w-full focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-800 outline-none transition-all dark:text-white font-bold text-right" dir="rtl" />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">رقم هاتف إضافي (اختياري)</label>
+                                    <input type="tel" placeholder="رقم بديل للعميل" value={(orderData as NewOrderState).customerPhone2 || ''} onChange={e => handleFieldChange('customerPhone2', e.target.value)} className="p-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl w-full focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-800 outline-none transition-all dark:text-white font-bold text-right" dir="rtl" />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">الدولة</label>
+                                    <input type="text" placeholder="مصر" value={(orderData as NewOrderState).country || 'مصر'} onChange={e => handleFieldChange('country', e.target.value)} className="p-4 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl w-full opacity-70 cursor-not-allowed dark:text-slate-400 font-bold" disabled />
+                                </div>
                             </div>
-                            <textarea placeholder="العنوان بالتفصيل" required value={orderData.customerAddress || ''} onChange={e => handleFieldChange('customerAddress', e.target.value)} className="mt-4 w-full p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl h-24 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all resize-none dark:text-white" />
-                            <input type="text" placeholder="تفاصيل العنوان (رقم المبنى، الشقة...)" value={(orderData as NewOrderState).buildingDetails || ''} onChange={e => handleFieldChange('buildingDetails', e.target.value)} className="mt-4 w-full p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white" />
+                            <div className="mt-5">
+                                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">العنوان بالتفصيل</label>
+                                <textarea placeholder="المحافظة، المنطقة، واسم الشارع..." required value={orderData.customerAddress || ''} onChange={e => handleFieldChange('customerAddress', e.target.value)} className="w-full p-5 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-3xl h-28 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-800 outline-none transition-all resize-none dark:text-white font-medium" />
+                            </div>
+                            <div className="mt-5">
+                                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">تفاصيل المبنى (رقم الشقة، الدور...)</label>
+                                <input type="text" placeholder="مثال: عمارة رقم 5، الدور الثالث، شقة 10" value={(orderData as NewOrderState).buildingDetails || ''} onChange={e => handleFieldChange('buildingDetails', e.target.value)} className="w-full p-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-800 outline-none transition-all dark:text-white font-medium" />
+                            </div>
                         </div>
                         
-                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                           <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-5 flex items-center gap-2">
-                               <Building size={18} className="text-emerald-500"/> بيانات الشحن والطلب
+                        {/* Shipping Details Card */}
+                        <div className="p-8 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/60 shadow-sm">
+                           <h4 className="font-extrabold text-slate-800 dark:text-white mb-8 flex items-center gap-3 text-lg">
+                               <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-600">
+                                   <Building size={20}/>
+                               </div>
+                               بيانات الشحن والطلب
                            </h4>
                            
                            {orderData.waybillNumber && (
@@ -3589,71 +3904,88 @@ const OrderModal: React.FC<OrderModalProps> = ({
                               </div>
                            )}
 
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <select required value={orderData.shippingCompany} onChange={e => handleFieldChange('shippingCompany', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white">
-                                    {activeCompanies.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <select 
-                                        required 
-                                        value={orderData.governorate || orderData.shippingArea || ''} 
-                                        onChange={e => {
-                                            const gov = e.target.value;
-                                            setOrderData((prev: any) => ({ ...prev, governorate: gov, shippingArea: gov, city: '' }));
-                                        }} 
-                                        className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white"
-                                    >
-                                        <option value="" disabled>المحافظة</option>
-                                        {shippingOptions.map(opt => <option key={opt.id} value={opt.label}>{opt.label}</option>)}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                 <div>
+                                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">شركة الشحن</label>
+                                    <select required value={orderData.shippingCompany} onChange={e => handleFieldChange('shippingCompany', e.target.value)} className="w-full p-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white font-bold cursor-pointer">
+                                        {activeCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
-                                    <select 
-                                        required 
-                                        value={orderData.city || ''} 
-                                        onChange={e => handleFieldChange('city', e.target.value)} 
-                                        className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white"
-                                        disabled={!(orderData.governorate || orderData.shippingArea)}
-                                    >
-                                        <option value="" disabled>المدينة</option>
-                                        {(shippingOptions.find(o => o.label === (orderData.governorate || orderData.shippingArea))?.cities || []).map(city => (
-                                            <option key={city.id} value={city.name}>{city.name}</option>
-                                        ))}
-                                    </select>
+                                 </div>
+                                 <div className="grid grid-cols-2 gap-3">
+                                     <div>
+                                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">المحافظة</label>
+                                        <select 
+                                            required 
+                                            value={orderData.governorate || orderData.shippingArea || ''} 
+                                            onChange={e => {
+                                                const gov = e.target.value;
+                                                setOrderData((prev: any) => ({ ...prev, governorate: gov, shippingArea: gov, city: '' }));
+                                            }} 
+                                            className="w-full p-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white font-bold cursor-pointer"
+                                        >
+                                            <option value="" disabled>اختر المحافظة</option>
+                                            {shippingOptions.map(opt => <option key={opt.id} value={opt.label}>{opt.label}</option>)}
+                                        </select>
+                                     </div>
+                                     <div>
+                                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">المدينة</label>
+                                        <select 
+                                            required 
+                                            value={orderData.city || ''} 
+                                            onChange={e => handleFieldChange('city', e.target.value)} 
+                                            className="w-full p-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                            disabled={!(orderData.governorate || orderData.shippingArea)}
+                                        >
+                                            <option value="" disabled>اختر المدينة</option>
+                                            {(shippingOptions.find(o => o.label === (orderData.governorate || orderData.shippingArea))?.cities || []).map(city => (
+                                                <option key={city.id} value={city.name}>{city.name}</option>
+                                            ))}
+                                        </select>
+                                     </div>
+                                 </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-6">
+                                <div>
+                                    <label htmlFor="orderNumberInput" className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">رقم الطلب (اختياري)</label>
+                                    <input id="orderNumberInput" type="text" placeholder="تلقائي" value={orderData.orderNumber || ''} onChange={e => handleFieldChange('orderNumber', e.target.value)} className="p-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl w-full font-mono focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white text-sm" />
                                 </div>
-                           </div>
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-5">
-                               <div>
-                                   <label htmlFor="orderNumberInput" className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-2 block">رقم الطلب (اختياري)</label>
-                                   <input id="orderNumberInput" type="text" placeholder="سيتم إنشاؤه تلقائياً إذا ترك فارغاً" value={orderData.orderNumber || ''} onChange={e => handleFieldChange('orderNumber', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full font-mono focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white" />
-                               </div>
-                               <div>
-                                   <label htmlFor="referenceNumberInput" className="text-sm font-bold text-slate-600 dark:text-slate-400 mb-2 block">رقم المرجع (Invoice Ref)</label>
-                                   <input id="referenceNumberInput" type="text" placeholder="أدخل رقم المرجع..." value={orderData.referenceNumber || ''} onChange={e => handleFieldChange('referenceNumber', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full font-mono focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all dark:text-white" />
-                               </div>
-                           </div>
+                                <div>
+                                    <label htmlFor="referenceNumberInput" className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block mr-1">رقام المرجع للفاتورة</label>
+                                    <input id="referenceNumberInput" type="text" placeholder="#" value={orderData.referenceNumber || ''} onChange={e => handleFieldChange('referenceNumber', e.target.value)} className="p-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl w-full font-mono focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white text-sm" />
+                                </div>
+                            </div>
                         </div>
                         
-                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
-                                <FileText size={18} className="text-slate-500"/> ملاحظات إضافية
+                        <div className="p-8 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/60 shadow-sm">
+                            <h4 className="font-extrabold text-slate-800 dark:text-white mb-6 flex items-center gap-3 text-lg">
+                                <div className="w-10 h-10 bg-slate-50 dark:bg-slate-500/10 rounded-xl flex items-center justify-center text-slate-600">
+                                    <FileText size={20}/>
+                                </div>
+                                ملاحظات إضافية
                             </h4>
-                            <textarea placeholder="أي ملاحظات للمندوب أو الطلب..." value={orderData.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} className="w-full p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl h-24 focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-all resize-none dark:text-white" />
+                            <textarea placeholder="اكتب أي ملاحظات للمندوب أو الطلب هنا..." value={orderData.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} className="w-full p-5 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-3xl h-28 focus:ring-4 focus:ring-slate-500/10 focus:border-slate-500 outline-none transition-all resize-none dark:text-white text-right font-medium" />
                         </div>
 
-                        <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                            <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
-                                <ImageIcon size={18} className="text-pink-500"/> صور ومرفقات الطلب
+                        <div className="p-8 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/60 shadow-sm overflow-hidden">
+                            <h4 className="font-extrabold text-slate-800 dark:text-white mb-6 flex items-center gap-3 text-lg">
+                                <div className="w-10 h-10 bg-pink-50 dark:bg-pink-500/10 rounded-xl flex items-center justify-center text-pink-600">
+                                    <ImageIcon size={20}/>
+                                </div>
+                                صور ومرفقات الطلب
                             </h4>
-                            <div className="grid grid-cols-3 gap-3 mb-4">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-5">
                                 {(orderData.images || []).map((img: string, idx: number) => (
-                                    <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 group">
+                                    <div key={idx} className="relative aspect-square rounded-[1.5rem] overflow-hidden border border-slate-200/50 dark:border-slate-700/50 group shadow-sm transition-transform duration-300 hover:scale-[1.03]">
                                         <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                        <button 
-                                            type="button" 
-                                            onClick={() => handleFieldChange('images', (orderData.images || []).filter((_: any, i: number) => i !== idx))}
-                                            className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <X size={12} />
-                                        </button>
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <button 
+                                                type="button" 
+                                                onClick={() => handleFieldChange('images', (orderData.images || []).filter((_: any, i: number) => i !== idx))}
+                                                className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                                            >
+                                                <X size={16} />
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                                 <button 
@@ -3662,17 +3994,145 @@ const OrderModal: React.FC<OrderModalProps> = ({
                                         const url = prompt('أدخل رابط الصورة:');
                                         if (url) handleFieldChange('images', [...(orderData.images || []), url]);
                                     }}
-                                    className="aspect-square rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 hover:border-pink-300 hover:text-pink-500 transition-all bg-white dark:bg-slate-900"
+                                    className="aspect-square rounded-[1.5rem] border-2 border-dashed border-slate-200 dark:border-slate-700/50 flex flex-col items-center justify-center text-slate-400 hover:border-pink-300 hover:text-pink-500 hover:bg-pink-50/10 transition-all bg-slate-50/30 dark:bg-slate-800/30 group"
                                 >
-                                    <Plus size={20} />
-                                    <span className="text-[10px] font-bold mt-1">إضافة صورة</span>
+                                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-700 flex items-center justify-center mb-2 shadow-sm group-hover:scale-110 transition-transform">
+                                        <Plus size={22} />
+                                    </div>
+                                    <span className="text-[11px] font-black uppercase tracking-tight">إضافة صورة</span>
                                 </button>
                             </div>
-                            <p className="text-[10px] text-slate-400 font-bold italic">يمكنك إرفاق صور المنتج، بوليصة الشحن، أو أي مستندات متعلقة بالطلب.</p>
+                            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                                <p className="text-[11px] text-slate-400 font-bold italic leading-relaxed text-center">
+                                    إرفاق صور المنتج أو بوليصة الشحن يسهل عملية المتابعة ويقلل من الأخطاء في التوصيل أو الإرجاع.
+                                </p>
+                            </div>
                         </div>
+                        {/* Products Section */}
+                        {(!isExchange && !isReturn && !isCashCollection) && (
+                            <div className="p-8 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/60 shadow-sm">
+                                 <h4 className="font-extrabold text-slate-800 dark:text-white mb-8 flex items-center justify-between text-lg">
+                                     <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-amber-50 dark:bg-amber-500/10 rounded-xl flex items-center justify-center text-amber-600">
+                                            <Package size={20}/>
+                                        </div>
+                                        المنتجات المطلوبة
+                                     </div>
+                                     <span className="text-xs font-black px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500">
+                                        {(orderData.items || []).length} صنف
+                                     </span>
+                                 </h4>
+                                 <div className="space-y-5">
+                                    {(orderData.items || []).length === 0 && (
+                                        <div className="p-10 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2rem] text-center bg-slate-50/30 dark:bg-slate-900/10">
+                                            <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                                                <Package size={28} className="text-slate-300" />
+                                            </div>
+                                            <p className="text-sm font-black text-slate-800 dark:text-white">قائمة المنتجات فارغة</p>
+                                            <p className="text-xs text-slate-500 mt-1.5 font-medium">ابدأ بإضافة المنتجات التي طلبها العميل لتفصيل الفاتورة.</p>
+                                        </div>
+                                    )}
+                                    {(orderData.items || []).map((item, index) => {
+                                        const product = settings.products.find(p => p.id === item.productId);
+                                        const hasVariants = product?.variants && product.variants.length > 0;
+                                        const selectedVariant = hasVariants ? product.variants?.find(v => v.id === item.variantId) : null;
+                                        const stock = hasVariants ? (selectedVariant?.stock || 0) : (product?.stock || 0);
+
+                                        return (
+                                            <div key={index} className="p-6 bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-700/50 rounded-3xl relative group transition-all hover:bg-white dark:hover:bg-slate-800 hover:shadow-md hover:border-slate-200 dark:hover:border-slate-600">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => removeItem(index)} 
+                                                    className="absolute -top-3 -left-3 w-8 h-8 bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 rounded-full flex items-center justify-center shadow-lg border border-slate-100 dark:border-slate-600 opacity-0 group-hover:opacity-100 transition-all z-10"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                                
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                                    <div className="space-y-4">
+                                                        <ProductSelect 
+                                                             value={item.productId} 
+                                                             onChange={val => handleItemChange(index, 'productId', val)} 
+                                                             products={settings.products}
+                                                             index={index}
+                                                        />
+                                                        
+                                                        {hasVariants && (
+                                                            <div className="space-y-1.5">
+                                                                <label className="text-[10px] text-slate-500 font-bold uppercase mr-1">المتغير (المقاس / اللون)</label>
+                                                                <select value={item.variantId || ''} onChange={e => handleItemChange(index, 'variantId', e.target.value)} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all dark:text-white font-bold cursor-pointer">
+                                                                    <option value="">اختر المتغير...</option>
+                                                                    {product?.variants?.map(v => (
+                                                                        <option key={v.id} value={v.id}>
+                                                                            {Object.entries(v.options || {}).map(([k, val]) => `${k}: ${val}`).join(', ')}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        )}
+                                                        
+                                                        <div className="grid grid-cols-3 gap-3">
+                                                            <div>
+                                                                <label className="text-[10px] text-slate-500 font-bold uppercase mr-1">الكمية</label>
+                                                                <input type="number" min="1" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold outline-none dark:text-white text-xs" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[10px] text-slate-500 font-bold uppercase mr-1">السعر</label>
+                                                                <input type="number" min="0" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold outline-none dark:text-white text-xs" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[10px] text-slate-500 font-bold uppercase mr-1">الخصم</label>
+                                                                <div className="flex gap-1">
+                                                                    <input type="number" min="0" value={item.discountValue || 0} onChange={e => handleItemChange(index, 'discountValue', Number(e.target.value))} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold outline-none dark:text-white text-xs" />
+                                                                    <select value={item.discountType || 'amount'} onChange={e => handleItemChange(index, 'discountType', e.target.value)} className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-bold outline-none dark:text-white">
+                                                                        <option value="amount">ج.م</option>
+                                                                        <option value="percentage">%</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex justify-between items-center pt-2">
+                                                            <span className={`text-[10px] font-bold ${stock < item.quantity ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                                المخزون المتوفر: {stock} قطعة
+                                                            </span>
+                                                            <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">
+                                                                المجموع: {((item.price * item.quantity) - (item.discountType === 'amount' ? (item.discountValue || 0) : (item.price * item.quantity * (item.discountValue || 0) / 100))).toLocaleString()} ج.م
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-2xl flex flex-col items-center justify-center p-4 border border-slate-100 dark:border-slate-700/50">
+                                                        {item.thumbnail ? (
+                                                            <img src={item.thumbnail} className="w-full aspect-square object-cover rounded-xl shadow-sm mb-3" referrerPolicy="no-referrer" />
+                                                        ) : (
+                                                            <div className="w-full aspect-square bg-white dark:bg-slate-700 rounded-xl flex items-center justify-center mb-3">
+                                                                <Package size={40} className="text-slate-300" />
+                                                            </div>
+                                                        )}
+                                                        <div className="text-center">
+                                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">الوزن التقديري</p>
+                                                            <p className="text-xs font-black text-slate-700 dark:text-slate-200">{item.weight || 0} كجم</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    
+                                    <button 
+                                        type="button" 
+                                        onClick={addItem} 
+                                        className="w-full py-4 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-black rounded-2xl border-2 border-dashed border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <Plus size={20} />
+                                        <span>إضافة منتج آخر</span>
+                                    </button>
+                                 </div>
+                            </div>
+                        )}
                     </div>
                     
-                    <div className="lg:col-span-2 space-y-6">
+                    <div className="lg:col-span-5 space-y-8">
                         {isExchange && (
                             <>
                                 {/* تفاصيل الشحنة المرسلة جديدة */}
@@ -3894,7 +4354,7 @@ const OrderModal: React.FC<OrderModalProps> = ({
                                                             type="text" 
                                                             disabled 
                                                             value={orderData.returnDescription || 'يرجى اختيار المنتج مرتجع'} 
-                                                            className="w-full p-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-150 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-505" 
+                                                            className="w-full p-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-150 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-500" 
                                                         />
                                                     </div>
                                                 </div>
@@ -3984,351 +4444,272 @@ const OrderModal: React.FC<OrderModalProps> = ({
                                 </div>
                             </>
                         )}
-                        
-                        {(!isExchange && !isReturn && !isCashCollection) && (
-                            <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                                 <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-5 flex items-center gap-2">
-                                     <Package size={18} className="text-amber-500"/> المنتجات
+
+                        {isCashCollection && (
+                             <div className="p-8 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/60 shadow-sm">
+                                 <h4 className="font-extrabold text-slate-800 dark:text-white mb-6 flex items-center gap-3 text-lg">
+                                     <div className="w-10 h-10 bg-amber-50 dark:bg-amber-500/10 rounded-xl flex items-center justify-center text-amber-600">
+                                         <Coins size={20}/>
+                                     </div>
+                                     تفاصيل التحصيل النقدي
                                  </h4>
-                                 <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-1">
-                                    {(orderData.items || []).length === 0 && (
-                                        <div className="p-5 border border-dashed border-slate-200 dark:border-slate-700/60 rounded-xl text-center bg-white/40 dark:bg-slate-900/10">
-                                            <Package className="mx-auto mb-2 opacity-35 text-slate-400" size={20} />
-                                            <p className="text-xs font-bold text-slate-500">لم يتم إضافة أي منتج للطلب بعد</p>
-                                            <p className="text-[10px] text-slate-400 mt-0.5">اضغط على زر "إضافة منتج" بالأسفل لبدء التحديد.</p>
+                                 <div className="space-y-5">
+                                     <div>
+                                         <label className="text-[10px] text-slate-500 font-bold uppercase mr-1 mb-2 block">المبلغ المطلوب تحصيله من العميل</label>
+                                         <input 
+                                             type="number" 
+                                             min="0" 
+                                             value={orderData.customShipmentPrice || 0} 
+                                             onChange={e => handleFieldChange('customShipmentPrice', Number(e.target.value))} 
+                                             className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-3xl font-black text-xl text-center text-amber-600 outline-none focus:border-amber-400 transition-all"
+                                             placeholder="0"
+                                         />
+                                     </div>
+                                     <div>
+                                         <label className="text-[10px] text-slate-500 font-bold uppercase mr-1 mb-2 block">سبب التحصيل / ملاحظات</label>
+                                         <textarea 
+                                             value={orderData.shipmentDescription || ''} 
+                                             onChange={e => handleFieldChange('shipmentDescription', e.target.value)} 
+                                             className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl h-24 text-sm font-bold resize-none outline-none dark:text-white"
+                                             placeholder="مثال: تحصيل مديونية سابقة، عربون طلب كبير..."
+                                         />
+                                     </div>
+                                 </div>
+                             </div>
+                        )}
+                        
+                        {/* Financial Summary */}
+                            <div className="p-8 bg-indigo-900 dark:bg-indigo-950 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-32 -mt-32 transition-transform duration-700 group-hover:scale-110"></div>
+                                <h4 className="font-black text-white mb-8 flex items-center gap-3 text-lg relative z-10">
+                                    <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center backdrop-blur-md">
+                                        <FileText size={20} className="text-indigo-200"/>
+                                    </div>
+                                    الملخص المالي للطلب
+                                </h4>
+                                
+                                <div className="space-y-4">
+                                    <div className="flex justify-between font-bold text-slate-300 text-sm">
+                                        <span>المجموع الفرعي {orderData.source === 'synced' ? '(المنصة)' : ''}</span>
+                                        <span>{(orderData.source === 'synced' && orderData.totalPrice ? orderData.totalPrice : subtotal).toLocaleString()} ج.م</span>
+                                    </div>
+
+                                    {!isReturn && !isCashCollection && (
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] text-slate-400 font-bold uppercase flex justify-between">
+                                                    <span>مصاريف الشحن</span>
+                                                    <span className="text-indigo-400">تلقائي</span>
+                                                </label>
+                                                <input 
+                                                    type="number" 
+                                                    value={orderData.shippingFee || 0} 
+                                                    onChange={e => handleFieldChange('shippingFee', Number(e.target.value))} 
+                                                    className="w-full p-3 bg-white/5 border border-white/10 rounded-xl font-bold text-white outline-none focus:bg-white/10 transition-all text-sm" 
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] text-slate-400 font-bold uppercase">خصم إضافي</label>
+                                                <input 
+                                                    type="number" 
+                                                    value={orderData.discount || 0} 
+                                                    onChange={e => handleFieldChange('discount', Number(e.target.value))} 
+                                                    className="w-full p-3 bg-white/5 border border-white/10 rounded-xl font-bold text-white outline-none focus:bg-white/10 transition-all text-sm" 
+                                                />
+                                            </div>
                                         </div>
                                     )}
-                                    {(orderData.items || []).map((item, index) => {
-                                        const product = settings.products.find(p => p.id === item.productId);
-                                        const hasVariants = product?.variants && product.variants.length > 0;
-                                        const selectedVariant = hasVariants ? product.variants?.find(v => v.id === item.variantId) : null;
-                                        const stock = hasVariants ? (selectedVariant?.stock || 0) : (product?.stock || 0);
-
-                                        return (
-                                            <div key={index} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl space-y-3 relative group">
-                                                <button type="button" onClick={() => removeItem(index)} className="absolute top-3 left-3 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-900 rounded-full z-10">
-                                                    <XCircle size={20}/>
+                                    
+                                    {isExchange && (
+                                        <div className="flex justify-between font-bold text-orange-400 bg-orange-400/10 p-3.5 rounded-2xl border border-orange-400/20 text-xs">
+                                            <span>رصيد سابق (إستبدال)</span>
+                                            <span>-{creditAmount.toLocaleString()} ج.م</span>
+                                        </div>
+                                    )}
+                                    
+                                    <div className="p-5 bg-white/5 rounded-2xl border border-white/10 flex justify-between items-center group transition-all hover:bg-white/10">
+                                        <div>
+                                            <span className="font-black text-indigo-200 text-sm flex items-center gap-2">
+                                                {finalAmount >= 0 ? 'المطلوب تحصيله' : 'المستحق للعميل'}
+                                            </span>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span className="font-black text-white text-2xl">{Math.abs(orderData.totalAmountOverride ?? (orderData.source === 'synced' && orderData.totalPrice ? orderData.totalPrice : finalAmount)).toLocaleString()} ج.م</span>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setShowEditTotalModal(true)}
+                                                    className="p-1.5 bg-indigo-500 text-white rounded-lg hover:bg-indigo-400 shadow-lg group-hover:scale-110 transition-transform"
+                                                >
+                                                    <Edit3 size={12}/>
                                                 </button>
-                                                <ProductSelect 
-                                                     value={item.productId} 
-                                                     onChange={val => handleItemChange(index, 'productId', val)} 
-                                                     products={settings.products}
-                                                     index={index}
-                                                />
-                                                
-                                                {hasVariants && (
-                                                    <select value={item.variantId || ''} onChange={e => handleItemChange(index, 'variantId', e.target.value)} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all dark:text-white">
-                                                        <option value="">بدون متغيرات</option>
-                                                        {product.variants?.map(v => (
-                                                            <option key={v.id} value={v.id}>
-                                                                {Object.entries(v.options || {}).map(([k, val]) => `${k}: ${val}`).join(', ')}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                )}
-
-                                                <div className="flex gap-3 items-center">
-                                                    <div className="w-20">
-                                                        <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">الكمية</label>
-                                                        <input type="number" min="1" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold outline-none dark:text-white text-xs" />
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">السعر</label>
-                                                        <input type="number" min="0" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold outline-none dark:text-white text-xs" />
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">الخصم</label>
-                                                        <div className="flex gap-1">
-                                                            <input type="number" min="0" value={item.discountValue || 0} onChange={e => handleItemChange(index, 'discountValue', Number(e.target.value))} className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold outline-none dark:text-white text-xs" />
-                                                            <select value={item.discountType || 'amount'} onChange={e => handleItemChange(index, 'discountType', e.target.value)} className="p-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] outline-none dark:text-white">
-                                                                <option value="amount">مبلغ</option>
-                                                                <option value="percentage">%</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex-1 text-center text-[10px] font-bold text-slate-500 pt-5">
-                                                        المخزون: <span className={stock < item.quantity ? 'text-red-500' : 'text-emerald-500'}>{stock}</span>
-                                                    </div>
-                                                </div>
                                             </div>
-                                        );
-                                    })}
-                                 </div>
-                                 <button type="button" onClick={addItem} className="w-full mt-4 p-3 bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400 font-bold rounded-xl text-sm border border-amber-100 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-2">
-                                     <Plus size={16} /> إضافة منتج
-                                 </button>
+                                        </div>
+                                        <div className="w-12 h-12 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-200 border border-indigo-500/30">
+                                            <Calculator size={20}/>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                        )}
-                        
-                        {isCashCollection && (
-                            <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                                <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-5 flex items-center gap-2">
-                                    <Coins size={18} className="text-amber-500"/> تفاصيل التحصيل النقدي
+
+                            {/* Advance Payment Section */}
+                            <div className="p-8 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/60 shadow-sm relative overflow-hidden">
+                                <h4 className="font-extrabold text-slate-800 dark:text-white mb-6 flex items-center justify-between text-lg">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-600">
+                                            <Coins size={20}/>
+                                        </div>
+                                        العربون والدفع المقدم
+                                    </div>
+                                    {orderData.advancePayment > 0 && (
+                                        <span className="text-xs font-black px-3 py-1 bg-emerald-500 text-white rounded-full">مفعل</span>
+                                    )}
                                 </h4>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-600 dark:text-slate-400 mb-2 block">المبلغ المطلوب تحصيله من العميل (ج.م)</label>
-                                    <input 
-                                        type="number" 
-                                        min="0" 
-                                        value={orderData.customShipmentPrice || 0} 
-                                        onChange={e => handleFieldChange('customShipmentPrice', Math.max(0, parseFloat(e.target.value) || 0))}
-                                        className="w-full p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold outline-none dark:text-white text-lg focus:ring-2 focus:ring-amber-500 text-center text-amber-600 dark:text-amber-400" 
-                                        placeholder="أدخل قيمة التحصيل..."
-                                    />
-                                    <p className="text-xs text-slate-500 mt-3 text-center">لا يتضمن هذا المبلغ رسوم الشحن. سيتم احتساب رسوم التوصيل وإضافتها للمبلغ النهائي.</p>
-                                </div>
-                            </div>
-                        )}
-                        
-                        <div className="p-5 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50 space-y-4">
-                            <h4 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                <FileText size={18} className="text-indigo-500"/> الملخص المالي
-                            </h4>
-                            
-                            {/* Receipt Style Subtotal Info Panel */}
-                            <div className="bg-slate-100/50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-200/50 dark:border-slate-800/60 space-y-2.5 text-xs text-slate-650 dark:text-slate-350">
-                                <div className="flex justify-between items-center">
-                                    <span>إجمالي الأصناف (قبل الخصم)</span>
-                                    <span className="font-bold text-slate-800 dark:text-slate-200">{subtotal.toLocaleString()} ج.م</span>
-                                </div>
-                                {itemDiscounts > 0 && (
-                                    <div className="flex justify-between items-center text-red-500 pt-1 border-t border-slate-200/30 dark:border-slate-800/30">
-                                        <span>خصومات المنتجات</span>
-                                        <span className="font-bold">-{itemDiscounts.toLocaleString()} ج.م</span>
-                                    </div>
-                                )}
-                                {inspectionFee > 0 && (
-                                    <div className="flex justify-between items-center pt-1 border-t border-slate-200/30 dark:border-slate-800/30">
-                                        <span>رسوم المعاينة</span>
-                                        <span className="font-bold text-slate-800 dark:text-slate-200">{inspectionFee.toLocaleString()} ج.م</span>
-                                    </div>
-                                )}
-                                {orderData.tax && orderData.tax > 0 ? (
-                                    <div className="flex justify-between items-center pt-1 border-t border-slate-200/30 dark:border-slate-800/30">
-                                        <span>الضريبة</span>
-                                        <span className="font-bold text-slate-800 dark:text-slate-200">{orderData.tax.toLocaleString()} ج.م</span>
-                                    </div>
-                                ) : null}
-                            </div>
-
-                            {/* Side-by-side Customizable Inputs */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <label className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">مصاريف الشحن</label>
-                                        {totalWeight > 0 && (
-                                            <span className="text-[8px] text-slate-400 font-medium">({totalWeight.toFixed(1)} كجم)</span>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <input 
-                                            type="number" 
-                                            min="0" 
-                                            value={orderData.shippingFee || 0} 
-                                            onChange={e => handleFieldChange('shippingFee', Number(e.target.value))} 
-                                            className="w-full text-xs font-bold bg-transparent outline-none text-slate-800 dark:text-slate-200" 
-                                        />
-                                        <span className="text-[9px] text-slate-400">ج.م</span>
-                                    </div>
-                                </div>
-
-                                <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-red-500/20 focus-within:border-red-500 transition-all">
-                                    <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">خصم إضافي</label>
-                                    <div className="flex items-center gap-1">
-                                        <input 
-                                            type="number" 
-                                            min="0" 
-                                            value={orderData.discount || 0} 
-                                            onChange={e => handleFieldChange('discount', Number(e.target.value))} 
-                                            className="w-full text-xs font-bold bg-transparent outline-none text-red-500 dark:text-red-450" 
-                                        />
-                                        <span className="text-[9px] text-slate-400">ج.م</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            {/* تحديد مبلغ فليكس شيب (مرتبط بالمعاينة) */}
-                            {orderData.includeInspectionFee && (settings.companySpecificFees?.[orderData.shippingCompany!]?.useCustomFees ? settings.companySpecificFees?.[orderData.shippingCompany!]?.enableFlexShip : settings.enableFlexShip) && (
-                                <div className="p-2.5 bg-violet-50/50 dark:bg-violet-950/20 border border-violet-100 dark:border-violet-900 rounded-xl transition-all mt-3 text-right">
-                                    <label className="text-[10px] text-violet-800 dark:text-violet-400 mb-1 block font-black">مبلغ خدمة فليكس شيب للطلب (Flex Ship Fee)</label>
-                                    <div className="flex items-center gap-1 font-sans">
-                                        <input 
-                                            type="number" 
-                                            min="0" 
-                                            value={orderData.flexShipFee !== undefined ? orderData.flexShipFee : (settings.companySpecificFees?.[orderData.shippingCompany!]?.useCustomFees ? (settings.companySpecificFees?.[orderData.shippingCompany!]?.flexShipFee || 0) : (settings.flexShipFee || 0))} 
-                                            onChange={e => handleFieldChange('flexShipFee', Number(e.target.value))} 
-                                            className="w-full text-xs font-black bg-transparent outline-none text-violet-700 dark:text-violet-400 animate-pulse-slow" 
-                                            placeholder="0"
-                                        />
-                                        <span className="text-[9px] text-violet-400 font-bold">ج.م</span>
-                                    </div>
-                                </div>
-                            )}
-                            
-                            {/* Advance payment & Destination selection */}
-                            <div className={`grid gap-3 transition-all duration-300 ${((orderData.advancePayment || 0) > 0) ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                                <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
-                                    <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">عربون / دفع مقدم</label>
-                                    <div className="flex items-center gap-1">
+                                
+                                <div className="space-y-5">
+                                    <div className="relative group">
+                                        <label className="text-[10px] text-slate-500 font-bold uppercase mr-1 mb-2 block tracking-wider">مبلغ العربون المستلم من العميل</label>
                                         <input 
                                             type="number" 
                                             min="0" 
                                             value={orderData.advancePayment || 0} 
                                             onChange={e => handleFieldChange('advancePayment', Number(e.target.value))} 
-                                            className="w-full text-xs font-bold bg-transparent outline-none text-emerald-600 dark:text-emerald-400" 
+                                            className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-3xl font-black text-xl text-center text-emerald-600 outline-none focus:border-emerald-400 dark:focus:border-emerald-500/50 transition-all"
+                                            placeholder="0"
                                         />
-                                        <span className="text-[9px] text-slate-400">ج.م</span>
+                                        <div className="absolute top-[3.25rem] left-5 pointer-events-none text-slate-400 group-focus-within:text-emerald-500 transition-colors text-xs font-black uppercase">ج.م</div>
+                                    </div>
+
+                                    {orderData.advancePayment > 0 && (
+                                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 p-5 bg-slate-50/50 dark:bg-slate-800/50 rounded-3xl border border-slate-200/50 dark:border-slate-700/50">
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] text-slate-500 font-bold uppercase mr-1 tracking-wider leading-none mb-1 block">حساب الاستلام / الخزينة</label>
+                                                <select 
+                                                    value={orderData.advancePaymentTreasuryId ? `treasury_${orderData.advancePaymentTreasuryId}` : (orderData.advancePaymentPartnerId ? `partner_${orderData.advancePaymentPartnerId}` : '')} 
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        if (val.startsWith('treasury_')) {
+                                                            handleFieldChange('advancePaymentTreasuryId', val.replace('treasury_', ''));
+                                                            handleFieldChange('advancePaymentPartnerId', '');
+                                                        } else if (val.startsWith('partner_')) {
+                                                            handleFieldChange('advancePaymentPartnerId', val.replace('partner_', ''));
+                                                            handleFieldChange('advancePaymentTreasuryId', '');
+                                                        } else {
+                                                            handleFieldChange('advancePaymentPartnerId', ''); handleFieldChange('advancePaymentTreasuryId', '');
+                                                        }
+                                                    }} 
+                                                    className="w-full p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-black outline-none"
+                                                >
+                                                    <option value="">-- اختر حساب الاستلام --</option>
+                                                    {treasury?.accounts && <optgroup label="الحسابات البنكية">
+                                                        {treasury.accounts.map((acc: any) => (<option key={`treasury_${acc.id}`} value={`treasury_${acc.id}`}>{acc.name}</option>))}
+                                                    </optgroup>}
+                                                    {settings.partners && <optgroup label="محافظ الشركاء">
+                                                        {settings.partners.map(p => (<option key={`partner_${p.id}`} value={`partner_${p.id}`}>{p.name}</option>))}
+                                                    </optgroup>}
+                                                </select>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input type="text" placeholder="هاتف المستلم..." value={orderData.advancePaymentRecipientPhone || ''} onChange={e => handleFieldChange('advancePaymentRecipientPhone', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-[10px] font-black outline-none" />
+                                                <input type="text" placeholder="بيانات المحول..." value={orderData.advancePaymentSenderDetails || ''} onChange={e => handleFieldChange('advancePaymentSenderDetails', e.target.value)} className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-[10px] font-black outline-none" />
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Profit Simulator - Modernized */}
+                            <div className="p-8 bg-emerald-950 dark:bg-black rounded-[2rem] border border-emerald-500/20 shadow-2xl relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-150 duration-700"></div>
+                                <h4 className="font-extrabold text-emerald-400 text-sm flex items-center gap-2 mb-6 uppercase tracking-[0.2em] relative z-10 leading-none">
+                                    <Sparkles size={16} className="animate-pulse" />
+                                    محاكي الربحية الحية
+                                </h4>
+                                <div className="grid grid-cols-2 gap-2 relative z-10">
+                                    <div className="p-4 bg-white/5 rounded-2xl border border-white/5 backdrop-blur-sm">
+                                        <p className="text-[9px] text-emerald-300/60 font-black uppercase tracking-tight mb-1">تكلفة البضاعة</p>
+                                        <p className="text-sm font-black text-white italic">{liveProfitMargin.costOfItems.toLocaleString()}</p>
+                                    </div>
+                                    <div className="p-4 bg-white/5 rounded-2xl border border-white/5 backdrop-blur-sm">
+                                        <p className="text-[9px] text-emerald-300/60 font-black uppercase tracking-tight mb-1">مصاريف التشغيل</p>
+                                        <p className="text-sm font-black text-white italic">{(liveProfitMargin.insuranceFee + liveProfitMargin.codFee).toLocaleString()}</p>
                                     </div>
                                 </div>
-
-                                {(orderData.advancePayment || 0) > 0 && (
-                                    <>
-                                        <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-indigo-505/20 focus-within:border-indigo-505 transition-all">
-                                            <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">حساب الخزينة / محصل العربون</label>
-                                            <select 
-                                                value={orderData.advancePaymentTreasuryId || orderData.advancePaymentPartnerId || ''} 
-                                                onChange={e => {
-                                                    const val = e.target.value;
-                                                    if (val.startsWith('treasury_')) {
-                                                        handleFieldChange('advancePaymentTreasuryId', val.replace('treasury_', ''));
-                                                        handleFieldChange('advancePaymentPartnerId', undefined);
-                                                    } else if (val.startsWith('partner_')) {
-                                                        handleFieldChange('advancePaymentPartnerId', val.replace('partner_', ''));
-                                                        handleFieldChange('advancePaymentTreasuryId', undefined);
-                                                    } else {
-                                                        handleFieldChange('advancePaymentPartnerId', undefined);
-                                                        handleFieldChange('advancePaymentTreasuryId', undefined);
-                                                    }
-                                                }} 
-                                                className="w-full bg-transparent outline-none font-bold text-slate-700 dark:text-slate-300 text-[10px] py-0.5"
-                                            >
-                                                <option value="">-- اختر الحساب --</option>
-                                                {treasury?.accounts && treasury.accounts.length > 0 && <optgroup label="الخزينة والحسابات البنكية">
-                                                    {treasury.accounts.map((acc: any) => (
-                                                        <option key={`treasury_${acc.id}`} value={`treasury_${acc.id}`}>{acc.name} (خزينة)</option>
-                                                    ))}
-                                                </optgroup>}
-                                                {settings.partners && settings.partners.length > 0 && <optgroup label="محافظ الشركاء (محصل العربون)">
-                                                    {settings.partners.map(p => (
-                                                        <option key={`partner_${p.id}`} value={`partner_${p.id}`}>{p.name} (شريك)</option>
-                                                    ))}
-                                                </optgroup>}
-                                            </select>
+                                <div className="mt-4 p-5 bg-emerald-500/10 rounded-3xl border border-emerald-500/20 flex justify-between items-center relative z-10">
+                                    <div>
+                                        <p className="text-[9px] text-emerald-400 font-black uppercase tracking-[0.15em] mb-1">صافي الربح المتوقع</p>
+                                        <h3 className="text-2xl font-black text-emerald-400 tracking-tighter italic">
+                                            {liveProfitMargin.profit.toLocaleString()}
+                                            <span className="text-[10px] ml-1 uppercase not-italic opacity-60">L.E</span>
+                                        </h3>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-emerald-950 font-black text-xs shadow-lg shadow-emerald-500/20">
+                                            {liveProfitMargin.profitPercent}%
                                         </div>
-
-                                        {/* New tracking fields */}
-                                        <div className="col-span-2 grid grid-cols-2 gap-3 mt-1">
-                                            <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
-                                                <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">هاتف المستلم / الشريك</label>
-                                                <div className="flex items-center gap-2">
-                                                    <Phone size={10} className="text-slate-400" />
-                                                    <input 
-                                                        type="text" 
-                                                        value={orderData.advancePaymentRecipientPhone || ''} 
-                                                        onChange={e => handleFieldChange('advancePaymentRecipientPhone', e.target.value)} 
-                                                        placeholder="رقم هاتف المستلم..."
-                                                        className="w-full text-[10px] font-bold bg-transparent outline-none text-slate-700 dark:text-slate-300"
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
-                                                <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block font-bold">بيانات المحول (هاتف/انستا باي)</label>
-                                                <div className="flex items-center gap-2">
-                                                    <PhoneForwarded size={10} className="text-slate-400" />
-                                                    <input 
-                                                        type="text" 
-                                                        value={orderData.advancePaymentSenderDetails || ''} 
-                                                        onChange={e => handleFieldChange('advancePaymentSenderDetails', e.target.value)} 
-                                                        placeholder="رقم المحول / انستا باي..."
-                                                        className="w-full text-[10px] font-bold bg-transparent outline-none text-slate-700 dark:text-slate-300"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-
-                            <div className="border-t border-slate-200/60 dark:border-slate-700/60 my-3"></div>
-                            
-                            <div className="flex justify-between font-bold text-slate-700 dark:text-slate-200 text-sm">
-                                <span>المجموع {orderData.source === 'synced' ? '(المرسل من المنصة)' : ''}</span>
-                                <span>{(orderData.source === 'synced' && orderData.totalPrice ? orderData.totalPrice : totalBeforeCredit).toLocaleString()} ج.م</span>
-                            </div>
-                            
-                            {isExchange && (
-                                <div className="flex justify-between font-bold text-orange-500 bg-orange-50 dark:bg-orange-500/10 p-2.5 rounded-xl border border-orange-100 dark:border-orange-500/20 text-xs">
-                                    <span>رصيد سابق (للاستبدال)</span>
-                                    <span>-{creditAmount.toLocaleString()} ج.م</span>
+                                    </div>
                                 </div>
-                            )}
-                            
-                            <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 my-3"></div>
-                            
-                            <div className="flex justify-between items-center bg-indigo-55 dark:bg-indigo-500/10 p-3.5 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
-                                <span className="font-extrabold text-indigo-700 dark:text-indigo-400 text-sm">{finalAmount >= 0 ? 'المطلوب تحصيله' : 'المستحق للعميل'} {orderData.source === 'synced' ? '(النهائي من المنصة)' : ''}</span>
-                                <div className="flex flex-col items-end">
-                                    <span className="font-black text-indigo-700 dark:text-indigo-400 text-xl">{Math.abs(orderData.totalAmountOverride ?? (orderData.source === 'synced' && orderData.totalPrice ? orderData.totalPrice : finalAmount)).toLocaleString()} ج.م</span>
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setShowEditTotalModal(true)}
-                                        className="text-[9px] font-bold text-indigo-550 dark:text-indigo-500 hover:text-indigo-600 underline mt-0.5"
-                                    >
-                                        تعديل الإجمالي يدوياً
+                            </div>
+
+                            {/* Additional Settings - Modernized */}
+                            <div className="p-8 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/60 shadow-sm space-y-4">
+                                 <h4 className="font-extrabold text-slate-800 dark:text-white mb-6 flex items-center gap-3">
+                                     <div className="w-10 h-10 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 border border-slate-100 dark:border-slate-700 shadow-sm">
+                                        <SettingsIcon size={18}/>
+                                     </div>
+                                     إعدادات إضافية
+                                 </h4>
+                                 <div className="grid grid-cols-1 gap-3">
+                                    <button type="button" onClick={() => handleFieldChange('includeInspectionFee', !orderData.includeInspectionFee)} className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${orderData.includeInspectionFee ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-400'}`}>
+                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${orderData.includeInspectionFee ? 'bg-indigo-600' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                                            {orderData.includeInspectionFee && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                                        </div>
+                                        <span className="font-black text-xs uppercase tracking-wider">تفعيل رسوم المعاينة</span>
                                     </button>
-                                </div>
+                                    <button type="button" onClick={() => handleFieldChange('isInsured', !orderData.isInsured)} className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${orderData.isInsured !== false ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-400'}`}>
+                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${orderData.isInsured !== false ? 'bg-indigo-600' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                                            {orderData.isInsured !== false && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                                        </div>
+                                        <span className="font-black text-xs uppercase tracking-wider">تأمين الشحنة</span>
+                                    </button>
+                                 </div>
                             </div>
-
-                            {showEditTotalModal && (
-                                <EditTotalModal 
-                                    currentTotal={orderData.totalAmountOverride ?? finalAmount}
-                                    onClose={() => setShowEditTotalModal(false)}
-                                    onApply={(amount, reason) => {
-                                        handleFieldChange('totalAmountOverride', amount);
-                                        handleFieldChange('totalAmountOverrideReason', reason);
-                                        setShowEditTotalModal(false);
-                                    }}
-                                />
-                            )}
                         </div>
-                         <div className="p-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-700/50 space-y-4">
-                             <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
-                                 <SettingsIcon size={18} className="text-slate-500"/> إعدادات إضافية
-                             </h4>
-                             <label className="flex items-center gap-3 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                 <input type="checkbox" checked={orderData.includeInspectionFee} onChange={e => handleFieldChange('includeInspectionFee', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700" /> 
-                                 <span className="font-medium text-slate-700 dark:text-slate-300">تفعيل رسوم المعاينة</span>
-                             </label>
-                             <label className="flex items-center gap-3 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                 <input type="checkbox" checked={orderData.isInsured} onChange={e => handleFieldChange('isInsured', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700" /> 
-                                 <span className="font-medium text-slate-700 dark:text-slate-300">تفعيل التأمين على الشحنة</span>
-                             </label>
-                         </div>
                     </div>
-                </div>
 
-                <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 rounded-b-3xl shadow-lg z-10">
-                    <div>
-                        {isExchange && <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">الطلب الجديد: {totalBeforeCredit.toLocaleString()} ج.م - رصيد سابق: {creditAmount.toLocaleString()} ج.م</div>}
-                        <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{finalAmount >= 0 ? 'الإجمالي المطلوب من العميل' : 'المبلغ المستحق للعميل'}</span>
-                        <p className={`text-3xl font-black ${finalAmount >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-orange-500'}`}>{Math.abs(orderData.totalAmountOverride ?? finalAmount).toLocaleString()} ج.م</p>
-                        {(orderData.advancePayment || 0) > 0 && <p className="text-[11px] text-teal-600 dark:text-teal-400 font-bold mt-1">يتضمن خصم {orderData.advancePayment} ج.م عربون</p>}
+                    {showEditTotalModal && (
+                        <EditTotalModal 
+                            currentTotal={orderData.totalAmountOverride ?? finalAmount}
+                            onClose={() => setShowEditTotalModal(false)}
+                            onApply={(amount, reason) => {
+                                handleFieldChange('totalAmountOverride', amount);
+                                handleFieldChange('totalAmountOverrideReason', reason);
+                                setShowEditTotalModal(false);
+                            }}
+                        />
+                    )}
+
+                    <div className="px-10 py-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-t border-slate-100 dark:border-slate-800 flex items-center justify-between rounded-b-[2.5rem] sticky bottom-0 z-50">
+                        <div className="flex items-center gap-10">
+                             <div className="hidden sm:block text-right">
+                                <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-2 leading-none">الإجمالي المطلوب</p>
+                                <h3 className="text-4xl font-black text-indigo-600 dark:text-indigo-400 leading-none italic tracking-tighter">
+                                    {finalAmount.toLocaleString()} <span className="text-xs uppercase opacity-30 not-italic tracking-normal">ج.م</span>
+                                </h3>
+                             </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <button type="button" onClick={onClose} className="px-8 font-black text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all text-sm uppercase tracking-widest">إلغاء</button>
+                            <button type="submit" className="h-16 px-12 bg-indigo-600 dark:bg-indigo-500 text-white font-black rounded-3xl shadow-[0_20px_40px_-5px_rgba(79,70,229,0.3)] hover:bg-indigo-700 hover:scale-[1.05] active:scale-[0.98] transition-all flex items-center gap-4 text-base">
+                                <span>{isEditing ? 'حفظ التحديثات' : 'تأكيد الطلب'}</span>
+                                <ArrowLeft size={20} strokeWidth={3}/>
+                            </button>
+                        </div>
                     </div>
-                    <div className="flex gap-3">
-                        <button type="button" onClick={onClose} className="px-6 py-3.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
-                            إلغاء
-                        </button>
-                        <button type="submit" className="px-8 py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md flex items-center gap-2">
-                            <Save size={20}/>{isEditing ? 'تحديث الطلب' : 'حفظ الطلب'}
-                        </button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    );
+                </motion.form>
+            </div>
+        );
 };
-interface OrderConfirmationSummaryProps { order: Order; settings: Settings; onClose: () => void; }
-const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ order, settings, onClose }) => {
+interface OrderConfirmationSummaryProps { order: Order; settings: Settings; onClose: () => void; storeName: string; }
+const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ order, settings, onClose, storeName }) => {
     const compFees = settings?.companySpecificFees?.[order.shippingCompany];
     const inspectionFee = order.includeInspectionFee ? (compFees?.useCustomFees ? compFees.inspectionFee : settings.inspectionFee) : 0;
     const insuranceRate = order.isInsured ? (compFees?.useCustomFees ? compFees.insuranceFeePercent : settings.insuranceFeePercent) : 0;
@@ -4390,9 +4771,34 @@ const OrderConfirmationSummary: React.FC<OrderConfirmationSummaryProps> = ({ ord
                         </div>
                     )}
                 </div>
-                <button onClick={onClose} className="mt-8 w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-sm hover:shadow">
-                    إغلاق
-                </button>
+                <div className="flex flex-col gap-3 mt-8">
+                    <button 
+                        onClick={() => {
+                            const html = generateInvoiceHTML(order, settings, storeName);
+                            printHTMLDirectly(html);
+                        }}
+                        className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-3"
+                    >
+                        <Printer size={20} />
+                        <span>طباعة الفاتورة</span>
+                    </button>
+                    <button 
+                        onClick={() => {
+                            const html = generateShippingLabelHTML(order, storeName);
+                            printHTMLDirectly(html);
+                        }}
+                        className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl font-black hover:bg-slate-200 dark:hover:bg-slate-700/80 transition-all flex items-center justify-center gap-3"
+                    >
+                        <FileDown size={20} />
+                        <span>طباعة بوليصة الشحن</span>
+                    </button>
+                    <button 
+                        onClick={onClose} 
+                        className="w-full py-3 text-slate-400 dark:text-slate-500 font-bold hover:text-slate-600 dark:hover:text-slate-300 transition-all mt-2"
+                    >
+                        إغلاق الملخص
+                    </button>
+                </div>
             </div>
         </div>
     );
